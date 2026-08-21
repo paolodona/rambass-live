@@ -7,6 +7,15 @@ drummer cannot play the gig, so every drum part becomes a click-locked,
 quantised backing track, with lyric/image video and automatic BOSS GX-100 patch
 changes. The DAW is Reaper. Read `README.md` and `docs/workflow.md` first.
 
+The band's own site is **<https://rambass.com/>** — Italian, sections
+`Musica / Foto / Band / Storia / Video / Contatti`. Useful for band photos
+(`Foto`) when a song wants an image behind its lyrics or a title card, for the
+discography, and for the live footage on their YouTube channel. What it does
+**not** have: lyrics pages, a press kit or any download section — so it is not a
+source for the missing Tutti in Fila words, which still have to be transcribed by
+ear. Anything taken from it belongs in `video/assets/` (gitignored) with the
+source noted in the song's `notes:`.
+
 ## The one invariant
 
 **Positions are in bars, never seconds.** Sections, lyric cues, patch changes,
