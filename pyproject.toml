@@ -17,6 +17,11 @@ audio = [
     "soundfile>=0.12.1",
     "scipy>=1.10",
 ]
+# Automatic lyric transcription. faster-whisper runs well on CPU; the
+# openai-whisper package works too and is used as a fallback if present.
+lyrics = [
+    "faster-whisper>=1.0.0",
+]
 # Stem separation (pulls in torch — big). Needed for `stems separate`.
 separate = [
     "demucs>=4.0.1",

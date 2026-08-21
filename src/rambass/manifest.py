@@ -296,6 +296,30 @@ class Song:
                 return candidate
         return None
 
+    #: Cue files we know how to read, best first.
+    LYRICS_CANDIDATES = ("lyrics.srt", "lyrics.vtt", "lyrics.lrc", "lyrics.md")
+
+    def lyrics_path(self) -> Path | None:
+        """The cue file to use for this song, or None if there is not one yet.
+
+        Preference order is SRT, VTT, LRC, then the bar-cue markdown, because a
+        hand-timed subtitle file is always the better source when both exist —
+        and `rambass new` leaves a markdown template behind, so "both exist" is
+        the normal case rather than the exception.
+
+        ``video.lyrics`` only overrides that when it names something outside the
+        standard set, which is how a song keeps a file under its own name.
+        """
+        if self.lyrics_file and self.lyrics_file not in self.LYRICS_CANDIDATES:
+            named = self.path(self.lyrics_file)
+            if named.is_file():
+                return named
+        for candidate in self.LYRICS_CANDIDATES:
+            path = self.path(candidate)
+            if path.is_file():
+                return path
+        return None
+
     def drum_midi_path(self, variant: str = "quantized") -> Path:
         return self.path("midi", f"drums-{variant}.mid")
 

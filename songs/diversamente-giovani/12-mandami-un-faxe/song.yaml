@@ -5,7 +5,7 @@ track: 12
 key: ''
 bars: 0
 tempo:
-  bpm: 120.0
+  bpm: 108.0
   time_signature: 4/4
 count_in:
   bars: 2
@@ -35,7 +35,7 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
   drums_midi: todo
   quantize: todo
@@ -45,3 +45,4 @@ status:
   gx100: todo
   rehearsed: todo
 notes: ''
+lyrics_doc: https://docs.google.com/document/d/1PoJnWPoM5SNHcC-9JHF4kVeaQ5E7UFzfDj0yPYhfXHQ/edit

@@ -14,8 +14,8 @@ click:
   accent_downbeat: true
 drums:
   origin: recorded
-  kit: ''
-  map: general-midi
+  kit: BFD3 MotherSacher.bfd3
+  map: bfd3
 source:
   audio: 03_Mother Sacher_MST1.wav
   url: https://drive.google.com/file/d/1pntd5FCRCgDkmaMcRbXnQozMhW4uWF_u/view
@@ -45,3 +45,6 @@ status:
   gx100: todo
   rehearsed: todo
 notes: ''
+srt_source: https://drive.google.com/file/d/1qYklBlpAROqU5cVKJ1X1SqKUs3hnJpeH/view
+lyrics_doc: https://docs.google.com/document/d/1-J8N2CHvQDWW4Mgg2JCVs838chXL-6SZaEX8Akuf9Zs/edit
+drum_stem_source: Tano_drums/

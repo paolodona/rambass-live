@@ -1,0 +1,33 @@
+# The set that was already built and played, recovered from the live project
+# folder in Drive. Eight songs, each with its own Reaper project, a rendered
+# BASE wav, a title card and (mostly) a lyric video.
+#
+# Keep this as the reference for what "done" looks like: `rambass reaper import`
+# can pull the tempo, markers and pedal changes out of each of those projects.
+#
+# Note the running order mixes the albums and opens with a Tutti in Fila track,
+# and that "Ragazza Bis" is a reprise of La Ragazza da Milano rather than a
+# separate song — it has its own Reaper project but shares the lyric video.
+name: Ramba S.S. — live 2023 (already built)
+date: "2023-09"
+venue: ""
+notes: |
+  Recovered from Drive, not re-derived. Every song here already has:
+    * a Reaper project (.RPP, Reaper 6.82)
+    * a rendered backing track ("... BASE.wav" / "... base_2.wav")
+    * a title-card PNG on a "Cover" video track
+    * a "Program change" track sending bank select + PC to the GX-100
+      on hardware MIDI output 384
+  Six of them also have a hand-timed SRT and a rendered lyric video.
+
+  The projects carry a long lead-in — the title card is on screen for a couple
+  of minutes before the music starts — so when importing, the musical zero is
+  the first audio item, not time zero. `rambass reaper import` defaults to that.
+songs:
+  - tutti-in-fila/02-i-pooh                       # "Phooffi", 90 BPM per its project
+  - diversamente-giovani/02-formaygrana
+  - diversamente-giovani/03-mother-sacher
+  - diversamente-giovani/06-il-phurgone
+  - diversamente-giovani/05-itturfiatrugoy
+  - diversamente-giovani/14-diversamente-giovani
+  - diversamente-giovani/13-la-ragazza-da-milano

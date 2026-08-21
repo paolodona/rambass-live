@@ -1,0 +1,42 @@
+# BFD3 — the drum plugin used on Diversamente Giovani.
+#
+# The note numbers are deliberately left blank. BFD3's mapping depends on the
+# kit preset and on which articulations are loaded, and the album used a
+# different .bfd3 preset per song (see songs/diversamente-giovani/
+# existing-work.yaml). A table copied off the internet would be wrong for these
+# presets, and wrong in a way that only shows up as a snare playing a cowbell
+# halfway through a gig.
+#
+# Any instrument left blank falls back to General MIDI, which is close enough to
+# get a part audible. To do it properly:
+#
+#   1. open the song's .bfd3 preset in BFD3,
+#   2. open its Key Map / MIDI note assignment page,
+#   3. read the numbers off and fill them in below,
+#   4. `rambass drums remap <song> bfd3 --set-default`.
+#
+# If the presets turn out to share one mapping, this single file is enough. If
+# they differ per song, copy this to bfd3-<song>.yaml and set `drums.map` in that
+# song's song.yaml.
+name: bfd3
+description: BFD3 — fill in from the plugin's own key map, per preset
+channel: 10
+notes:
+  kick:
+  snare:
+  sidestick:
+  clap:
+  hihat_closed:
+  hihat_pedal:
+  hihat_open:
+  tom_low:
+  tom_mid:
+  tom_high:
+  crash:
+  crash_2:
+  ride:
+  ride_bell:
+  china:
+  splash:
+  cowbell:
+  tambourine:

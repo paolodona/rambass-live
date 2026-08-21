@@ -5,7 +5,7 @@ track: 8
 key: ''
 bars: 0
 tempo:
-  bpm: 120.0
+  bpm: 90.0
   time_signature: 4/4
 count_in:
   bars: 2
@@ -14,8 +14,8 @@ click:
   accent_downbeat: true
 drums:
   origin: recorded
-  kit: ''
-  map: general-midi
+  kit: BFD3 ilCellulareOK.bfd3
+  map: bfd3
 source:
   audio: 08_Il Cellulare_MST1.wav
   url: https://drive.google.com/file/d/1SirazEstPJdE-oZ5bw_73yUsPPAD2739/view
@@ -35,7 +35,7 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
   drums_midi: todo
   quantize: todo
@@ -45,3 +45,4 @@ status:
   gx100: todo
   rehearsed: todo
 notes: ''
+lyrics_doc: https://docs.google.com/document/d/1u2u7ewsMILx6GxlH-toFmxBg4rK-MLV_nkQ56AuYWqc/edit

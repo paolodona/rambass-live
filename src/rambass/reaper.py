@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .manifest import Song
+from .manifest import PatchChange, Section, Song
 from .timeline import Timeline
 
 BUILD_SCRIPT_VERSION = 1
@@ -243,3 +243,346 @@ def describe(timeline: Timeline, song: Song) -> str:
                 f"    bar {change.bar:>4}  {change.memory:<7} {change.name}"
             )
     return "\n".join(lines)
+
+
+# ── reading an existing .RPP ─────────────────────────────────────────────
+#
+# Writing .RPP files is still not something this repo does — see docs/reaper.md.
+# *Reading* one is a different proposition: the format is a plain indented
+# block structure, and there is a pile of existing hand-built projects for
+# Diversamente Giovani whose tempo, markers and pedal changes are real work that
+# should be imported rather than redone.
+#
+# Parsed against actual Reaper 6.82 projects from that folder.
+
+@dataclass
+class RppItem:
+    """A media item on a track."""
+
+    position: float
+    length: float
+    name: str = ""
+    source_file: str = ""
+    source_type: str = ""          # WAVE, MIDI, VIDEO
+    #: (bank_msb, bank_lsb, program) for each program change in a MIDI item.
+    program_changes: list[tuple[int, int, int]] = field(default_factory=list)
+
+
+@dataclass
+class RppTrack:
+    name: str
+    items: list[RppItem] = field(default_factory=list)
+    #: Raw MIDIOUT value; >= 0 means the track sends to a hardware MIDI device.
+    midi_out: int = -1
+
+
+@dataclass
+class RppProject:
+    """What we can usefully recover from an existing Reaper project."""
+
+    version: str = ""
+    bpm: float = 120.0
+    time_signature: tuple[int, int] = (4, 4)
+    markers: list[tuple[float, str, bool]] = field(default_factory=list)  # pos, name, is_region
+    tracks: list[RppTrack] = field(default_factory=list)
+
+    def track(self, name: str) -> RppTrack | None:
+        for track in self.tracks:
+            if track.name.lower() == name.lower():
+                return track
+        return None
+
+    def audio_items(self) -> list[RppItem]:
+        return [i for t in self.tracks for i in t.items if i.source_type == "WAVE"]
+
+    def program_changes(self) -> list[tuple[float, int, int, int]]:
+        """``(position_seconds, bank_msb, bank_lsb, program)``, in time order.
+
+        The program change lives inside the MIDI item, so its real time is the
+        item's position plus the event's offset — but these projects put one
+        short MIDI item per change, with the event at the item start, so the
+        item position is the change position.
+        """
+        out: list[tuple[float, int, int, int]] = []
+        for track in self.tracks:
+            for item in track.items:
+                for msb, lsb, program in item.program_changes:
+                    out.append((item.position, msb, lsb, program))
+        return sorted(out)
+
+    def first_audio_position(self) -> float:
+        """Where the music starts, which is rarely zero in these projects."""
+        items = self.audio_items()
+        return min((i.position for i in items), default=0.0)
+
+
+def parse_rpp(text: str) -> RppProject:
+    """Parse a Reaper project file.
+
+    Only the parts we can act on are extracted: tempo, markers and regions,
+    track names, media items with their source files, and program changes in
+    MIDI items. Everything else (FX chains, envelopes, GUIDs, window positions)
+    is skipped.
+    """
+    project = RppProject()
+    track: RppTrack | None = None
+    item: RppItem | None = None
+    # Which block are we inside? Reaper nests with "<TAG" ... ">".
+    stack: list[str] = []
+
+    for raw in text.replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+
+        if line.startswith("<"):
+            tag = line[1:].split()[0] if len(line) > 1 else ""
+            stack.append(tag)
+            if tag == "TRACK":
+                track = RppTrack(name="")
+                project.tracks.append(track)
+            elif tag == "ITEM":
+                item = RppItem(position=0.0, length=0.0)
+                if track is not None:
+                    track.items.append(item)
+            elif tag == "SOURCE" and item is not None:
+                parts = line.split()
+                item.source_type = parts[1] if len(parts) > 1 else ""
+            continue
+
+        if line == ">":
+            closed = stack.pop() if stack else ""
+            if closed == "ITEM":
+                item = None
+            elif closed == "TRACK":
+                track = None
+            continue
+
+        parts = line.split()
+        keyword = parts[0]
+        inside = stack[-1] if stack else ""
+
+        if keyword == "REAPER_PROJECT" and len(parts) > 2:
+            project.version = parts[2].strip('"')
+
+        elif keyword == "TEMPO" and not stack[1:]:
+            # Top-level TEMPO is the project tempo; a TEMPO inside a block is not.
+            if len(parts) > 1:
+                project.bpm = float(parts[1])
+            if len(parts) > 3:
+                project.time_signature = (int(float(parts[2])), int(float(parts[3])))
+
+        elif keyword == "MARKER":
+            marker = _parse_marker(line)
+            if marker:
+                project.markers.append(marker)
+
+        elif keyword == "NAME":
+            value = _unquote(line[len("NAME"):].strip())
+            if inside == "ITEM" and item is not None:
+                item.name = value
+            elif inside == "TRACK" and track is not None and not track.name:
+                track.name = value
+
+        elif keyword == "MIDIOUT" and inside == "TRACK" and track is not None:
+            track.midi_out = int(float(parts[1])) if len(parts) > 1 else -1
+
+        elif keyword == "POSITION" and item is not None:
+            item.position = float(parts[1])
+
+        elif keyword == "LENGTH" and item is not None:
+            item.length = float(parts[1])
+
+        elif keyword == "FILE" and item is not None:
+            item.source_file = _unquote(line[len("FILE"):].strip())
+
+        elif keyword in ("e", "E") and item is not None and inside == "SOURCE":
+            event = _parse_midi_event(parts)
+            if event:
+                item.program_changes.append(event)
+
+    # Reaper writes MIDI events as separate CC/PC lines; stitch each
+    # bank-select pair onto the program change that follows it.
+    for one_track in project.tracks:
+        for one_item in one_track.items:
+            one_item.program_changes = _collapse_bank_selects(one_item.program_changes)
+    return project
+
+
+def _parse_marker(line: str) -> tuple[float, str, bool] | None:
+    """``MARKER 5 384 "grande rutto" 0 0 1 R {GUID}`` -> (384.0, name, is_region).
+
+    Regions are written as a pair of MARKER lines with a non-zero region flag;
+    Reaper 6 uses ``R`` in the flags for the region start. We treat a marker as
+    a region only when that flag is present, and dedupe the pair by name.
+    """
+    rest = line[len("MARKER"):].strip()
+    parts = rest.split(None, 2)
+    if len(parts) < 2:
+        return None
+    try:
+        position = float(parts[1])
+    except ValueError:
+        return None
+    tail = parts[2] if len(parts) > 2 else ""
+    name, remainder = _take_quoted(tail)
+    # The field straight after the name is the is-region flag. A region is
+    # written as two MARKER lines sharing an index — the second has no name,
+    # which is how the caller can tell a region's end from a plain marker.
+    flags = remainder.split()
+    is_region = bool(flags) and flags[0] == "1"
+    return position, name, is_region
+
+
+def _unquote(text: str) -> str:
+    """Strip Reaper's optional quoting from a value.
+
+    Reaper quotes a value only when it contains a space, and uses whichever of
+    ``"``, ``'`` or `` ` `` does not appear in the value itself.
+    """
+    text = text.strip()
+    for quote in ('"', "'", "`"):
+        if len(text) >= 2 and text.startswith(quote) and text.endswith(quote):
+            return text[1:-1]
+    return text
+
+
+def _take_quoted(text: str) -> tuple[str, str]:
+    """Pull a possibly-quoted first token off *text*."""
+    text = text.strip()
+    if text.startswith('"'):
+        end = text.find('"', 1)
+        if end > 0:
+            return text[1:end], text[end + 1:]
+    parts = text.split(None, 1)
+    return (parts[0] if parts else ""), (parts[1] if len(parts) > 1 else "")
+
+
+def _parse_midi_event(parts: list[str]) -> tuple[int, int, int] | None:
+    """Decode one ``e <ticks> <status> <d1> <d2>`` line into a marker tuple.
+
+    Returns a sentinel triple so :func:`_collapse_bank_selects` can pair the
+    CC#0 / CC#32 / program-change sequence back together:
+    ``(-1, msb, -1)`` for a bank MSB, ``(-2, lsb, -2)`` for a bank LSB and
+    ``(-3, program, -3)`` for the program change itself.
+    """
+    if len(parts) < 4:
+        return None
+    try:
+        status = int(parts[2], 16)
+        data1 = int(parts[3], 16)
+    except ValueError:
+        return None
+    kind = status & 0xF0
+    if kind == 0xB0:                      # control change
+        if data1 == 0 and len(parts) > 4:
+            return (-1, int(parts[4], 16), -1)
+        if data1 == 32 and len(parts) > 4:
+            return (-2, int(parts[4], 16), -2)
+        return None
+    if kind == 0xC0:                      # program change
+        return (-3, data1, -3)
+    return None
+
+
+def _collapse_bank_selects(
+    events: list[tuple[int, int, int]],
+) -> list[tuple[int, int, int]]:
+    out: list[tuple[int, int, int]] = []
+    msb = lsb = 0
+    for marker, value, _ in events:
+        if marker == -1:
+            msb = value
+        elif marker == -2:
+            lsb = value
+        elif marker == -3:
+            out.append((msb, lsb, value))
+    return out
+
+
+def import_into_song(
+    project: RppProject,
+    song: Song,
+    *,
+    offset: float | None = None,
+    program_map=None,
+) -> tuple[dict, list[str]]:
+    """Work out what an existing project tells us about a song.
+
+    Returns the values that could be written into ``song.yaml`` and a list of
+    human-readable notes. Nothing is written here — the caller decides, because
+    an import that silently overwrites a hand-tuned manifest is worse than no
+    importer at all.
+
+    *offset* is the project time that corresponds to musical bar 1. These
+    projects carry a long lead-in (a title card on screen before the music
+    starts), so by default we take the first audio item's position.
+    """
+    if offset is None:
+        offset = project.first_audio_position()
+
+    timeline = Timeline(
+        bpm=project.bpm,
+        time_signature=project.time_signature,
+        count_in_bars=song.count_in_bars,
+    )
+    notes = [
+        f"project {project.version or 'unknown version'}: "
+        f"{project.bpm:g} BPM {project.time_signature[0]}/{project.time_signature[1]}",
+        f"musical zero taken as {offset:.3f}s (first audio item)",
+    ]
+
+    sections: list[Section] = []
+    for position, name, _is_region in sorted(project.markers):
+        if not name.strip():          # the closing line of a region pair
+            continue
+        musical = position - offset
+        bar, beat = timeline.seconds_to_bar_beat(musical)
+        if bar < 1:
+            notes.append(f"marker {name!r} at {position:.2f}s is before the music — skipped")
+            continue
+        sections.append(Section(name=name, bar=bar))
+        notes.append(f"marker {name!r} at {position:.2f}s -> bar {bar} (beat {beat:.2f})")
+
+    patches: list[PatchChange] = []
+    for position, msb, _lsb, program in project.program_changes():
+        musical = position - offset
+        bar, _ = timeline.seconds_to_bar_beat(musical)
+        memory = ""
+        if program_map is not None:
+            memory = program_map.memory_for(msb, program)
+        patches.append(
+            PatchChange(bar=max(bar, 1), memory=memory or "U01-1",
+                        name=f"was bank {msb} PC {program}")
+        )
+        notes.append(
+            f"program change bank {msb} PC {program} at {position:.2f}s -> "
+            f"bar {max(bar, 1)}" + (f" ({memory})" if memory else "")
+        )
+
+    audio = project.audio_items()
+    length_seconds = max((i.position + i.length for i in audio), default=0.0) - offset
+    bars = max(1, timeline.seconds_to_bar_beat(length_seconds)[0]) if length_seconds > 0 else 0
+
+    media = sorted({i.source_file for i in audio if i.source_file})
+    for name in media:
+        notes.append(f"audio: {name}")
+    for one_track in project.tracks:
+        if one_track.midi_out >= 0:
+            notes.append(
+                f"track {one_track.name!r} sends to hardware MIDI output "
+                f"{one_track.midi_out} — that is the pedalboard feed"
+            )
+
+    return (
+        {
+            "bpm": project.bpm,
+            "time_signature": project.time_signature,
+            "bars": bars,
+            "sections": sections,
+            "patch_changes": patches,
+            "media": media,
+            "offset": offset,
+        },
+        notes,
+    )

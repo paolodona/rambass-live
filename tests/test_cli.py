@@ -248,3 +248,174 @@ def test_the_repos_own_songs_and_setlists_are_valid():
 
 def test_env_does_not_leak_between_tests(cwd):
     assert Path(os.getcwd()) == cwd.root
+
+
+# ── lyrics commands ──────────────────────────────────────────────────────
+SRT = (
+    "1\r\n00:00:02,850 --> 00:00:07,039\r\nFor My Grana\r\n\r\n"
+    "2\r\n00:00:08,220 --> 00:00:09,529\r\nA-uuuuuh\r\n"
+)
+
+
+def test_lyrics_import_stores_and_points_the_manifest_at_it(cwd, capsys, tmp_path):
+    run("new", "ForMayGrana", "--album", "dg", "--create-album", "--bpm", "112")
+    source = tmp_path / "02 ForMayGrana.srt"
+    source.write_text(SRT, encoding="utf-8")
+    capsys.readouterr()
+
+    assert run("lyrics", "import", "01-formaygrana", str(source)) == 0
+    out = capsys.readouterr().out
+    assert "2 cues" in out
+
+    stored = cwd.songs_dir / "dg" / "01-formaygrana" / "lyrics.srt"
+    assert stored.is_file()
+    assert b"\r\n" in stored.read_bytes()
+    assert load_song(stored.parent).lyrics_file == "lyrics.srt"
+
+
+def test_lyrics_import_can_shift_on_the_way_in(cwd, capsys, tmp_path):
+    run("new", "X", "--album", "dg", "--create-album")
+    source = tmp_path / "x.srt"
+    source.write_text(SRT, encoding="utf-8")
+    capsys.readouterr()
+    run("lyrics", "import", "01-x", str(source), "--shift", "4")
+
+    from rambass.lyrics import load
+
+    cues = load(cwd.songs_dir / "dg" / "01-x" / "lyrics.srt")
+    assert cues[0].start == pytest.approx(6.85)
+
+
+def test_lyrics_export_writes_several_formats(cwd, capsys, tmp_path):
+    run("new", "X", "--album", "dg", "--create-album", "--bars", "32")
+    directory = cwd.songs_dir / "dg" / "01-x"
+    (directory / "lyrics.srt").write_text(SRT, encoding="utf-8")
+    capsys.readouterr()
+
+    assert run("lyrics", "export", "01-x", "--format", "srt", "vtt", "lrc", "ass",
+               "txt") == 0
+    for suffix in ("srt", "vtt", "lrc", "ass", "txt"):
+        assert (directory / "video" / f"x.{suffix}").is_file()
+    assert (directory / "video" / "x.vtt").read_text().startswith("WEBVTT")
+
+
+def test_lyrics_export_count_in_shifts_by_the_count_in(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album", "--bpm", "120",
+        "--count-in", "2")
+    directory = cwd.songs_dir / "dg" / "01-x"
+    (directory / "lyrics.srt").write_text(SRT, encoding="utf-8")
+    capsys.readouterr()
+
+    run("lyrics", "export", "01-x", "--format", "srt", "--count-in",
+        "--out", str(directory / "shifted.srt"))
+    from rambass.lyrics import load
+
+    assert load(directory / "shifted.srt")[0].start == pytest.approx(6.85)
+
+
+def test_lyrics_check_reports_problems_and_exit_code(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album", "--bars", "8")
+    directory = cwd.songs_dir / "dg" / "01-x"
+    (directory / "lyrics.srt").write_text(
+        "1\n00:00:00,000 --> 00:00:05,000\na\n\n"
+        "2\n00:00:02,000 --> 00:00:06,000\nb\n",
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    assert run("lyrics", "check", "01-x") == 1
+    assert "overlap" in capsys.readouterr().out
+
+
+def test_lyrics_check_is_clean_on_a_good_file(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album", "--bars", "64")
+    (cwd.songs_dir / "dg" / "01-x" / "lyrics.srt").write_text(SRT, encoding="utf-8")
+    capsys.readouterr()
+    assert run("lyrics", "check", "01-x") == 0
+    assert "look sane" in capsys.readouterr().out
+
+
+def test_lyrics_check_skips_songs_without_lyrics_when_quiet(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album")
+    capsys.readouterr()
+    assert run("lyrics", "check", "--all", "--quiet") == 0
+
+
+def test_srt_wins_over_the_bar_cue_markdown(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album", "--bpm", "120", "--bars", "32")
+    directory = cwd.songs_dir / "dg" / "01-x"
+    (directory / "lyrics.srt").write_text(SRT, encoding="utf-8")
+    (directory / "lyrics.md").write_text("[bar 9]\nda markdown\n", encoding="utf-8")
+    capsys.readouterr()
+
+    assert run("video", "ass", "01-x") == 0
+    text = (directory / "video" / "x.ass").read_text()
+    assert "For My Grana" in text
+    assert "da markdown" not in text
+
+
+def test_video_ass_falls_back_to_the_markdown_when_there_is_no_srt(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album", "--bpm", "120", "--bars", "32")
+    directory = cwd.songs_dir / "dg" / "01-x"
+    (directory / "lyrics.md").write_text("[bar 9]\nda markdown\n", encoding="utf-8")
+    capsys.readouterr()
+    assert run("video", "ass", "01-x") == 0
+    assert "da markdown" in (directory / "video" / "x.ass").read_text()
+
+
+def test_lyrics_commands_say_what_to_do_when_there_are_no_cues(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album")
+    (cwd.songs_dir / "dg" / "01-x" / "lyrics.md").unlink()
+    capsys.readouterr()
+    assert run("lyrics", "export", "01-x") == 0
+    assert "no lyrics file" in capsys.readouterr().out
+
+
+def test_lyrics_bars_converts_to_the_markdown_format(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album", "--bpm", "120",
+        "--count-in", "2")
+    directory = cwd.songs_dir / "dg" / "01-x"
+    (directory / "lyrics.srt").write_text(
+        "1\n00:00:20,000 --> 00:00:22,000\nPrima riga\n", encoding="utf-8"
+    )
+    capsys.readouterr()
+    assert run("lyrics", "bars", "01-x") == 0
+    assert "[bar 9]" in (directory / "lyrics.bars.md").read_text()
+
+
+def test_lyrics_shift_refuses_to_shift_a_bar_anchored_file(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album")
+    directory = cwd.songs_dir / "dg" / "01-x"
+    (directory / "lyrics.md").write_text("[bar 9]\nuna riga\n", encoding="utf-8")
+    capsys.readouterr()
+    assert run("lyrics", "shift", "01-x", "2.0") == 2
+    assert "anchored to bars" in capsys.readouterr().err
+
+
+# ── reaper import ────────────────────────────────────────────────────────
+def test_reaper_import_reports_without_writing_then_writes(cwd, capsys):
+    run("new", "Phooffi", "--album", "tif", "--create-album", "--count-in", "2")
+    directory = cwd.songs_dir / "tif" / "01-phooffi"
+    fixture = Path(__file__).parent / "fixtures" / "live-project.RPP"
+    capsys.readouterr()
+
+    assert run("reaper", "import", "01-phooffi", str(fixture)) == 0
+    out = capsys.readouterr().out
+    assert "90 BPM" in out and "nothing written" in out
+    assert load_song(directory).bpm == 120.0        # untouched
+
+    assert run("reaper", "import", "01-phooffi", str(fixture), "--write") == 0
+    song = load_song(directory)
+    assert song.bpm == 90.0
+    assert song.status["analyze"] == "done"
+    assert [s.name for s in song.sections][:2] == ["intro", "start"]
+    assert song.patch_changes and song.patch_changes[0].memory == "U01-2"
+
+
+def test_reaper_import_can_keep_existing_patches(cwd, capsys):
+    run("new", "X", "--album", "tif", "--create-album")
+    run("patch", "01-x", "5", "U04-4", "--name", "mine")
+    fixture = Path(__file__).parent / "fixtures" / "live-project.RPP"
+    capsys.readouterr()
+    run("reaper", "import", "01-x", str(fixture), "--write", "--keep-patches")
+    song = load_song(cwd.songs_dir / "tif" / "01-x")
+    assert [c.memory for c in song.patch_changes] == ["U04-4"]

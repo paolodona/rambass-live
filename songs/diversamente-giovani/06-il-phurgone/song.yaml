@@ -14,8 +14,8 @@ click:
   accent_downbeat: true
 drums:
   origin: recorded
-  kit: ''
-  map: general-midi
+  kit: BFD3 phurgone.bfd3
+  map: bfd3
 source:
   audio: 06_Il Phurgone_MST1.wav
   url: https://drive.google.com/file/d/1tKtKePir-ruFDZLgmfzHZZfuahOnYqEY/view
@@ -45,3 +45,6 @@ status:
   gx100: todo
   rehearsed: todo
 notes: ''
+srt_source: https://drive.google.com/file/d/1AigHJKY_hJ1d8sK_vpEufBzYNlEPsxrR/view
+lyrics_doc: https://docs.google.com/document/d/1lW3o4F3Khy3QIPY8MjwdF-O3dFtojplKqFTLQTyzgjo/edit
+drum_stem_source: drums/

@@ -485,51 +485,308 @@ def cmd_gx100_sheet(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_video_ass(args: argparse.Namespace) -> int:
+# ── commands: lyrics ─────────────────────────────────────────────────────
+def _cue_path(song: Song, explicit: str | None = None) -> Path:
+    if explicit:
+        return Path(explicit)
+    found = song.lyrics_path()
+    if found is None or found.suffix.lower() == ".md":
+        return song.path("lyrics.srt")
+    return found
+
+
+def _load_cues(song: Song) -> tuple[list, str]:
+    """Cues for a song plus a label saying where they came from.
+
+    A hand-timed SRT always wins over the bar-cue markdown draft. When both
+    exist the markdown is still read, but only for its ``image:`` cues — words
+    from the SRT, pictures from the markdown.
+    """
+    from .lyrics import from_bar_cues, load
     from .reaper import project_length_seconds
-    from .video import build_ass, parse_lyrics
+
+    path = song.lyrics_path()
+    if path is None:
+        raise ProjectError(
+            f"{song.slug}: no lyrics file. Write {song.path('lyrics.srt')}, "
+            f"import one with `rambass lyrics import`, or draft one with "
+            f"`rambass lyrics transcribe`."
+        )
+    if path.suffix.lower() == ".md":
+        cues = from_bar_cues(
+            path.read_text(encoding="utf-8"),
+            song.timeline(),
+            end_seconds=project_length_seconds(song),
+        )
+    else:
+        cues = load(path)
+    return cues, path.name
+
+
+def cmd_lyrics_import(args: argparse.Namespace) -> int:
+    from .lyrics import load, problems, save, shift, stats
+
+    project = _project()
+    song = load_song(project.find_song_dir(args.song))
+    cues = load(args.file)
+    if args.shift:
+        cues = shift(cues, args.shift)
+    target = song.path(f"lyrics{Path(args.file).suffix.lower()}")
+    if args.as_srt:
+        target = song.path("lyrics.srt")
+    save(target, cues, title=song.title)
+
+    _say(f"{song.title}: {len(cues)} cues -> {target}")
+    for key, value in stats(cues).items():
+        _say(f"   {key:<16} {value}")
+    found = problems(cues)
+    for problem in found[:10]:
+        _say(f"   ! {problem}")
+    if len(found) > 10:
+        _say(f"   ! ... and {len(found) - 10} more (see `rambass lyrics check`)")
+    if song.lyrics_file != target.name:
+        song.lyrics_file = target.name
+        save_song(song)
+        _say(f"   song.yaml now points video.lyrics at {target.name}")
+    _mark(song, "video", "wip")
+    return 0
+
+
+def cmd_lyrics_transcribe(args: argparse.Namespace) -> int:
+    from .lyrics import problems, save, stats, transcribe
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
-        lyrics = song.path(song.lyrics_file)
-        if not lyrics.is_file():
-            _say(f"{song.slug}: no {song.lyrics_file}")
-            continue
-        cues = parse_lyrics(lyrics.read_text(encoding="utf-8"))
-        text = build_ass(
-            cues, song.timeline(),
-            end_seconds=project_length_seconds(song),
-            title=song.title,
+        source = Path(args.file) if args.file else (
+            song.stem_path("vocals") or song.source_path()
         )
+        if not source:
+            _say(f"{song.slug}: nothing to transcribe — no stems/vocals.* and no source/")
+            continue
+        from_vocals = song.stem_path("vocals") is not None and not args.file
+        prompt = args.prompt
+        if not prompt and args.prompt_file:
+            prompt = Path(args.prompt_file).read_text(encoding="utf-8")
+
+        _say(f"── {song.title}: transcribing {source.name}"
+             + ("" if from_vocals else "  (full mix — separate the vocals first "
+                                       "with `rambass stems` for much better results)"))
+        cues, report = transcribe(
+            source,
+            language=args.language,
+            model=args.model,
+            max_chars=args.max_chars,
+            prompt=prompt,
+            device=args.device,
+        )
+        for key, value in report.items():
+            _say(f"   {key:<22} {value}")
+        target = song.path(args.output)
+        save(target, cues, title=song.title)
+        _say(f"→  {target}  ({len(cues)} cues)")
+        for key, value in stats(cues).items():
+            _say(f"   {key:<16} {value}")
+        found = problems(cues)
+        if found:
+            _say(f"   {len(found)} thing(s) to fix — `rambass lyrics check {song.slug}`")
+        _say("   this is a draft: read every line against the audio before rendering")
+    return 0
+
+
+def cmd_lyrics_export(args: argparse.Namespace) -> int:
+    from .lyrics import WRITERS, save, shift
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        try:
+            cues, origin = _load_cues(song)
+        except ProjectError as exc:
+            _say(f"{exc}")
+            continue
+        if args.offset:
+            cues = shift(cues, args.offset)
+        if args.count_in:
+            cues = shift(cues, song.timeline().count_in_seconds)
+        for fmt in args.format:
+            if fmt not in WRITERS:
+                raise ProjectError(f"unknown format {fmt!r}; "
+                                   f"known: {', '.join(sorted(WRITERS))}")
+            target = Path(args.out) if args.out else song.path("video", f"{song.slug}.{fmt}")
+            save(target, cues, title=song.title)
+            _say(f"{song.title}: {origin} -> {target}  ({len(cues)} cues)")
+    return 0
+
+
+def cmd_lyrics_check(args: argparse.Namespace) -> int:
+    from .lyrics import problems, stats
+    from .reaper import project_length_seconds
+
+    project = _project()
+    total = 0
+    for song in _songs(project, args.song, args.album, args.all):
+        try:
+            cues, origin = _load_cues(song)
+        except ProjectError:
+            if args.quiet:
+                continue
+            _say(f"{song.album}/{song.slug}: no lyrics yet")
+            continue
+        duration = project_length_seconds(song) if song.bars else None
+        found = problems(cues, duration=duration)
+        summary = stats(cues)
+        _say(f"{song.album}/{song.slug}  ({origin})  "
+             f"{summary['cues']} cues, {summary['words']} words, "
+             f"{summary['first']}s-{summary['last']}s")
+        for problem in found:
+            _say(f"   ! {problem}")
+        total += len(found)
+    if total:
+        _say(f"\n{total} problem(s) across all songs")
+        return 1
+    _say("\nall cue files look sane")
+    return 0
+
+
+def cmd_lyrics_shift(args: argparse.Namespace) -> int:
+    from .lyrics import retime, save, shift
+
+    project = _project()
+    song = load_song(project.find_song_dir(args.song))
+    cues, origin = _load_cues(song)
+    if args.seconds:
+        cues = shift(cues, args.seconds)
+        _say(f"{song.title}: shifted {len(cues)} cues by {args.seconds:+g}s")
+    if args.from_bpm and args.to_bpm:
+        cues = retime(cues, args.from_bpm, args.to_bpm)
+        _say(f"{song.title}: retimed {args.from_bpm:g} -> {args.to_bpm:g} BPM")
+    target = _cue_path(song, args.out)
+    if origin.endswith(".md") and not args.out:
+        raise ProjectError(
+            "this song's cues live in lyrics.md, which is anchored to bars — "
+            "change the tempo in song.yaml instead of shifting the cues, or pass "
+            "--out to write a shifted subtitle file"
+        )
+    save(target, cues, title=song.title)
+    _say(f"→ {target}")
+    return 0
+
+
+def cmd_lyrics_bars(args: argparse.Namespace) -> int:
+    """Convert a subtitle file into the bar-anchored markdown format."""
+    from .lyrics import to_bar_cues
+
+    project = _project()
+    song = load_song(project.find_song_dir(args.song))
+    cues, origin = _load_cues(song)
+    text = to_bar_cues(cues, song.timeline())
+    target = Path(args.out) if args.out else song.path("lyrics.bars.md")
+    target.write_text(f"# {song.title}\n\n{text}", encoding="utf-8")
+    _say(f"{song.title}: {origin} -> {target}")
+    _say("   note: cue times were snapped to the nearest beat — this is lossy, "
+         "and is meant for re-timing, not as a round trip")
+    return 0
+
+
+# ── commands: reaper import ──────────────────────────────────────────────
+def cmd_reaper_import(args: argparse.Namespace) -> int:
+    from .gx100 import load_program_map
+    from .reaper import import_into_song, parse_rpp
+
+    project = _project()
+    song = load_song(project.find_song_dir(args.song))
+    text = Path(args.file).read_text(encoding="utf-8", errors="replace")
+    parsed = parse_rpp(text)
+    data, notes = import_into_song(
+        parsed, song, offset=args.offset, program_map=load_program_map(project)
+    )
+
+    _say(f"── {Path(args.file).name} -> {song.album}/{song.slug}")
+    for note in notes:
+        _say(f"   {note}")
+    _say("")
+    _say(f"   would set: bpm {data['bpm']:g}, "
+         f"{data['time_signature'][0]}/{data['time_signature'][1]}, "
+         f"{data['bars']} bars, {len(data['sections'])} sections, "
+         f"{len(data['patch_changes'])} patch changes")
+
+    if not args.write:
+        _say("")
+        _say("   nothing written — re-run with --write to apply this to song.yaml")
+        return 0
+
+    song.bpm = data["bpm"]
+    song.time_signature = data["time_signature"]
+    if data["bars"]:
+        song.bars = data["bars"]
+    if data["sections"]:
+        song.sections = data["sections"]
+    if data["patch_changes"] and not args.keep_patches:
+        song.patch_changes = data["patch_changes"]
+    if data["media"] and not song.source_audio:
+        song.source_audio = data["media"][0]
+    song.status["analyze"] = "done"
+    song.notes = (song.notes + "\n" if song.notes else "") + (
+        f"imported from {Path(args.file).name} "
+        f"(musical zero at {data['offset']:.3f}s in that project)"
+    )
+    song.validate()
+    save_song(song)
+    _say("")
+    _say(f"   written to {song.path('song.yaml')}")
+    _say("   check the section bars against the audio: the marker positions came "
+         "from a project whose musical zero had to be guessed")
+    return 0
+
+
+def _image_cues(song: Song):
+    """Image cues, which only the bar-anchored markdown format can express."""
+    from .video import parse_lyrics
+
+    markdown = song.path("lyrics.md")
+    if not markdown.is_file():
+        return []
+    return [c for c in parse_lyrics(markdown.read_text(encoding="utf-8")) if c.image]
+
+
+def cmd_video_ass(args: argparse.Namespace) -> int:
+    from .lyrics import format_ass
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        try:
+            cues, origin = _load_cues(song)
+        except ProjectError as exc:
+            _say(f"{exc}")
+            continue
         target = song.path("video", f"{song.slug}.ass")
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
-        images = sum(1 for c in cues if c.image)
-        _say(f"{song.title}: {target}  "
-             f"({len(cues)} cues, {images} image cues)")
+        target.write_text(format_ass(cues, title=song.title), encoding="utf-8")
+        _say(f"{song.title}: {origin} -> {target}  ({len(cues)} cues)")
     return 0
 
 
 def cmd_video_render(args: argparse.Namespace) -> int:
+    from .lyrics import format_ass
     from .reaper import project_length_seconds
-    from .video import build_ass, image_segments, parse_lyrics, render_video
+    from .video import image_segments, render_video
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
-        lyrics = song.path(song.lyrics_file)
-        if not lyrics.is_file():
-            _say(f"{song.slug}: no {song.lyrics_file}")
+        try:
+            cues, origin = _load_cues(song)
+        except ProjectError as exc:
+            _say(f"{exc}")
             continue
-        cues = parse_lyrics(lyrics.read_text(encoding="utf-8"))
+
         timeline = song.timeline()
-        duration = project_length_seconds(song)
+        duration = args.duration or max(
+            project_length_seconds(song),
+            (cues[-1].end + 2.0) if cues else 0.0,
+        )
 
         ass_path = song.path("video", f"{song.slug}.ass")
         ass_path.parent.mkdir(parents=True, exist_ok=True)
-        ass_path.write_text(
-            build_ass(cues, timeline, end_seconds=duration, title=song.title),
-            encoding="utf-8",
-        )
+        ass_path.write_text(format_ass(cues, title=song.title), encoding="utf-8")
 
         audio = None
         if args.with_audio:
@@ -538,19 +795,57 @@ def cmd_video_render(args: argparse.Namespace) -> int:
                     audio = candidate
                     break
 
+        images = image_segments(_image_cues(song), timeline, duration)
+        style = {"width": args.width, "height": args.height} if args.width else None
+        _say(f"── {song.title}: {len(cues)} cues from {origin}, "
+             f"{len(images)} image cues, {duration:.1f}s"
+             + (f", audio from {Path(audio).name}" if audio else ", silent"))
         target = song.path("video", f"{song.slug}.mp4")
-        _say(f"── {song.title}: rendering {duration:.1f}s"
-             + (f" with audio from {Path(audio).name}" if audio else " (silent)"))
         render_video(
             target, ass_path,
             duration=duration,
-            images=image_segments(cues, timeline, duration),
+            images=images,
             image_dir=song.dir,
             audio=audio,
+            style=style,
             crf=args.crf,
         )
         _say(f"→ {target}")
         _mark(song, "video")
+    return 0
+
+
+def cmd_video_probe(args: argparse.Namespace) -> int:
+    """Report which software wrote a video file.
+
+    QuickTime and MP4 files carry the encoder in their metadata, so the question
+    "what made this video?" has a definite answer that does not need guessing at
+    filenames. Apple tools write ``com.apple.quicktime.software`` and a handler
+    of ``Core Media Video``; ffmpeg and anything built on it writes
+    ``encoder: Lavf...`` with a ``VideoHandler`` handler; DaVinci Resolve, Adobe
+    and Final Cut each stamp their own name.
+    """
+    from .audio import ffprobe_path, run
+
+    result = run([
+        ffprobe_path(), "-v", "error", "-hide_banner",
+        "-show_entries",
+        "format=format_name,duration,bit_rate:format_tags:stream=index,codec_name,"
+        "codec_type,width,height,r_frame_rate:stream_tags",
+        "-of", "default=noprint_wrappers=0",
+        str(args.file),
+    ])
+    _say(result.stdout.strip() or "(ffprobe returned nothing)")
+    interesting = [
+        line for line in result.stdout.splitlines()
+        if any(key in line.lower() for key in
+               ("encoder", "software", "handler_name", "writing", "creation_time"))
+    ]
+    if interesting:
+        _say("")
+        _say("identifying tags:")
+        for line in interesting:
+            _say(f"   {line.strip()}")
     return 0
 
 
@@ -741,6 +1036,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="leave out the reference stems and mix")
     p.set_defaults(func=cmd_reaper_build)
 
+    p = reaper_sub.add_parser("import", help="read tempo/markers/patches from an existing .RPP")
+    p.add_argument("song")
+    p.add_argument("file")
+    p.add_argument("--offset", type=float, default=None,
+                   help="project time of musical bar 1 (default: first audio item)")
+    p.add_argument("--write", action="store_true", help="apply it to song.yaml")
+    p.add_argument("--keep-patches", action="store_true",
+                   help="do not overwrite existing gx100 changes")
+    p.set_defaults(func=cmd_reaper_import)
+
     p = reaper_sub.add_parser("setlist", help="one project for the whole show")
     p.add_argument("setlist")
     p.add_argument("--gap", type=float, default=4.0, help="seconds between songs")
@@ -776,7 +1081,71 @@ def build_parser() -> argparse.ArgumentParser:
     _add_song_args(p)
     p.add_argument("--with-audio", action="store_true", help="mux the backing track in")
     p.add_argument("--crf", type=int, default=20)
+    p.add_argument("--duration", type=float, default=0.0,
+                   help="override the length in seconds")
+    p.add_argument("--width", type=int, default=0, help="output width (with --height)")
+    p.add_argument("--height", type=int, default=0)
     p.set_defaults(func=cmd_video_render)
+
+    p = video_sub.add_parser("probe", help="report which software wrote a video file")
+    p.add_argument("file")
+    p.set_defaults(func=cmd_video_probe)
+
+    lyrics = sub.add_parser("lyrics", help="timed lyric cues: import, transcribe, export")
+    lyrics_sub = lyrics.add_subparsers(dest="lyrics_command", metavar="<subcommand>")
+
+    p = lyrics_sub.add_parser("import", help="bring an existing .srt/.vtt/.lrc into a song")
+    p.add_argument("song")
+    p.add_argument("file")
+    p.add_argument("--shift", type=float, default=0.0,
+                   help="move every cue by this many seconds on the way in")
+    p.add_argument("--as-srt", action="store_true",
+                   help="store as lyrics.srt even if the input was another format")
+    p.set_defaults(func=cmd_lyrics_import)
+
+    p = lyrics_sub.add_parser("transcribe", help="draft cues from audio with Whisper")
+    _add_song_args(p)
+    p.add_argument("--file", help="transcribe this file instead of stems/vocals.*")
+    p.add_argument("--model", default="medium",
+                   help="whisper model: tiny/base/small/medium/large-v3 (default medium)")
+    p.add_argument("--language", default="it")
+    p.add_argument("--device", default="auto", help="auto, cpu, cuda")
+    p.add_argument("--max-chars", type=int, default=42, help="characters per rendered line")
+    p.add_argument("--prompt", default="",
+                   help="bias the decoder — paste the real words if you have them")
+    p.add_argument("--prompt-file", help="read the bias text from a file")
+    p.add_argument("--output", default="lyrics.draft.srt",
+                   help="where to write the draft (default lyrics.draft.srt, so it "
+                        "cannot clobber a hand-timed lyrics.srt)")
+    p.set_defaults(func=cmd_lyrics_transcribe)
+
+    p = lyrics_sub.add_parser("export", help="write cues out as srt/vtt/lrc/ass/txt")
+    _add_song_args(p)
+    p.add_argument("--format", nargs="+", default=["srt"],
+                   help="one or more of: srt vtt lrc ass txt")
+    p.add_argument("--out", help="explicit output path (single song, single format)")
+    p.add_argument("--offset", type=float, default=0.0, help="shift every cue")
+    p.add_argument("--count-in", action="store_true",
+                   help="shift by the song's count-in, for cues timed to the album master")
+    p.set_defaults(func=cmd_lyrics_export)
+
+    p = lyrics_sub.add_parser("check", help="validate cue timings and line lengths")
+    _add_song_args(p)
+    p.add_argument("--quiet", action="store_true", help="skip songs with no lyrics yet")
+    p.set_defaults(func=cmd_lyrics_check)
+
+    p = lyrics_sub.add_parser("shift", help="move or rescale a song's cues in place")
+    p.add_argument("song")
+    p.add_argument("seconds", type=float, nargs="?", default=0.0)
+    p.add_argument("--from-bpm", type=float, help="rescale from this tempo")
+    p.add_argument("--to-bpm", type=float, help="rescale to this tempo")
+    p.add_argument("--out", help="write here instead of over the source file")
+    p.set_defaults(func=cmd_lyrics_shift)
+
+    p = lyrics_sub.add_parser("bars", help="convert cues to the bar-anchored md format")
+    p.add_argument("song")
+    p.add_argument("--out")
+    p.set_defaults(func=cmd_lyrics_bars)
 
     p = sub.add_parser("setlist", help="show a setlist running order")
     p.add_argument("setlist")

@@ -15,11 +15,23 @@ move together. Anything written in seconds would silently drift out of place.
 
 | | Diversamente Giovani | Tutti in Fila |
 |---|---|---|
-| drums exist as | recorded tracks | only inside the stereo mix |
+| drums exist as | rendered audio (Aerodrums → BFD3) | only inside the stereo mix |
 | `drums.origin` | `recorded` | `extracted` |
-| demucs needed | no | yes |
-| starting point | `rambass drums import` | `rambass stems` + `drums transcribe` |
+| demucs needed | no — an isolated drum stem exists | yes |
+| tempo | **known** from the band's production folders | must be detected |
+| lyric cues | 6 songs hand-timed already | none yet |
+| Reaper projects | 7 already built — import them | none |
+| starting point | `rambass reaper import`, then transcribe the drum stem | `rambass stems` + `drums transcribe` |
 | realistic effort | minutes per song | an hour or two per song |
+
+`songs/diversamente-giovani/existing-work.yaml` is the inventory of what already
+exists for the newer album — tempos, drum stems, BFD3 presets, lyrics documents,
+SRT files, rendered videos, Reaper projects — with the Drive id of each. Read it
+before starting on a Diversamente Giovani song; most of the early steps are
+already done and the job is to import them, not to repeat them.
+
+The end state for **both** albums is the same: every song has a click-locked
+backing track, automatic GX-100 patch changes, and a lyric video running.
 
 ## Per-song sequence
 

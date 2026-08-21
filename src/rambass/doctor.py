@@ -58,6 +58,7 @@ def run_checks() -> list[Check]:
         ("numpy", "all audio maths", "core"),
         ("librosa", "tempo detection and drum transcription", "audio"),
         ("scipy", "librosa's DSP", "audio"),
+        ("faster_whisper", "drafting lyric cues from audio", "lyrics"),
         ("demucs", "separating drums out of a stereo mix", "separate"),
     ):
         present = _module(module)
@@ -103,8 +104,9 @@ def report() -> tuple[str, bool]:
                 core_ok = False
     lines += [
         "",
-        "core commands (list, show, check, quantize, click, reaper, gx100, video ass)",
-        "work with the base install. analyze / transcribe need [audio]; stems needs",
-        "[separate]; rendering video and reading MP3s needs ffmpeg.",
+        "core commands (list, show, check, quantize, click, reaper, gx100, lyrics)",
+        "work with the base install. analyze / drums transcribe need [audio];",
+        "lyrics transcribe needs [lyrics]; stems needs [separate]; rendering video",
+        "and reading MP3s needs ffmpeg.",
     ]
     return "\n".join(lines), core_ok

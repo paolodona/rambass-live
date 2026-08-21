@@ -15,6 +15,14 @@ from the tempo in `song.yaml`. If you add a feature that stores a time in
 seconds in a manifest, you have broken the ability to change a song's tempo, and
 that will not show up until someone changes one.
 
+**The one deliberate exception is lyric cues.** They live in `lyrics.srt`, in
+seconds, because the band's existing hand-timed files are 100+ millisecond-timed
+phrase cues per song authored against a specific master — a performance
+transcription, not a musical anchor. See `docs/lyrics.md`. Do not "fix" this by
+moving them onto bars; `lyrics.shift`/`scale` exist for when the timing base
+moves. Bar-anchored `lyrics.md` still exists for songs written from scratch, and
+`lyrics.from_bar_cues`/`to_bar_cues` bridge the two.
+
 `Timeline` distinguishes two clocks and so must you:
 
 * `bar_beat_to_seconds()` — from the **musical** zero (bar 1 beat 1); the
@@ -36,7 +44,8 @@ Layered so the cheap deterministic parts have no heavy dependencies:
 | `drummap.py` | canonical instrument names → note numbers | pyyaml |
 | `midiio.py` | `Hit`/`DrumPerformance`, MIDI read/write with tempo map | mido |
 | `quantize.py` | de-flam, quantise, humanise, velocities — pure functions | — |
-| `reaper.py` | `.rbs` build-script generation | — |
+| `reaper.py` | `.rbs` build-script generation, **and reading existing `.RPP`** | — |
+| `lyrics.py` | SRT/VTT/LRC/ASS cues, editing, checking, Whisper drafting | — |
 | `gx100.py` | pedalboard MIDI, program map | mido |
 | `video.py` | lyric cue parsing, ASS, ffmpeg render | — |
 | `setlist.py`, `status.py`, `doctor.py` | running orders, progress, diagnostics | — |
@@ -62,8 +71,10 @@ an ImportError traceback.
 * CLI errors: raise `ProjectError` or `AudioError` with a message that says what
   to do next. `cli.main()` turns those into a one-line message and exit code 2;
   anything else becomes a traceback, which is a bug.
-* No `.RPP` writing. Reaper projects are built by the ReaScript from a `.rbs`
-  build script — see `docs/reaper.md` for why.
+* No `.RPP` **writing**. Reaper projects are built by the ReaScript from a `.rbs`
+  build script — see `docs/reaper.md` for why. `.RPP` *reading* is fine and is
+  implemented in `reaper.parse_rpp`, validated against the band's real Reaper
+  6.82 projects (`tests/fixtures/live-project.RPP` mirrors one).
 
 ## Facts that were verified, don't re-guess them
 
@@ -75,10 +86,17 @@ memory**; memories are `U01-1`…`U50-4` then `P01-1`…`P25-4` (300 total); CC#
 #33–63, #64–95 are assign sources; MIDI clock is followed when `SYNC CLOCK` ≠
 `INTERNAL`.
 
-Commercial drum-VST note maps were deliberately **not** shipped, because they
-differ per kit and per articulation and a guessed table is worse than no table.
-`config/drum-maps/_custom-template.yaml` exists for the user to fill from their
-plugin. Don't replace it with invented numbers.
+**BFD3** is the drum plugin used on Diversamente Giovani (Aerodrums captured the
+performance, BFD3 made the sounds), with a different `.bfd3` preset per song.
+`config/drum-maps/bfd3.yaml` is therefore a **stub with blank note numbers** that
+falls back to General MIDI — the real numbers depend on the preset and must be
+read off the plugin. Don't fill it in with invented values; the same goes for
+`_custom-template.yaml`.
+
+Tempos for Diversamente Giovani in `songs/diversamente-giovani/existing-work.yaml`
+came off the band's own production folder names and were cross-checked against
+their lyrics docs. They are better than anything `rambass analyze` would produce
+— don't overwrite them with detected values.
 
 ## Testing
 

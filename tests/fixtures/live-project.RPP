@@ -1,0 +1,114 @@
+REAPER_PROJECT 0.1 "6.82/win64" 1693601693
+  RIPPLE 0
+  GRID 3199 8 0.5 8 1 0 0 0
+  <METRONOME 6 2
+    VOL 0.25 0.125
+    FREQ 800 1600 1
+    BEATLEN 4
+  >
+  TEMPO 90 4 4
+  PLAYRATE 1 0 0.25 4
+  <TEMPOENVEX
+    EGUID {D1B6CCF8-EF15-D440-9E1E-A3D13CAC156D}
+    VIS 1 0 1
+  >
+  MARKER 1 138.666666666666 intro 0 0 1 R {FF44ED75-C566-429B-AD14-1278D46010CB}
+  MARKER 2 226.666666666666 start 0 0 1 R {85CB3EB1-DC81-4E8A-BDA8-E936B05FC6C2}
+  MARKER 4 346.034456883895 vinceremo 0 0 1 R {F338D0EC-77B8-40C9-9235-0DB86661AF4C}
+  MARKER 5 384 "grande rutto" 0 0 1 R {C0C600DB-86AD-453A-9C31-BD88E93F6870}
+  MARKER 3 508 SOLO 0 0 1 R {83FCC058-7136-49FA-86C0-B06082485EF0}
+  MARKER 6 520 "il finale" 1 0 1 R {AAAAAAAA-0000-0000-0000-000000000001}
+  MARKER 6 560 "" 1 0 1 R {AAAAAAAA-0000-0000-0000-000000000001}
+  <TRACK {93B56D13-B9F1-44C1-A727-80DEF00707F7}
+    NAME BASE
+    VOLPAN 1 0 -1 -1 1
+    MIDIOUT -1
+    <ITEM
+      POSITION 135.830860469490
+      LENGTH 92.502472863843
+      NAME "I Phooffi_base_2.wav"
+      SOFFS 0
+      <SOURCE WAVE
+        FILE "I Phooffi_base_2.wav"
+      >
+    >
+    <ITEM
+      POSITION 228.333333333333
+      LENGTH 334.302056699845
+      NAME "I Phooffi_base_2.wav"
+      SOFFS 92.502472863843
+      <SOURCE WAVE
+        FILE "I Phooffi_base_2.wav"
+      >
+    >
+  >
+  <TRACK {97E5DE19-88A4-4091-803F-28CC50F68EED}
+    NAME "Program change"
+    MIDIOUT 384
+    <FXCHAIN
+      <VST "VST: ReaControlMIDI (Cockos)" reacontrolmidi.dll 0 "" 1919118692
+        ZG1jcu5e7f4AAAAAAAAAAOoAAAABAAAAAAAQAA==
+      >
+    >
+    <ITEM
+      POSITION 0
+      LENGTH 2.66666666666667
+      NAME "02-Program change-MIDI"
+      <SOURCE MIDI
+        HASDATA 1 960 QN
+        e 0 b0 00 00
+        e 0 b0 20 00
+        e 0 c0 01 00
+        E 3840 b0 7b 00
+      >
+    >
+    <ITEM
+      POSITION 349.333333333333
+      LENGTH 2.66666666666666
+      NAME "02-Program change-MIDI"
+      <SOURCE MIDI
+        HASDATA 1 960 QN
+        e 1920 b0 00 00
+        e 0 b0 20 00
+        e 0 c0 00 00
+        E 1920 b0 7b 00
+      >
+    >
+    <ITEM
+      POSITION 508.333333333333
+      LENGTH 2.66666666666669
+      NAME "02-Program change-MIDI"
+      <SOURCE MIDI
+        HASDATA 1 960 QN
+        e 1440 b0 00 00
+        e 0 b0 20 00
+        e 0 c0 02 00
+        E 2400 b0 7b 00
+      >
+    >
+  >
+  <TRACK {DE30E1B3-CEAD-7640-AB14-6BEA561315DF}
+    NAME Cover
+    MIDIOUT -1
+    <ITEM
+      POSITION 0
+      LENGTH 169
+      NAME "XX Poohffi 2 - titled.png"
+      <SOURCE VIDEO
+        FILE "XX Poohffi 2 - titled.png"
+      >
+    >
+  >
+  <TRACK {D317A879-4199-455D-813C-26D95661C47D}
+    NAME "Video - NO AUDIO"
+    MIDIOUT -1
+    <ITEM
+      POSITION 135.745217723635
+      LENGTH 439.172066600000
+      NAME "Ramba I poohffi Polpet One 480p - NO AUDIO.mov"
+      <SOURCE VIDEO
+        FILE "Ramba I poohffi Polpet One 480p - NO AUDIO.mov"
+      >
+    >
+  >
+>

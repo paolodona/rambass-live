@@ -5,7 +5,7 @@ track: 4
 key: ''
 bars: 0
 tempo:
-  bpm: 120.0
+  bpm: 116.0
   time_signature: 4/4
 count_in:
   bars: 2
@@ -14,8 +14,8 @@ click:
   accent_downbeat: true
 drums:
   origin: recorded
-  kit: ''
-  map: general-midi
+  kit: BFD3 BambolinaFace3.bfd3
+  map: bfd3
 source:
   audio: 04_Bambolina_MST1.wav
   url: https://drive.google.com/file/d/1gkm7gPJESB94C9lyykCWOVML4AgWei4p/view
@@ -35,7 +35,7 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
   drums_midi: todo
   quantize: todo
@@ -45,3 +45,4 @@ status:
   gx100: todo
   rehearsed: todo
 notes: ''
+drum_stem_source: TanoDrums/

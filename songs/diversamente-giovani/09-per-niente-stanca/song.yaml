@@ -5,7 +5,7 @@ track: 9
 key: ''
 bars: 0
 tempo:
-  bpm: 120.0
+  bpm: 136.0
   time_signature: 4/4
 count_in:
   bars: 2
@@ -14,8 +14,8 @@ click:
   accent_downbeat: true
 drums:
   origin: recorded
-  kit: ''
-  map: general-midi
+  kit: BFD3 xNienteStanca.bfd3
+  map: bfd3
 source:
   audio: 09_PerNienteStanca_MST1.wav
   url: https://drive.google.com/file/d/1Xmzp9OEh_6HARWrlY4lQKKcZnrbMnNsT/view
@@ -35,7 +35,7 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
   drums_midi: todo
   quantize: todo
@@ -45,3 +45,5 @@ status:
   gx100: todo
   rehearsed: todo
 notes: ''
+lyrics_doc: https://docs.google.com/document/d/1fe-ds10Fp0h0Ts0Puhwcn6HF-NHdep7_2HZII4vGMiM/edit
+drum_stem_source: drums/

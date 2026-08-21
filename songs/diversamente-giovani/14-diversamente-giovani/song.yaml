@@ -5,7 +5,7 @@ track: 14
 key: ''
 bars: 0
 tempo:
-  bpm: 120.0
+  bpm: 100.0
   time_signature: 4/4
 count_in:
   bars: 2
@@ -14,8 +14,8 @@ click:
   accent_downbeat: true
 drums:
   origin: recorded
-  kit: ''
-  map: general-midi
+  kit: BFD3 DG.bfd3
+  map: bfd3
 source:
   audio: 14_Diversamente Giovani_MST1.wav
   url: https://drive.google.com/file/d/1nx0t_LnDTLkUFKt1XIkI0u3OpfmX4WA4/view
@@ -35,7 +35,7 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
   drums_midi: todo
   quantize: todo
@@ -45,3 +45,6 @@ status:
   gx100: todo
   rehearsed: todo
 notes: ''
+srt_source: https://drive.google.com/file/d/1s14BYi2nEloKBs9WpLv8pYWWYoWzZAQh/view
+lyrics_doc: https://docs.google.com/document/d/1kXAYyPxCwoC4nzkbVdKPrH3w4eHua82n6mWIVbv8n7k/edit
+drum_stem_source: dg_drums.mp3

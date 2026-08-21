@@ -5,7 +5,7 @@ track: 5
 key: ''
 bars: 0
 tempo:
-  bpm: 120.0
+  bpm: 110.0
   time_signature: 4/4
 count_in:
   bars: 2
@@ -14,8 +14,8 @@ click:
   accent_downbeat: true
 drums:
   origin: recorded
-  kit: ''
-  map: general-midi
+  kit: BFD3 ittu2piatti.bfd3
+  map: bfd3
 source:
   audio: 05_Itturfiatrugoy_MST1.wav
   url: https://drive.google.com/file/d/1PlAzAPOxT_CV70e1CT2szYBgUm8rptk2/view
@@ -35,7 +35,7 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
   drums_midi: todo
   quantize: todo
@@ -45,3 +45,5 @@ status:
   gx100: todo
   rehearsed: todo
 notes: ''
+srt_source: https://drive.google.com/file/d/1PDhrF5BW4KmsUCUQgWrAlxx9-DDmV4au/view
+drum_stem_source: drums/

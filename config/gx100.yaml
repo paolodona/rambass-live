@@ -22,9 +22,18 @@ channel: 1
 # real mapping under `assignments` below.
 sequential_default: true
 
-assignments: []
-  # - {bank: 0, pc: 0, memory: U01-1, note: "clean — verses"}
-  # - {bank: 0, pc: 1, memory: U01-2, note: "crunch — choruses"}
+# The four patches the band actually uses, from Sounds/Settings.docx in the
+# album Drive folder. The 2023 live Reaper projects send bank 0 with program
+# changes 0, 1 and 2 only, which lines up with the first three of these.
+#
+# The memory names below are the sequential-default guess for PC 0-3. Confirm
+# against the pedal (and against Sounds/"2023-08-04 GX-100.alb", which is the
+# pedal backup) before relying on them.
+assignments:
+  - {bank: 0, pc: 0, memory: U01-1, note: "Clean Acustic"}
+  - {bank: 0, pc: 1, memory: U01-2, note: "Lead"}
+  - {bank: 0, pc: 2, memory: U01-3, note: "WAH"}
+  - {bank: 0, pc: 3, memory: U01-4, note: "Clean Clean"}
 
 # Reference, from the official MIDI implementation (ver 1.10):
 #   bank select   CC#0 = 0..2, then CC#32 = 0

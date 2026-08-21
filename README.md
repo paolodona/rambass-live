@@ -39,9 +39,17 @@ and rendering video needs `ffmpeg` on PATH. See [docs/setup.md](docs/setup.md).
 
 | | Diversamente Giovani | Tutti in Fila |
 |---|---|---|
-| drums exist as | recorded tracks | only inside the stereo mix |
-| route in | `rambass drums import` | `stems` → `drums transcribe` |
+| drums exist as | rendered audio stems (Aerodrums → BFD3) | only inside the stereo mix |
+| route in | transcribe the isolated drum stem | `stems` → `drums transcribe` |
 | demucs needed | no | yes |
+| tempos | **known** — off the band's production folders | must be detected |
+| lyric cues | 6 songs hand-timed already | none yet |
+| Reaper projects | 8 songs already built (importable) | none |
+
+The two albums are at very different starting points, and
+`songs/diversamente-giovani/existing-work.yaml` records exactly what already
+exists for the newer one — tempos, drum stems, BFD3 presets, lyrics documents,
+SRT files and rendered videos — so none of it gets rebuilt by accident.
 
 ## How it fits together
 
@@ -89,7 +97,8 @@ work and those are tracked.
 | [drums.md](docs/drums.md) | what the transcriber does well and badly; cleanup settings |
 | [reaper.md](docs/reaper.md) | building projects, where bar 1 is, live transport |
 | [gx100.md](docs/gx100.md) | GX-100 MIDI, the program-map gotcha, tempo sync |
-| [video.md](docs/video.md) | lyric cue format, rendering, what reads from the back of the room |
+| [lyrics.md](docs/lyrics.md) | the SRT cue format, house style, drafting the missing songs |
+| [video.md](docs/video.md) | image cues, rendering, what reads from the back of the room |
 | [live-runbook.md](docs/live-runbook.md) | gig-day checklist, and what to do when the laptop dies |
 
 ## Honest limits

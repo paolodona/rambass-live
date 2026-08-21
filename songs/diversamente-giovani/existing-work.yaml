@@ -1,0 +1,66 @@
+# What already exists for this album, and where.
+#
+# Diversamente Giovani starts from a very different place than Tutti in Fila:
+# the drums were played and recorded (Aerodrums capture -> BFD3 sounds), the
+# production tempos are known, six songs already have hand-timed lyric SRTs and
+# rendered lyric videos, and eight songs already have live Reaper projects.
+#
+# None of that should be redone. This file records where it is so it can be
+# imported. Nothing here is read by the tools automatically — it is the map.
+
+drive:
+  album_masters: https://drive.google.com/drive/folders/1Ceu5N9WGc0YJx_3skEkjLmOvUEAgkHDg
+  recording_backup: https://drive.google.com/drive/folders/1tKkhr_ZVsFLhauc1CtBtJe9UKgYjT9a_
+  live_projects: https://drive.google.com/drive/folders/1388pvUqImDKuc7dIlcMbC3DOHb1XZZOd
+  srt: https://drive.google.com/drive/folders/176c6CfpIgiVpczAgdXKeCWdZKneKFxFr
+  lyrics_videos: https://drive.google.com/drive/folders/17VMV2fu9A8U31WR-UjkexWBXB9UEzfLM
+  video_exports: https://drive.google.com/drive/folders/11i8-7cuh3qscR5H4-SUCK-xZHzyepFB-
+  production_folders: https://drive.google.com/drive/folders/1o4l80TevAg1prPloA1bBjI8oG1DLHRmM
+  bfd3_presets: https://drive.google.com/drive/folders/1Uc2lc1lFkhBuvQHxl12QFHgNhYPQr3k0
+
+# The drum chain, which decides how the drums get rebuilt.
+drums:
+  capture: Aerodrums          # .aer session files sit next to the drum stems
+  sounds: BFD3                # one .bfd3 preset per song, see bfd3_presets above
+  note: |
+    The drums were not played on an acoustic kit and are not MIDI in the album
+    project either — they were rendered to audio per song. Two consequences:
+      * an isolated drum stem exists for most songs, so `rambass drums
+        transcribe` runs on a clean signal instead of a demucs separation, and
+        will be far more accurate than for Tutti in Fila;
+      * the .aer files may still hold the original performance data. If
+        Aerodrums can export MIDI from them, that beats transcribing audio —
+        check before spending time on transcription.
+
+# Tempos are read off the production folder names in xIlTerzoMondo, which the
+# band used while mixing, and cross-check against the lyrics docs (the
+# "4 My Grana" doc independently says 112 bpm). Treat these as authoritative:
+# the `analyze` step is already done for this album.
+tracks:
+  - {track: 2,  slug: formaygrana,          bpm: 112, production_order: 4,  bfd3: "4myGrana2.bfd3", lyrics_doc: 1RdJ84DamiA4OygDeADW-jpgSV4VsPWOwkTNNHtujfrI, srt: 17XYZAbZ0wavsT6qCMa-gN6IBsmGLT7Ta, drum_stem: "4MG_drum_complete.wav", aerodrums: "4MG_3.aer", drum_score: "for_my_grana.pdf"}
+  - {track: 3,  slug: mother-sacher,        bpm: 120, production_order: 2,  bfd3: "MotherSacher.bfd3", lyrics_doc: 1-J8N2CHvQDWW4Mgg2JCVs838chXL-6SZaEX8Akuf9Zs, srt: 1qYklBlpAROqU5cVKJ1X1SqKUs3hnJpeH, drum_stem: "Tano_drums/"}
+  - {track: 4,  slug: bambolina,            bpm: 116, production_order: 1,  bfd3: "BambolinaFace3.bfd3", drum_stem: "TanoDrums/"}
+  - {track: 5,  slug: itturfiatrugoy,       bpm: 110, production_order: 8,  bfd3: "ittu2piatti.bfd3", srt: 1PDhrF5BW4KmsUCUQgWrAlxx9-DDmV4au, drum_stem: "drums/"}
+  - {track: 6,  slug: il-phurgone,          bpm: 120, production_order: 3,  bfd3: "phurgone.bfd3", lyrics_doc: 1lW3o4F3Khy3QIPY8MjwdF-O3dFtojplKqFTLQTyzgjo, srt: 1AigHJKY_hJ1d8sK_vpEufBzYNlEPsxrR, drum_stem: "drums/"}
+  - {track: 7,  slug: orologiaio,           bpm: 240, production_order: 5,  bfd3: "orologiao.bfd3", lyrics_doc: 1lbclHcy94sZRF31G3fS0DKq_6ZMQyIIMKXv8v5KJCKc, drum_stem: "tano_drums/", note: "240 bpm as named — check whether that is really 120 counted double-time"}
+  - {track: 8,  slug: il-cellulare,         bpm: 90,  production_order: 6,  bfd3: "ilCellulareOK.bfd3", lyrics_doc: 1u2u7ewsMILx6GxlH-toFmxBg4rK-MLV_nkQ56AuYWqc}
+  - {track: 9,  slug: per-niente-stanca,    bpm: 136, production_order: 7,  bfd3: "xNienteStanca.bfd3", lyrics_doc: 1fe-ds10Fp0h0Ts0Puhwcn6HF-NHdep7_2HZII4vGMiM, drum_stem: "drums/"}
+  - {track: 10, slug: superman,             bpm: 115, production_order: 12, bfd3: "superman.bfd3", lyrics_doc: 1b9a_yH0E6r-Csya6JHRcjU273akD9d9SbYHvLqwaJIk}
+  - {track: 11, slug: se-sei-felice,        bpm: 120, production_order: 0,  note: "listed as 'Bonus' in the production folders"}
+  - {track: 12, slug: mandami-un-faxe,      bpm: 108, production_order: 9,  lyrics_doc: 1PoJnWPoM5SNHcC-9JHF4kVeaQ5E7UFzfDj0yPYhfXHQ}
+  - {track: 13, slug: la-ragazza-da-milano, bpm: 120, production_order: 11, bfd3: "Ragazza.bfd3", lyrics_doc: 1L8PyrXyHMqLIvNL4Xo36D_fd0D4nOtohoC-ReuFc47I, srt: 1sAeC-FqrjrwFGXtApnzNJAyMY2IbJAAG, drum_stem: "Drums_rag__ch51_Master.wav"}
+  - {track: 14, slug: diversamente-giovani, bpm: 100, production_order: 10, bfd3: "DG.bfd3", lyrics_doc: 1kXAYyPxCwoC4nzkbVdKPrH3w4eHua82n6mWIVbv8n7k, srt: 1s14BYi2nEloKBs9WpLv8pYWWYoWzZAQh, drum_stem: "dg_drums.mp3"}
+
+# Tracks 1 (INTRO) and 15 (OUTRO) have no production folder and no lyrics doc of
+# their own — the "Intermezzi / Sketches" doc
+# (16E53Nlkf0-iXjMQ1BOuT8r2hlmB6wuXB3Zum7v_Ydhc) covers the linking material.
+
+# Lyric videos that already exist, per song, in two forms:
+#   "<n> ... Lyrics ORIGINAL.mp4"        the full-resolution render
+#   "<n> ... Lyrics NO SOUND 480p.mov"   the silent 480p version used live
+# plus YouTube exports at 640x480 / 1920x1080 and .mov at 480p / 720p / 1080p.
+#
+# Songs with a finished lyric video: ForMayGrana, Mother Sacher, Itturfiatrugoy,
+# Il Phurgone, La Ragazza da Milano, Diversamente Giovani — and I Poohffi from
+# Tutti in Fila. Prefer the ORIGINAL or 1080p versions for a projector; the 480p
+# .mov files are downscales made for the live rig.
