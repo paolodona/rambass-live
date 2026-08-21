@@ -16,7 +16,7 @@ from rambass.gx100 import (
     resolve_patch_changes,
     write_patch_midi,
 )
-from rambass.manifest import PatchChange, save_song
+from rambass.manifest import PatchChange, load_song, save_song
 from rambass.project import ProjectError
 from rambass.reaper import build_setlist_script, build_song_script, project_length_seconds
 
@@ -259,3 +259,124 @@ def test_describe_surfaces_the_notes_and_the_backing_track(song):
     assert "Missing the count-in" in text
     assert "Il Phurgone_Mix_2 BASE.wav" in text
     assert "not on disk yet" in text
+
+
+# ── assembling the whole show ────────────────────────────────────────────
+def _stub_artifacts(song, *, backing=True, sticks=True, click=True,
+                    gx100=True, video=True):
+    """Create the files the show project looks for."""
+    if backing:
+        song.backing_track = "base.wav"
+        (song.dir / "render" / "base.wav").write_bytes(b"RIFF")
+    if sticks:
+        (song.dir / "render" / "sticks.wav").write_bytes(b"RIFF")
+    if click:
+        (song.dir / "render" / "click.wav").write_bytes(b"RIFF")
+    if gx100:
+        (song.dir / "midi").mkdir(exist_ok=True)
+        (song.dir / "midi" / "gx100.mid").write_bytes(b"MThd")
+    if video:
+        (song.dir / "video").mkdir(exist_ok=True)
+        (song.dir / "video" / f"{song.slug}.mp4").write_bytes(b"\x00")
+
+
+def test_song_artifacts_reports_only_what_exists(song):
+    from rambass.reaper import song_artifacts
+
+    assert song_artifacts(song) == {}
+    _stub_artifacts(song, video=False)
+    found = song_artifacts(song)
+    assert set(found) == {"backing", "sticks", "click", "gx100"}
+
+
+def test_the_show_places_every_per_song_artifact_in_its_region(song):
+    """The whole point of the show project — a region has to carry everything."""
+    _stub_artifacts(song)
+    script = build_setlist_script([song], measure=lambda p: 100.0)
+
+    items = {r[1]: float(r[3]) for r in _records(script, "ITEM")}
+    midi = {r[1]: float(r[3]) for r in _records(script, "MIDI")}
+    # count-in at the region start, everything musical after it
+    assert items["STICKS"] == pytest.approx(0.0)
+    assert items["BACKING"] == pytest.approx(4.0)
+    assert items["CLICK"] == pytest.approx(4.0)
+    assert midi["GX-100 MIDI"] == pytest.approx(4.0)
+    # the video starts with the region so its title card covers the count-in
+    assert items["VIDEO"] == pytest.approx(0.0)
+
+
+def test_the_show_mutes_the_click_and_not_the_sticks(song):
+    script = build_setlist_script([song], measure=lambda p: 100.0)
+    muted = {r[1] for r in _records(script, "MUTE")}
+    assert muted == {"CLICK"}
+
+
+def test_region_length_uses_the_real_audio_when_it_can(song):
+    from rambass.reaper import plan_show
+
+    _stub_artifacts(song)
+    slot = plan_show([song], measure=lambda p: 200.0)[0]
+    assert slot.measured is True
+    assert slot.length == pytest.approx(4.0 + 200.0)   # count-in plus the audio
+
+
+def test_region_length_falls_back_to_bars_and_says_so(song):
+    from rambass.reaper import plan_show
+
+    _stub_artifacts(song)
+    slot = plan_show([song], measure=lambda p: None)[0]
+    assert slot.measured is False
+    script = build_setlist_script([song], measure=lambda p: None)
+    assert any("length is a guess" in r[1] for r in _records(script, "NOTE"))
+
+
+def test_a_song_with_nothing_built_still_gets_a_region(song):
+    """The order has to stay visible while the songs are still being made."""
+    script = build_setlist_script([song], measure=lambda p: None)
+    regions = _records(script, "REGION")
+    assert len(regions) == 1
+    assert any("still missing" in r[1] for r in _records(script, "NOTE"))
+
+
+def test_missing_lists_what_a_song_still_needs(song):
+    from rambass.reaper import plan_show
+
+    _stub_artifacts(song, gx100=False, sticks=False)
+    assert set(plan_show([song])[0].missing) == {"sticks", "gx100"}
+
+
+def test_songs_are_laid_out_end_to_end_with_a_gap(song):
+    from rambass.reaper import plan_show
+
+    _stub_artifacts(song)
+    slots = plan_show([song, song], gap_seconds=5.0, measure=lambda p: 60.0)
+    assert slots[0].start == pytest.approx(0.0)
+    assert slots[1].start == pytest.approx(slots[0].length + 5.0)
+
+
+def test_reordering_changes_only_the_show_script(song, project):
+    """Reordering must cost a rebuild, not per-song work."""
+    from rambass.manifest import save_song
+
+    other = project.songs_dir / "tutti-in-fila" / "04-altra"
+    second = load_song(song.dir)
+    second.slug, second.title, second.track = "altra", "Altra", 4
+    save_song(second, other)
+    second = load_song(other)
+    _stub_artifacts(song)
+    _stub_artifacts(second)
+
+    forward = build_setlist_script([song, second], measure=lambda p: 60.0)
+    reversed_ = build_setlist_script([second, song], measure=lambda p: 60.0)
+
+    names = lambda s: [r[3] for r in s.records if r[0] == "REGION"]  # noqa: E731
+    assert names(forward) != names(reversed_)
+    assert [n.split(" ", 1)[1] for n in names(forward)] == ["Tutti In Fila", "Altra"]
+    assert [n.split(" ", 1)[1] for n in names(reversed_)] == ["Altra", "Tutti In Fila"]
+
+
+def test_video_can_be_left_out(song):
+    _stub_artifacts(song)
+    script = build_setlist_script([song], include_video=False, measure=lambda p: 60.0)
+    assert "VIDEO" not in {r[1] for r in _records(script, "TRACK")}
+    assert "VIDEO" not in {r[1] for r in _records(script, "ITEM")}

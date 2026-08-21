@@ -197,20 +197,127 @@ def _tempo_bars(song: Song) -> list[int]:
     return sorted(bars)
 
 
+#: The show project's tracks. Same discipline as a single-song project: the
+#: count-in is its own track and may reach the PA, the click is its own track and
+#: is muted, and nothing has a plugin on it.
+SHOW_TRACKS: tuple[TrackSpec, ...] = (
+    TrackSpec("STICKS", -3.0, 0.0, (250, 210, 120), role="sticks"),
+    TrackSpec("BACKING", 0.0, 0.0, (120, 200, 160), role="backing"),
+    TrackSpec("CLICK", -6.0, 0.0, (250, 190, 60), role="click", muted=True),
+    TrackSpec("GX-100 MIDI", 0.0, 0.0, (180, 250, 140), role="gx100"),
+    TrackSpec("VIDEO", 0.0, 0.0, (200, 160, 240), role="video"),
+)
+
+
+@dataclass
+class ShowSlot:
+    """One song's place in the assembled show."""
+
+    song: Song
+    index: int
+    start: float
+    length: float
+    #: True when the length came from the rendered audio rather than a bar guess.
+    measured: bool
+    #: Which artifacts were found. A song missing its backing track still gets a
+    #: region, so the running order stays visible while it is being built.
+    found: dict[str, Path] = field(default_factory=dict)
+
+    @property
+    def missing(self) -> list[str]:
+        return [name for name in ("backing", "sticks", "gx100") if name not in self.found]
+
+
+def song_artifacts(song: Song) -> dict[str, Path]:
+    """The finished per-song files the show project needs, if they exist yet.
+
+    This is the contract between per-song work and the show: a song is "done"
+    when these exist. Nothing about the show project reaches back into a song's
+    own session.
+    """
+    candidates = {
+        "backing": song.backing_track_path(),
+        "sticks": song.path("render", "sticks.wav"),
+        "click": song.path("render", "click.wav"),
+        "gx100": song.path("midi", "gx100.mid"),
+        "video": song.path("video", f"{song.slug}.mp4"),
+    }
+    return {
+        name: path for name, path in candidates.items()
+        if path is not None and Path(path).exists()
+    }
+
+
+def _measured_duration(path: Path) -> float | None:
+    """Real length of a rendered file, or None if ffmpeg is not available."""
+    from .audio import AudioError, duration_seconds
+
+    try:
+        return duration_seconds(path)
+    except (AudioError, OSError):
+        return None
+
+
+def plan_show(
+    songs: list[Song],
+    *,
+    gap_seconds: float = 4.0,
+    measure=_measured_duration,
+) -> list[ShowSlot]:
+    """Work out where each song sits on the show timeline.
+
+    A song's slot is its count-in plus the real length of its rendered backing
+    track. Falling back to the bar count is only a placeholder: `bars` is a guess
+    until a song has been analysed, and a set built on guessed lengths has
+    regions that do not match the audio in them.
+    """
+    slots: list[ShowSlot] = []
+    cursor = 0.0
+    for index, song in enumerate(songs, start=1):
+        found = song_artifacts(song)
+        timeline = song.timeline()
+        count_in = timeline.count_in_seconds
+
+        length = None
+        if "backing" in found and measure is not None:
+            audio = measure(found["backing"])
+            if audio:
+                length = count_in + audio
+        measured = length is not None
+        if length is None:
+            length = count_in + timeline.bar_beat_to_seconds(song.total_bars() + 1, 1.0)
+
+        slots.append(ShowSlot(
+            song=song, index=index, start=cursor, length=length,
+            measured=measured, found=found,
+        ))
+        cursor += length + gap_seconds
+    return slots
+
+
 def build_setlist_script(
     songs: list[Song],
     *,
     gap_seconds: float = 4.0,
-    renders: dict[str, Path] | None = None,
+    include_video: bool = True,
+    measure=_measured_duration,
 ) -> BuildScript:
     """One Reaper project containing the whole show, back to back.
 
-    Each song becomes a region, so the show can be driven from the region
-    playlist and a single footswitch. The rendered backing track for each song is
-    placed on one track if it exists; otherwise the region is left empty as a
-    placeholder so the running order is still visible.
+    Each song becomes a region so the show can be driven from a single
+    footswitch, and each region carries everything that song needs: the
+    drumstick count-in at the region start, the backing track after it, the
+    pedalboard MIDI, and the lyric video.
+
+    **Nothing here is a plugin.** This project only streams finished files and
+    fires MIDI, which is what makes it safe to run live — see
+    docs/live-playback.md. The per-song sessions are where the plugins live.
+
+    A song whose backing track does not exist yet still gets a region, so the
+    running order is visible and the project can be rebuilt at any point during
+    production rather than only at the end.
     """
-    renders = renders or {}
+    slots = plan_show(songs, gap_seconds=gap_seconds, measure=measure)
     script = BuildScript()
     first = songs[0] if songs else None
     script.add(
@@ -218,25 +325,50 @@ def build_setlist_script(
         first.bpm if first else 120.0,
         *(first.time_signature if first else (4, 4)),
     )
-    script.add("TRACK", "STICKS", -3.0, 0.0, "250,210,120")
-    script.add("TRACK", "BACKING", 0.0, 0.0, "120,200,160")
-    script.add("TRACK", "CLICK", -6.0, 0.0, "250,190,60")
-    script.add("MUTE", "CLICK", 1)
-    script.add("TRACK", "GX-100 MIDI", 0.0, 0.0, "180,250,140")
 
-    cursor = 0.0
-    for index, song in enumerate(songs, start=1):
-        timeline = song.timeline()
-        length = timeline.count_in_seconds + timeline.bar_beat_to_seconds(
-            song.total_bars() + 1, 1.0
+    for track in SHOW_TRACKS:
+        if track.role == "video" and not include_video:
+            continue
+        script.add(
+            "TRACK", track.name, track.volume_db, track.pan,
+            ",".join(str(c) for c in track.color),
         )
-        script.add("TEMPO", cursor, song.bpm, *song.time_signature)
-        render = renders.get(song.slug)
-        if render and Path(render).exists():
-            script.add("ITEM", "BACKING", str(Path(render).resolve()), cursor)
-        script.add("REGION", cursor, cursor + length, f"{index:02d} {song.title}")
-        script.add("MARKER", cursor, f"{index:02d} {song.title} ({song.bpm:g} BPM)")
-        cursor += length + gap_seconds
+        if track.muted:
+            script.add("MUTE", track.name, 1)
+
+    for slot in slots:
+        song = slot.song
+        timeline = song.timeline()
+        count_in = timeline.count_in_seconds
+        # Each song keeps its own tempo, so the grid in the arrange view is right
+        # for whichever song you are looking at.
+        script.add("TEMPO", slot.start, song.bpm, *song.time_signature)
+
+        found = slot.found
+        if "sticks" in found:
+            script.add("ITEM", "STICKS", str(found["sticks"].resolve()), slot.start)
+        if "backing" in found:
+            script.add("ITEM", "BACKING", str(found["backing"].resolve()),
+                       slot.start + count_in)
+        if "click" in found:
+            script.add("ITEM", "CLICK", str(found["click"].resolve()),
+                       slot.start + count_in)
+        if "gx100" in found:
+            script.add("MIDI", "GX-100 MIDI", str(found["gx100"].resolve()),
+                       slot.start + count_in)
+        if include_video and "video" in found:
+            # The video starts at the region start so its title card is on screen
+            # through the count-in, which is when the audience is watching.
+            script.add("ITEM", "VIDEO", str(found["video"].resolve()), slot.start)
+
+        label = f"{slot.index:02d} {song.title}"
+        script.add("REGION", slot.start, slot.start + slot.length, label)
+        script.add("MARKER", slot.start, f"{label} ({song.bpm:g} BPM)")
+        if slot.missing:
+            script.add("NOTE", f"{label}: still missing {', '.join(slot.missing)}")
+        elif not slot.measured:
+            script.add("NOTE", f"{label}: region length is a guess from bars")
+
     return script
 
 

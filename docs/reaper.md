@@ -83,8 +83,10 @@ files so they can be muted independently.
 
 ## Whole-show project
 
-See [live-playback.md](live-playback.md) for why this — rather than one project
-per song — is the recommended way to run the gig, and for the anti-stutter
+Per-song projects are for *making* the songs; this one is for *playing* them, and
+the two never mix — see
+[live-playback.md](live-playback.md#two-kinds-of-reaper-session-and-the-line-between-them)
+for the split, the five files each song must produce, and the anti-stutter
 checklist.
 
 ```

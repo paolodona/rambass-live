@@ -5,6 +5,79 @@ video runs, the GX-100 changes patch, and the band gets a count-in. The guitaris
 runs all of it while playing. So the design goal is not features — it is **the
 fewest possible actions per song, and nothing computed in real time.**
 
+## Two kinds of Reaper session, and the line between them
+
+You will work in **per-song sessions** the whole way through production, and
+assemble the **one show session** at the end. That is not a compromise — it is
+the only arrangement that works, for a reason that falls straight out of the
+anti-stutter argument below:
+
+> The show session must contain **no plugins at all**. The per-song sessions are
+> where every plugin lives — the drum instrument, the mix. So they cannot be the
+> same session, and the boundary between them is the rendered file.
+
+| | per-song session | show session |
+|---|---|---|
+| built by | `rambass reaper build <song>` | `rambass reaper setlist gig` |
+| lives in | the song's own folder | `reaper/build/` → save where you like |
+| contains | drum MIDI, drum VST, demucs stems, the original mix, section markers | finished files only, one region per song |
+| plugins | as many as the song needs | **none** |
+| you open it | constantly, while making the song | at rehearsals and at the gig |
+| output | `render/<slug>.wav`, `sticks.wav`, `click.wav`, `gx100.mid`, the video | the show |
+
+### The contract between them
+
+A song is finished when these exist. Nothing in the show session ever reaches
+back into a song's own session:
+
+```
+songs/<album>/<slug>/
+  render/<slug>.wav     the backing track — no click, no count-in
+  render/sticks.wav     the drumstick count-in
+  render/click.wav      the rehearsal click
+  midi/gx100.mid        the patch changes
+  video/<slug>.mp4      the lyric video
+```
+
+`rambass reaper setlist gig` places all five per song, at the right offsets: the
+count-in at the region start, everything musical after it, and the video from the
+region start so its title card is on screen through the count-in.
+
+### The order can change whenever you like
+
+This is the part worth being explicit about, because it is what makes the whole
+arrangement safe: **the running order is not baked into any per-song work.** It
+exists in exactly one place, `setlists/gig.yaml`, as a list of references.
+
+Reorder the list, re-run `rambass reaper setlist gig`, and the regions move.
+Nothing in any song folder is touched — not a render, not a lyric file, not a
+patch change. Verified: swapping two songs changes only the region and marker
+lines of the generated show script, and zero per-song files.
+
+So reorder as late as you like, including after every song is finished. The only
+thing that costs anything is re-rendering a *song*, because its lyric video and
+patch-change timings are tied to that render — which is why Gate A in
+[plan.md](plan.md) says to freeze the filename.
+
+### Build the show early and often
+
+Do not wait for the last song. `rambass reaper setlist gig` works at any point:
+a song with nothing built yet still gets an empty region, so the running order
+stays visible and the assembly step is proven long before it matters. It also
+reports what each song is still missing, and whether a region's length came from
+real audio or from a guessed bar count:
+
+```
+  #  song                              start    length  from      needs
+  1  INTRO                              0:00      0:22  bars?     backing, sticks, gx100
+  2  ForMayGrana                        0:26      0:24  bars?     backing, sticks, gx100
+
+0/23 songs have everything the show needs
+```
+
+A region sized from a guessed bar count will not match the audio you eventually
+put in it, so that warning matters — it clears as soon as the renders exist.
+
 ## Recommendation: one Reaper session for the whole set
 
 The 2023 approach was one project per song, and the problem you hit — loading a

@@ -62,6 +62,11 @@ def _say(message: str = "") -> None:
     print(message)
 
 
+def _mmss(seconds: float) -> str:
+    minutes, secs = divmod(int(round(seconds)), 60)
+    return f"{minutes}:{secs:02d}"
+
+
 # ── commands: inventory ──────────────────────────────────────────────────
 def cmd_doctor(args: argparse.Namespace) -> int:
     from .doctor import report
@@ -469,22 +474,41 @@ def cmd_reaper_build(args: argparse.Namespace) -> int:
 
 
 def cmd_reaper_setlist(args: argparse.Namespace) -> int:
-    from .reaper import build_setlist_script
+    """Assemble the whole show into one Reaper project."""
+    from .reaper import build_setlist_script, plan_show
     from .setlist import Setlist, find_setlist
 
     project = _project()
     setlist = Setlist.load(find_setlist(project, args.setlist))
     songs = setlist.resolve(project)
-    renders = {}
-    for song in songs:
-        candidate = song.path("render", f"{song.slug}.wav")
-        if candidate.exists():
-            renders[song.slug] = candidate
-    script = build_setlist_script(songs, gap_seconds=args.gap, renders=renders)
+    slots = plan_show(songs, gap_seconds=args.gap)
+
+    _say(f"{setlist.name} — {len(songs)} songs")
+    _say()
+    _say(f"{'#':>3}  {'song':<30} {'start':>8}  {'length':>8}  from      needs")
+    _say("-" * 92)
+    for slot in slots:
+        source = "audio" if slot.measured else "bars?"
+        needs = ", ".join(slot.missing) or "-"
+        _say(f"{slot.index:>3}  {slot.song.title:<30} "
+             f"{_mmss(slot.start):>8}  {_mmss(slot.length):>8}  {source:<8}  {needs}")
+
+    ready = [s for s in slots if not s.missing]
+    guessed = [s for s in slots if not s.measured]
+    _say()
+    _say(f"{len(ready)}/{len(slots)} songs have everything the show needs")
+    if guessed:
+        _say(f"{len(guessed)} region length(s) came from a guessed bar count, so "
+             f"those regions will not match their audio")
+
+    script = build_setlist_script(
+        songs, gap_seconds=args.gap, include_video=not args.no_video
+    )
     target = project.reaper_build_dir / f"setlist-{setlist.path.stem}.rbs"
     script.write(target, header_comment=f"setlist: {setlist.name}")
-    _say(f"{setlist.name}: {target}  ({len(songs)} songs, "
-         f"{len(renders)} rendered backing tracks found)")
+    _say()
+    _say(f"-> {target}")
+    _say("rebuild this whenever the order changes — nothing per-song is touched")
     return 0
 
 
@@ -1214,6 +1238,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = reaper_sub.add_parser("setlist", help="one project for the whole show")
     p.add_argument("setlist")
     p.add_argument("--gap", type=float, default=4.0, help="seconds between songs")
+    p.add_argument("--no-video", action="store_true",
+                   help="leave the video track out (e.g. video runs from another machine)")
     p.set_defaults(func=cmd_reaper_setlist)
 
     gx = sub.add_parser("gx100", help="BOSS GX-100 pedalboard MIDI")

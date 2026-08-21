@@ -193,8 +193,16 @@ rambass reaper setlist gig
 See [live-playback.md](live-playback.md) for the architecture and why it is one
 session rather than one per song.
 
+You work in per-song sessions throughout production and assemble this one at the
+end — see [live-playback.md](live-playback.md#two-kinds-of-reaper-session-and-the-line-between-them)
+for why that split is forced rather than chosen, and for the five files each song
+has to produce. **Build the show session early and rebuild it often;** it works
+with half the songs missing, and reordering the set never touches per-song work.
+
 **Gate 2 ✅ when**
 - [ ] one Reaper session, one region per song, in running order
+- [ ] every region carries its count-in, backing track, pedal MIDI and video
+- [ ] no region length is still a guess from a bar count
 - [ ] no plugin instances anywhere in the project
 - [ ] two footswitches work: next song, stop
 - [ ] MIDI reaches the pedal and it changes patch
