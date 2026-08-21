@@ -13,11 +13,16 @@ starts a comment)::
     PROJECT   title             bpm   num  den
     TEMPO     position_seconds  bpm   num  den
     TRACK     name              vol_db  pan   r,g,b
-    ITEM      track_name        file    position_seconds
-    MIDI      track_name        file    position_seconds
+    ITEM      track_name        file    position_seconds  [length_seconds]
+    MIDI      track_name        file    position_seconds  [length_seconds]
     MARKER    position_seconds  name
     REGION    start_seconds     end_seconds   name
     NOTE      text
+
+``length_seconds`` is optional and only needed for a source Reaper cannot take a
+length from: a still image comes in at whatever "length of image items" is set to
+in the user's preferences, which is a global setting and therefore not something
+this repo can rely on. Audio and MIDI are left at their own length.
 """
 
 from __future__ import annotations
@@ -225,7 +230,7 @@ class ShowSlot:
 
     @property
     def missing(self) -> list[str]:
-        return [name for name in ("backing", "sticks", "gx100") if name not in self.found]
+        return [name for name in required_artifacts(self.song) if name not in self.found]
 
 
 def song_artifacts(song: Song) -> dict[str, Path]:
@@ -240,12 +245,59 @@ def song_artifacts(song: Song) -> dict[str, Path]:
         "sticks": song.path("render", "sticks.wav"),
         "click": song.path("render", "click.wav"),
         "gx100": song.path("midi", "gx100.mid"),
+        "card": existing_card(song),
         "video": song.path("video", f"{song.slug}.mp4"),
     }
-    return {
+    found = {
         name: path for name, path in candidates.items()
         if path is not None and Path(path).exists()
     }
+    # What actually goes on the VIDEO track: one item per region, never two. A
+    # song's own lyric video wins because it already carries its title card as
+    # its count-in lead-in (see video.py); the standalone card is for a song that
+    # has no lyric video and never will.
+    screen = found.get("video") or found.get("card")
+    if screen is not None:
+        found["screen"] = screen
+    return found
+
+
+def card_path(song: Song) -> Path | None:
+    """Where a song's standalone title card is written.
+
+    A PNG, because the show project needs to hold it for a whole region and
+    Reaper can stretch a still to any length — an MP4 would have to be rendered
+    at the right duration, which is not known until the base is.
+    """
+    return song.path("video", f"{song.slug}-card.png")
+
+
+def existing_card(song: Song) -> Path | None:
+    """The card that exists on disk, still video preferred over PNG.
+
+    ``rambass video card --mp4`` exists for a screen driven by something fussier
+    than Reaper, and if someone has rendered one, it is the one to use.
+    """
+    for name in (f"{song.slug}-card.mp4", f"{song.slug}-card.png"):
+        path = song.path("video", name)
+        if path is not None and Path(path).exists():
+            return path
+    return None
+
+
+def required_artifacts(song: Song) -> tuple[str, ...]:
+    """What this particular song has to produce before the show is complete.
+
+    An a cappella song produces **only something for the screen**: the band
+    sings it unaccompanied, so there is no base, no count-in stem and no patch
+    change — that was the point of the decision, and a show report that keeps
+    asking for them can never reach 23 of 23. A screen it does need, because
+    there is no lyric video to time against a base that does not exist, and a
+    dark projector for three minutes is a choice nobody made.
+    """
+    if song.drums_origin == "a-cappella":
+        return ("screen",)
+    return ("backing", "sticks", "gx100", "screen")
 
 
 def _measured_duration(path: Path) -> float | None:
@@ -307,7 +359,8 @@ def build_setlist_script(
     Each song becomes a region so the show can be driven from a single
     footswitch, and each region carries everything that song needs: the
     drumstick count-in at the region start, the backing track after it, the
-    pedalboard MIDI, and the lyric video.
+    pedalboard MIDI, and one item on the video track: the lyric video, or the
+    still title card for a song that will never have one.
 
     **Nothing here is a plugin.** This project only streams finished files and
     fires MIDI, which is what makes it safe to run live — see
@@ -356,10 +409,19 @@ def build_setlist_script(
         if "gx100" in found:
             script.add("MIDI", "GX-100 MIDI", str(found["gx100"].resolve()),
                        slot.start + count_in)
-        if include_video and "video" in found:
-            # The video starts at the region start so its title card is on screen
-            # through the count-in, which is when the audience is watching.
-            script.add("ITEM", "VIDEO", str(found["video"].resolve()), slot.start)
+        if include_video and "screen" in found:
+            # One item, starting at the region start. A lyric video runs on the
+            # audio clock and therefore already contains the count-in, and the
+            # transport is parked here between songs, so whatever is at the head
+            # of the region is what the audience sees while the band talks — the
+            # title card, either as the video's own lead-in or as the still.
+            screen = found["screen"]
+            if screen.suffix.lower() == ".png":
+                # A still has no length of its own, and Reaper's default comes
+                # from a global preference, so say it: hold it for the region.
+                script.add("ITEM", "VIDEO", str(screen.resolve()), slot.start, slot.length)
+            else:
+                script.add("ITEM", "VIDEO", str(screen.resolve()), slot.start)
 
         label = f"{slot.index:02d} {song.title}"
         script.add("REGION", slot.start, slot.start + slot.length, label)

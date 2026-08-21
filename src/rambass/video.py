@@ -116,8 +116,15 @@ def build_ass(
     end_seconds: float,
     style: dict | None = None,
     title: str = "",
+    card_seconds: float = 0.0,
+    card_subtitle: str = "",
 ) -> str:
-    """Render cues as an ASS subtitle file, timed off the audio clock."""
+    """Render cues as an ASS subtitle file, timed off the audio clock.
+
+    ``card_seconds`` holds a title card from the start of the video until then —
+    normally the count-in. Same meaning as in :func:`rambass.lyrics.format_ass`,
+    which is the writer the CLI uses for SRT-sourced cues.
+    """
     settings = {**DEFAULT_STYLE, **(style or {})}
     lines = [
         "[Script Info]",
@@ -138,10 +145,15 @@ def build_ass(
         f"-1,0,0,0,100,100,0,0,1,{settings['outline_width']},{settings['shadow']},"
         f"{settings['alignment']},{settings['margin']},{settings['margin']},"
         f"{settings['margin']},1",
+        *([card_style_line(style)] if card_seconds > 0 else []),
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
+    if card_seconds > 0:
+        lines.append(card_event(
+            title, subtitle=card_subtitle, end=card_seconds, style=style,
+        ))
 
     text_cues = [c for c in cues if c.lines or c.blank]
     for index, cue in enumerate(text_cues):
@@ -263,6 +275,200 @@ def render_video(
         str(output),
     ]
 
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    run(cmd, quiet=True)
+    return output
+
+
+# ── Title cards ──────────────────────────────────────────────────────────
+#
+# Every song needs something on screen before its first note, and 17 of the 23
+# in the set have no lyric video at all — the two a cappella numbers never will,
+# because there is no backing track to time cues against. The card is also what
+# makes the parked-between-songs behaviour in docs/live-playback.md work: the
+# transport sits at the next region's start while the band talks, so whatever is
+# at the head of the region is what the audience is looking at.
+#
+# A card is deliberately the same machinery as a lyric video — text burnt over a
+# background — so it is proof-readable before rendering and needs no new
+# dependency. It arrives two ways:
+#
+# * as the **lead-in of a song's own lyric video**, filling the count-in, which
+#   is otherwise blank. One item on the video track, no overlap to arbitrate.
+# * as a **standalone file** for a song with no lyric video, which holds the
+#   whole region on its own.
+#
+# What must not happen is a separate card item laid over the head of a lyric
+# video: the rendered video runs on the audio clock and therefore already
+# contains the count-in, so it has to start at the region start, and two video
+# items in the same place is a question about Reaper's compositing that this
+# repo does not need to answer.
+
+CARD_STYLE = {
+    **DEFAULT_STYLE,
+    # The title is the only thing on screen, so it can be much bigger than a
+    # lyric line. 96 pt is the floor for lyrics; a card has no competition.
+    "font_size": 150,
+    "subtitle_size": 60,
+    "alignment": 5,
+}
+
+
+def _ass_text(text: str) -> str:
+    """One line of plain text, safe to drop into an ASS event.
+
+    ASS gives ``{``, ``}`` and ``\\`` their own meaning, and a stray one turns
+    the rest of the line into a silently-ignored override block. Song titles do
+    not contain them, but a subtitle typed on the command line might, so they
+    are mapped to something harmless rather than escaped.
+    """
+    return (
+        text.replace("{", "(").replace("}", ")").replace("\\", "/")
+        .replace("\n", " ").strip()
+    )
+
+
+def card_style_line(style: dict | None = None) -> str:
+    """The ``Style: Card`` line, shared by every writer that draws a card."""
+    settings = {**CARD_STYLE, **(style or {})}
+    return (
+        f"Style: Card,{settings['font']},{settings['font_size']},"
+        f"{settings['primary']},&H000000FF,{settings['outline']},{settings['back']},"
+        f"-1,0,0,0,100,100,0,0,1,{settings['outline_width']},{settings['shadow']},"
+        f"{settings['alignment']},{settings['margin']},{settings['margin']},"
+        f"{settings['margin']},1"
+    )
+
+
+def card_event(
+    title: str,
+    *,
+    subtitle: str = "",
+    start: float = 0.0,
+    end: float,
+    style: dict | None = None,
+) -> str:
+    """The one ``Dialogue`` line that puts a title card on screen."""
+    settings = {**CARD_STYLE, **(style or {})}
+    text = _ass_text(title)
+    if subtitle:
+        text += f"\\N{{\\fs{settings['subtitle_size']}}}{_ass_text(subtitle)}"
+    return (
+        f"Dialogue: 0,{_ass_time(start)},{_ass_time(max(end, start + 0.04))},"
+        f"Card,,0,0,0,,{text}"
+    )
+
+
+def card_ass(
+    title: str,
+    *,
+    subtitle: str = "",
+    duration: float,
+    style: dict | None = None,
+) -> str:
+    """A standalone ASS file holding one title card for ``duration`` seconds."""
+    settings = {**CARD_STYLE, **(style or {})}
+    lines = [
+        "[Script Info]",
+        f"Title: {title} — title card",
+        "ScriptType: v4.00+",
+        "WrapStyle: 0",
+        "ScaledBorderAndShadow: yes",
+        f"PlayResX: {settings['width']}",
+        f"PlayResY: {settings['height']}",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+        "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, "
+        "ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "
+        "MarginL, MarginR, MarginV, Encoding",
+        card_style_line(settings),
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+        card_event(title, subtitle=subtitle, end=duration, style=settings),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def card_command(
+    output: str | Path,
+    ass_file: str | Path,
+    *,
+    duration: float,
+    background: str | Path | None = None,
+    style: dict | None = None,
+    crf: int = 20,
+    ffmpeg: str | None = None,
+) -> list[str]:
+    """The ffmpeg command for one standalone title card.
+
+    Built separately from running it so the command can be tested — and printed
+    and run by hand — without ffmpeg being installed. A ``.png`` output is a
+    single frame, which is what the show project wants because Reaper can hold a
+    still for as long as the region needs; anything else is a still video
+    ``duration`` seconds long, for a screen driven by something fussier.
+    """
+    settings = {**CARD_STYLE, **(style or {})}
+    output = Path(output)
+    still = output.suffix.lower() == ".png"
+    duration = max(duration, 0.04)
+
+    cmd = [ffmpeg or ffmpeg_path(), "-v", "error", "-y", "-nostdin"]
+    cmd += [
+        "-f", "lavfi",
+        "-i", (
+            f"color=c={settings['background']}:s={settings['width']}x{settings['height']}"
+            f":r={settings['fps']}:d={duration:.3f}"
+        ),
+    ]
+
+    filters: list[str] = []
+    current = "[0:v]"
+    if background:
+        path = Path(background)
+        if not path.is_file():
+            raise FileNotFoundError(f"card background is missing: {path}")
+        cmd += ["-loop", "1", "-i", str(path)]
+        filters.append(
+            f"[1:v]scale={settings['width']}:{settings['height']}"
+            f":force_original_aspect_ratio=decrease,"
+            f"pad={settings['width']}:{settings['height']}:-1:-1:color="
+            f"{settings['background']}[bg]"
+        )
+        filters.append(f"{current}[bg]overlay=x=0:y=0[ov]")
+        current = "[ov]"
+
+    ass_escaped = str(ass_file).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
+    filters.append(f"{current}ass='{ass_escaped}'[vout]")
+    cmd += ["-filter_complex", ";".join(filters), "-map", "[vout]"]
+
+    if still:
+        cmd += ["-frames:v", "1", str(output)]
+    else:
+        cmd += [
+            "-c:v", "libx264", "-preset", "medium", "-crf", str(crf),
+            "-pix_fmt", "yuv420p", "-t", f"{duration:.3f}",
+            str(output),
+        ]
+    return cmd
+
+
+def render_card(
+    output: str | Path,
+    ass_file: str | Path,
+    *,
+    duration: float,
+    background: str | Path | None = None,
+    style: dict | None = None,
+    crf: int = 20,
+) -> Path:
+    """Render a title card as a PNG still or a short still video."""
+    cmd = card_command(
+        output, ass_file,
+        duration=duration, background=background, style=style, crf=crf,
+    )
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     run(cmd, quiet=True)

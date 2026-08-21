@@ -208,11 +208,34 @@ def parse_lrc(text: str) -> list[LyricLine]:
 
 
 # ── ASS ──────────────────────────────────────────────────────────────────
-def format_ass(cues: list[LyricLine], *, style: dict | None = None, title: str = "") -> str:
-    """ASS, sharing the styling used by ``rambass video render``."""
-    from .video import DEFAULT_STYLE
+def format_ass(
+    cues: list[LyricLine],
+    *,
+    style: dict | None = None,
+    title: str = "",
+    card_seconds: float = 0.0,
+    card_subtitle: str = "",
+) -> str:
+    """ASS, sharing the styling used by ``rambass video render``.
+
+    ``card_seconds`` puts a title card on screen from the start of the video
+    until that time — normally the count-in, which is otherwise blank, since
+    cues start at bar 1. That is what the audience reads while the band is
+    counted in, and what the projector shows when the show project is parked at
+    the head of the song between numbers.
+    """
+    from .video import DEFAULT_STYLE, card_event, card_style_line
 
     settings = {**DEFAULT_STYLE, **(style or {})}
+    styles = [
+        f"Style: Lyrics,{settings['font']},{settings['font_size']},"
+        f"{settings['primary']},&H000000FF,{settings['outline']},{settings['back']},"
+        f"-1,0,0,0,100,100,0,0,1,{settings['outline_width']},{settings['shadow']},"
+        f"{settings['alignment']},{settings['margin']},{settings['margin']},"
+        f"{settings['margin']},1",
+    ]
+    if card_seconds > 0:
+        styles.append(card_style_line(style))
     lines = [
         "[Script Info]",
         f"Title: {title}",
@@ -227,15 +250,15 @@ def format_ass(cues: list[LyricLine], *, style: dict | None = None, title: str =
         "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, "
         "ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "
         "MarginL, MarginR, MarginV, Encoding",
-        f"Style: Lyrics,{settings['font']},{settings['font_size']},"
-        f"{settings['primary']},&H000000FF,{settings['outline']},{settings['back']},"
-        f"-1,0,0,0,100,100,0,0,1,{settings['outline_width']},{settings['shadow']},"
-        f"{settings['alignment']},{settings['margin']},{settings['margin']},"
-        f"{settings['margin']},1",
+        *styles,
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
     ]
+    if card_seconds > 0:
+        lines.append(card_event(
+            title, subtitle=card_subtitle, end=card_seconds, style=style,
+        ))
     for cue in cues:
         body = cue.text.replace("\n", r"\N")
         lines.append(

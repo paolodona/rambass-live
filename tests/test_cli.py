@@ -362,6 +362,36 @@ def test_video_ass_falls_back_to_the_markdown_when_there_is_no_srt(cwd, capsys):
     assert "da markdown" in (directory / "video" / "x.ass").read_text()
 
 
+def test_video_ass_puts_the_title_on_screen_through_the_count_in(cwd, capsys):
+    run("new", "Il Phurgone", "--album", "dg", "--create-album", "--bpm", "120",
+        "--bars", "32", "--count-in", "2")
+    directory = cwd.songs_dir / "dg" / "01-il-phurgone"
+    (directory / "lyrics.md").write_text("[bar 9]\nUna riga\n", encoding="utf-8")
+    capsys.readouterr()
+
+    assert run("video", "ass", "01-il-phurgone", "--subtitle", "Diversamente Giovani") == 0
+    text = (directory / "video" / "il-phurgone.ass").read_text()
+    card = next(x for x in text.splitlines() if ",Card,," in x)
+    assert card.startswith("Dialogue: 0,0:00:00.00,0:00:04.00")   # the count-in
+    assert "Il Phurgone" in card and "Diversamente Giovani" in card
+
+    assert run("video", "ass", "01-il-phurgone", "--no-card") == 0
+    assert ",Card,," not in (directory / "video" / "il-phurgone.ass").read_text()
+
+
+def test_video_card_writes_a_standalone_card_without_needing_lyrics(cwd, capsys):
+    """The a cappella songs have no cues and never will — the card is the screen."""
+    run("new", "Se Sei Felice", "--album", "dg", "--create-album", "--bars", "32")
+    directory = cwd.songs_dir / "dg" / "01-se-sei-felice"
+    (directory / "lyrics.md").unlink()
+    capsys.readouterr()
+
+    assert run("video", "card", "01-se-sei-felice", "--ass-only") == 0
+    text = (directory / "video" / "se-sei-felice-card.ass").read_text()
+    assert text.count("Dialogue:") == 1
+    assert "Se Sei Felice" in text
+
+
 def test_lyrics_commands_say_what_to_do_when_there_are_no_cues(cwd, capsys):
     run("new", "X", "--album", "dg", "--create-album")
     (cwd.songs_dir / "dg" / "01-x" / "lyrics.md").unlink()

@@ -33,9 +33,11 @@ the board and count for nothing:
 * Tutti in Fila 10 — La Canzone Del Solero *(also the only track with no WAV master)*
 * Diversamente Giovani 15 — OUTRO
 
-**A cappella (2)** — in the running order, but nothing to produce. No backing
-track, no click, no count-in, no pedal change. `drums.origin: a-cappella` leaves
-only `source` and `rehearsed` applicable:
+**A cappella (2)** — in the running order, and the only thing to produce is a
+title card for the screen. No backing track, no click, no count-in, no pedal
+change. `drums.origin: a-cappella` leaves only `source` and `rehearsed`
+applicable on the board, and `rambass reaper setlist` asks them for nothing but
+the card:
 
 * Tutti in Fila 07 — La Canzone Del Tonno
 * Diversamente Giovani 11 — Se Sei Felice
@@ -48,7 +50,7 @@ only `source` and `rehearsed` applicable:
 | **B** | 6 | tempo + lyrics text known, base must be mixed | a mixing session |
 | **C** | 6 | Tutti in Fila — nothing but an MP3 | **a day** |
 | **D** | 2 | linking pieces — play as album audio | minutes |
-| a cappella | 2 | nothing to build | — |
+| a cappella | 2 | nothing to build but a title card | `rambass video card` |
 
 **The whole remaining cost of the project is Tier C: six days of work.**
 Everything else is hours or a mixing session. Cutting Solero and making Tonno
@@ -105,10 +107,12 @@ decision was made. `setlists/tier-a.yaml` is the seven-song set playable now.
 
 Still open, and worth settling before Lane B starts on the Tier C songs:
 
-- [ ] **Do the two a cappella numbers want anything on screen?** Their words
-      cannot be auto-synced — there is no backing track to time against. A static
-      title card is the sensible answer; a timed video would have to be started
-      by hand and left to run free.
+- [x] **Do the two a cappella numbers want anything on screen?** Yes, a static
+      title card — their words cannot be auto-synced, because there is no backing
+      track to time against. `rambass video card <song>` renders it, and the show
+      project holds it for the whole region. That is the *finished* answer for
+      those two songs, not a placeholder: a card is the only artifact they need,
+      and `rambass reaper setlist` counts them complete once it exists.
 - [ ] **Do they want a stick count-in, or a starting pitch?** `rambass countin`
       works on them already — it needs no base — and a count-in for an
       unaccompanied entry is arguably more useful than for a song with a track.
@@ -159,12 +163,15 @@ song ───┼─ Lane B: lyrics ─────────┼──> song r
 3. **Align to the final base** (needs Gate A): `rambass lyrics shift <song> <s>`.
    The existing SRTs were timed against the album master, and the base starts
    somewhere else.
-4. **Render.** `rambass video render <song>`.
+4. **Render.** `rambass video render <song>` — which also puts the title card on
+   screen through the count-in. A song whose words are not written yet still gets
+   something on the screen: `rambass video card <song>`.
 
 **Gate B ✅ when**
 - [ ] `rambass lyrics check <song>` is clean
 - [ ] the cues match the house style in [lyrics.md](lyrics.md)
 - [ ] the video plays in sync against the **final** base, watched end to end once
+- [ ] the first frame is the title card, not black
 - [ ] `rambass status` shows `lyr` and `vid` as `X`
 
 ### Lane C — pedal changes → `gx100`
@@ -195,19 +202,22 @@ session rather than one per song.
 
 You work in per-song sessions throughout production and assemble this one at the
 end — see [live-playback.md](live-playback.md#two-kinds-of-reaper-session-and-the-line-between-them)
-for why that split is forced rather than chosen, and for the five files each song
+for why that split is forced rather than chosen, and for the files each song
 has to produce. **Build the show session early and rebuild it often;** it works
 with half the songs missing, and reordering the set never touches per-song work.
 
 **Gate 2 ✅ when**
 - [ ] one Reaper session, one region per song, in running order
-- [ ] every region carries its count-in, backing track, pedal MIDI and video
+- [ ] every region carries its count-in, backing track, pedal MIDI and one video
+      item — `rambass reaper setlist` lists what is still missing per song, and
+      the two a cappella numbers need only their card
 - [ ] no region length is still a guess from a bar count
 - [ ] no plugin instances anywhere in the project
 - [ ] two footswitches work: next song, stop
 - [ ] MIDI reaches the pedal and it changes patch
 - [ ] the video window is on the projector output and shows the right title card
-      when parked between songs
+      when parked between songs — every song has one, either as its video's
+      lead-in or as a still
 
 ---
 

@@ -97,7 +97,7 @@ local function find_track(name)
   return nil
 end
 
-local function insert_media(track_name, path, position)
+local function insert_media(track_name, path, position, length)
   local track = find_track(track_name)
   if not track then
     log("  ! no track named '%s' — skipping %s", track_name, path)
@@ -114,6 +114,19 @@ local function insert_media(track_name, path, position)
   reaper.SetEditCurPos(position, false, false)
   -- mode 0 = add to the currently selected track at the edit cursor
   reaper.InsertMedia(path, 0)
+
+  -- An explicit length is only sent for a source Reaper cannot take one from —
+  -- a still image, whose length comes from a global preference ("length of
+  -- image items") that this project cannot assume anything about. InsertMedia
+  -- leaves the new item selected, so it is the one to resize.
+  if length and length > 0 then
+    local item = reaper.GetSelectedMediaItem(0, 0)
+    if item then
+      reaper.SetMediaItemInfo_Value(item, "D_LENGTH", length)
+    else
+      log("  ! could not find the item just inserted, length not set: %s", path)
+    end
+  end
   return true
 end
 
@@ -171,7 +184,7 @@ local function build(path)
         end
 
       elseif kind == "ITEM" or kind == "MIDI" then
-        if insert_media(f[2], f[3], tonum(f[4], 0)) then
+        if insert_media(f[2], f[3], tonum(f[4], 0), tonum(f[5], 0)) then
           counts[kind] = counts[kind] + 1
         end
 
