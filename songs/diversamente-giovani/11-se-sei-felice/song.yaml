@@ -13,7 +13,7 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: backing-track
+  origin: a-cappella
   kit: ''
   map: general-midi
 source:
@@ -36,13 +36,16 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: done
+  analyze: n/a
   stems: n/a
   drums_midi: n/a
   quantize: n/a
   kit: n/a
-  render: todo
-  video: todo
-  gx100: todo
+  render: n/a
+  lyrics: n/a
+  video: n/a
+  gx100: n/a
   rehearsed: todo
-notes: listed as 'Bonus' in the production folders
+notes: 'listed as ''Bonus'' in the production folders
+
+  a cappella: sung unaccompanied — no backing track, click or count-in'

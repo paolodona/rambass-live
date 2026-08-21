@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: extracted
+  origin: a-cappella
   kit: ''
   map: general-midi
 source:
   audio: 07 - La_Canzone_Del_Tonno.wav
   url: https://drive.google.com/file/d/1V_7KilXFJJgMmD-ZMPHHuI-7H4lNnbG3/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -35,13 +36,16 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
-  stems: todo
-  drums_midi: todo
-  quantize: todo
-  kit: todo
-  render: todo
-  video: todo
-  gx100: todo
+  analyze: n/a
+  stems: n/a
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
+  render: n/a
+  lyrics: n/a
+  video: n/a
+  gx100: n/a
   rehearsed: todo
-notes: short — about a minute
+notes: 'short — about a minute
+
+  a cappella: sung unaccompanied — no backing track, click or count-in'

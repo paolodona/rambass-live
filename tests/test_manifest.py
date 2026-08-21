@@ -156,3 +156,59 @@ def test_progress_with_a_backing_track_ignores_the_drum_stages():
     done, total = item.progress()
     assert total == len(STAGES) - 4        # the four drum stages are n/a
     assert done == 1
+
+
+# ── a cappella: in the set, but nothing to produce ───────────────────────
+def test_a_cappella_leaves_only_source_and_rehearsed():
+    item = Song.from_dict({"title": "x", "drums": {"origin": "a-cappella"}})
+    status = item.default_status()
+    assert {s for s, v in status.items() if v != "n/a"} == {"source", "rehearsed"}
+    item.status = status
+    done, total = item.progress()
+    assert total == 2
+
+
+def test_a_cappella_is_a_valid_origin_and_round_trips(song):
+    song.drums_origin = "a-cappella"
+    save_song(song)
+    assert load_song(song.dir).drums_origin == "a-cappella"
+
+
+# ── excluded: cut from the show ──────────────────────────────────────────
+def test_excluded_song_counts_for_nothing():
+    """A cut song must not make the project look less finished than it is."""
+    item = Song.from_dict({
+        "title": "x",
+        "excluded": {"from_set": True, "reason": "cut"},
+    })
+    assert item.excluded and item.exclude_reason == "cut"
+    assert item.progress() == (0, 0)
+    assert set(item.default_status().values()) == {"n/a"}
+
+
+def test_excluded_round_trips(song):
+    song.excluded = True
+    song.exclude_reason = "no WAV master"
+    save_song(song)
+    reloaded = load_song(song.dir)
+    assert reloaded.excluded is True
+    assert reloaded.exclude_reason == "no WAV master"
+
+
+def test_not_excluded_by_default(song):
+    assert load_song(song.dir).excluded is False
+    assert "excluded" not in yaml.safe_load((song.dir / "song.yaml").read_text())
+
+
+def test_putting_a_song_back_in_the_set_actually_persists(song):
+    """`excluded` must not leak into `extra`, or the stale copy is written back."""
+    song.excluded = True
+    song.exclude_reason = "cut"
+    save_song(song)
+    reloaded = load_song(song.dir)
+    assert "excluded" not in reloaded.extra
+
+    reloaded.excluded = False
+    reloaded.exclude_reason = ""
+    save_song(reloaded)
+    assert load_song(song.dir).excluded is False

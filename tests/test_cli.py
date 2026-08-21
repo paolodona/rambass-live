@@ -419,3 +419,71 @@ def test_reaper_import_can_keep_existing_patches(cwd, capsys):
     run("reaper", "import", "01-x", str(fixture), "--write", "--keep-patches")
     song = load_song(cwd.songs_dir / "tif" / "01-x")
     assert [c.memory for c in song.patch_changes] == ["U04-4"]
+
+
+# ── scope and accompaniment ──────────────────────────────────────────────
+def test_scope_out_cuts_a_song_and_scope_in_restores_it(cwd, capsys):
+    run("new", "Solero", "--album", "tif", "--create-album")
+    run("mark", "01-solero", "analyze", "done")
+    capsys.readouterr()
+
+    assert run("scope", "01-solero", "out", "--reason", "no WAV master") == 0
+    song = load_song(cwd.songs_dir / "tif" / "01-solero")
+    assert song.excluded and song.exclude_reason == "no WAV master"
+    assert song.progress() == (0, 0)
+
+    assert run("scope", "01-solero", "in") == 0
+    song = load_song(cwd.songs_dir / "tif" / "01-solero")
+    assert song.excluded is False
+    assert song.progress()[1] > 0
+
+
+def test_a_cut_song_is_hidden_from_list_and_check(cwd, capsys):
+    run("new", "Cut", "--album", "tif", "--create-album")
+    run("scope", "01-cut", "out", "--reason", "gone")
+    capsys.readouterr()
+
+    run("list")
+    out = capsys.readouterr().out
+    assert "Cut" not in out.split("cut from the set")[0]
+    assert "1 song(s) cut" in out
+
+    run("list", "--all-songs")
+    assert "Cut" in capsys.readouterr().out
+
+    # no source audio, but a cut song needs nothing
+    assert run("check") == 0
+    assert "consistent" in capsys.readouterr().out
+
+
+def test_accompaniment_a_cappella_marks_the_pipeline_not_applicable(cwd, capsys):
+    run("new", "Tonno", "--album", "tif", "--create-album")
+    capsys.readouterr()
+    assert run("accompaniment", "01-tonno", "a-cappella",
+               "--reason", "sung unaccompanied") == 0
+    out = capsys.readouterr().out
+    assert "source, rehearsed" in out
+
+    song = load_song(cwd.songs_dir / "tif" / "01-tonno")
+    assert song.drums_origin == "a-cappella"
+    assert song.status["render"] == "n/a"
+    assert song.status["gx100"] == "n/a"
+    assert song.status["source"] == "todo"
+    assert "sung unaccompanied" in song.notes
+
+
+def test_accompaniment_keeps_finished_stages_that_still_apply(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album")
+    run("mark", "01-x", "source", "done")
+    capsys.readouterr()
+    run("accompaniment", "01-x", "backing-track")
+    song = load_song(cwd.songs_dir / "dg" / "01-x")
+    assert song.status["source"] == "done"      # kept
+    assert song.status["quantize"] == "n/a"     # newly not applicable
+
+
+def test_a_cappella_check_does_not_demand_source_audio(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album")
+    run("accompaniment", "01-x", "a-cappella")
+    capsys.readouterr()
+    assert run("check") == 0

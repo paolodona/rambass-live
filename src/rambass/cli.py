@@ -13,7 +13,16 @@ from pathlib import Path
 
 from . import __version__
 from .drummap import load_drum_map
-from .manifest import STAGES, STATUS_VALUES, PatchChange, Section, Song, load_song, save_song
+from .manifest import (
+    DRUM_ORIGINS,
+    STAGES,
+    STATUS_VALUES,
+    PatchChange,
+    Section,
+    Song,
+    load_song,
+    save_song,
+)
 from .project import Project, ProjectError, slugify
 
 EPILOGUE = """\
@@ -70,12 +79,19 @@ def cmd_list(args: argparse.Namespace) -> int:
         return 0
     width = max(len(s.title) for s in songs)
     for song in songs:
+        if song.excluded and not args.all_songs:
+            continue
         done, total = song.progress()
+        tail = "CUT" if song.excluded else f"{done}/{total}"
         _say(
             f"{song.album:<22} {song.title.ljust(width)}  "
             f"{song.bpm:>6.1f} BPM  {song.time_signature[0]}/{song.time_signature[1]}  "
-            f"{song.drums_origin:<10} {done}/{total}"
+            f"{song.drums_origin:<14} {tail}"
         )
+    cut = [s for s in songs if s.excluded]
+    if cut and not args.all_songs:
+        _say(f"\n{len(cut)} song(s) cut from the set — `rambass list --all-songs` "
+             "to see them")
     return 0
 
 
@@ -113,8 +129,11 @@ def cmd_check(args: argparse.Namespace) -> int:
             _say(f"BROKEN {song_dir}: {exc}")
             problems += 1
             continue
+        if song.excluded:
+            continue
         found = song.problems()
-        if (not args.no_audio_check and song.drums_origin != "programmed"
+        if (not args.no_audio_check
+                and song.drums_origin not in ("programmed", "a-cappella")
                 and song.source_path() is None):
             hint = f" — download it from {song.source_url}" if song.source_url else ""
             found.append(f"no audio in source/{hint}")
@@ -910,6 +929,58 @@ def cmd_set_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scope(args: argparse.Namespace) -> int:
+    """Cut a song from the show, or put it back."""
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        if args.state == "out":
+            song.excluded = True
+            song.exclude_reason = args.reason
+            song.status = song.default_status()
+            _say(f"cut  {song.album}/{song.slug}"
+                 + (f" — {args.reason}" if args.reason else ""))
+        else:
+            song.excluded = False
+            song.exclude_reason = ""
+            # Put the stages back to what this kind of song should start from,
+            # keeping anything already finished.
+            defaults = song.default_status()
+            song.status = {
+                stage: (song.status.get(stage, "todo")
+                        if song.status.get(stage) in ("done", "wip")
+                        and defaults[stage] != "n/a"
+                        else defaults[stage])
+                for stage in defaults
+            }
+            _say(f"back in the set  {song.album}/{song.slug}")
+        save_song(song)
+    return 0
+
+
+def cmd_accompaniment(args: argparse.Namespace) -> int:
+    """Set how a song's accompaniment arrives — including 'a-cappella'."""
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        song.drums_origin = args.origin
+        if args.reason:
+            note = f"a cappella: {args.reason}" if args.origin == "a-cappella" else args.reason
+            if note not in song.notes:
+                song.notes = (song.notes + "\n" if song.notes else "") + note
+        defaults = song.default_status()
+        song.status = {
+            stage: (song.status.get(stage, "todo")
+                    if defaults[stage] != "n/a" and song.status.get(stage) in ("done", "wip")
+                    else defaults[stage])
+            for stage in defaults
+        }
+        song.validate()
+        save_song(song)
+        applicable = [s for s, v in song.status.items() if v != "n/a"]
+        _say(f"{song.album}/{song.slug}: {args.origin} — "
+             f"stages that still apply: {', '.join(applicable) or 'none'}")
+    return 0
+
+
 def cmd_patch_add(args: argparse.Namespace) -> int:
     project = _project()
     song = load_song(project.find_song_dir(args.song))
@@ -956,6 +1027,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("list", help="list songs")
     p.add_argument("--album")
+    p.add_argument("--all-songs", action="store_true",
+                   help="include songs cut from the set")
     p.set_defaults(func=cmd_list)
 
     p = sub.add_parser("show", help="show one song's tempo, sections and patch changes")
@@ -1214,6 +1287,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("stage", choices=STAGES)
     p.add_argument("state", choices=STATUS_VALUES)
     p.set_defaults(func=cmd_set_status)
+
+    p = sub.add_parser("scope", help="cut a song from the show, or put it back")
+    _add_song_args(p)
+    p.add_argument("state", choices=("in", "out"))
+    p.add_argument("--reason", default="", help="why it was cut")
+    p.set_defaults(func=cmd_scope)
+
+    p = sub.add_parser(
+        "accompaniment",
+        help="set where a song's accompaniment comes from (a-cappella, "
+             "backing-track, recorded, extracted, programmed)",
+    )
+    _add_song_args(p)
+    p.add_argument("origin", choices=DRUM_ORIGINS)
+    p.add_argument("--reason", default="", help="note to record on the song")
+    p.set_defaults(func=cmd_accompaniment)
 
     p = sub.add_parser("patch", help="add or replace a GX-100 patch change")
     p.add_argument("song")

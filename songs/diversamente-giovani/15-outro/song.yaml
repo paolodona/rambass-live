@@ -35,8 +35,8 @@ video:
   style: lyrics
   lyrics: lyrics.md
 status:
-  source: todo
-  analyze: done
+  source: n/a
+  analyze: n/a
   stems: n/a
   drums_midi: n/a
   quantize: n/a
@@ -49,3 +49,6 @@ status:
 notes: 'short outro — probably plays as straight album audio
 
   short linking piece — plays as straight album audio; no backing track to build'
+excluded:
+  from_set: true
+  reason: cut from the set

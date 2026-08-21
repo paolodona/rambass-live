@@ -1,36 +1,63 @@
-# The running order for the show. Nothing downstream depends on the order, so
-# reorder freely — `rambass setlist gig` re-times it and `rambass reaper setlist
-# gig` rebuilds the whole-show Reaper project.
-name: Ramba S.S. — both albums live
+# The running order. Nothing downstream depends on the order, so reorder freely —
+# `rambass setlist gig` re-times it and `rambass reaper setlist gig` rebuilds the
+# whole-show project.
+#
+# 23 songs are in scope. Three were cut and are not listed here; they are also
+# marked `excluded` in their own song.yaml so they drop off `rambass status`:
+#
+#   Tutti in Fila 01  Intro Portamistica Z.Z.I.
+#   Tutti in Fila 10  La Canzone Del Solero
+#   Diversamente Giovani 15  OUTRO
+#
+# Two songs are sung unaccompanied and need no backing track, click, count-in or
+# pedal change — they are in the running order but not in the playback project:
+#
+#   Tutti in Fila 07  La Canzone Del Tonno
+#   Diversamente Giovani 11  Se Sei Felice
+#
+name: Ramba S.S. — the set
 date: ""
 venue: ""
 notes: |
-  Drums are entirely backing track: the drummer cannot play this one.
+  Order below is a starting point, grouped so the seven songs that are already
+  finished carry the front of the set.
 
-  Starting point is album order, Tutti in Fila then Diversamente Giovani. The
-  intro/outro tracks (DG 01, DG 15, TIF 01, TIF 05) are short pieces that
-  probably play as straight album audio rather than needing a rebuilt drum part
-  — drop them from the set or leave them as audio-only regions.
+  The two a cappella numbers are deliberately placed to break up the backing
+  tracks — they are the only points in the set where the laptop does nothing, so
+  they are also the natural spots to talk, retune, or recover if anything has
+  gone wrong.
+
+  Diversamente Giovani INTRO and Tutti in Fila's Intro Vibratore are short
+  linking pieces that play as straight album audio. Intro Vibratore runs into
+  La Vera Storia Del Vibratore and should be treated as one backing track with it.
 songs:
+  # ── opener: the album intro, played as straight audio ─────────────────
+  - diversamente-giovani/01-intro
+  # ── already finished: base and lyric video exist ───────────────────────
   - tutti-in-fila/02-i-pooh
-  - tutti-in-fila/03-tutti-in-fila
-  - tutti-in-fila/04-ampiamente-contestabile
-  - tutti-in-fila/06-la-vera-storia-del-vibratore
-  - tutti-in-fila/07-la-canzone-del-tonno
-  - tutti-in-fila/08-skizzo-sonovabic
-  - tutti-in-fila/09-manlio
-  - tutti-in-fila/10-la-canzone-del-solero
-  - tutti-in-fila/11-l-esercito-del-surf
   - diversamente-giovani/02-formaygrana
   - diversamente-giovani/03-mother-sacher
-  - diversamente-giovani/04-bambolina
-  - diversamente-giovani/05-itturfiatrugoy
   - diversamente-giovani/06-il-phurgone
-  - diversamente-giovani/07-orologiaio
+  - diversamente-giovani/05-itturfiatrugoy
+  # ── a cappella: laptop silent ─────────────────────────────────────────
+  - tutti-in-fila/07-la-canzone-del-tonno
+  # ── Diversamente Giovani: need a base mixed ───────────────────────────
+  - diversamente-giovani/04-bambolina
   - diversamente-giovani/08-il-cellulare
   - diversamente-giovani/09-per-niente-stanca
   - diversamente-giovani/10-superman
-  - diversamente-giovani/11-se-sei-felice
   - diversamente-giovani/12-mandami-un-faxe
+  - diversamente-giovani/07-orologiaio
+  # ── Tutti in Fila: full pipeline ──────────────────────────────────────
+  - tutti-in-fila/03-tutti-in-fila
+  - tutti-in-fila/04-ampiamente-contestabile
+  - tutti-in-fila/05-intro-vibratore
+  - tutti-in-fila/06-la-vera-storia-del-vibratore
+  - tutti-in-fila/08-skizzo-sonovabic
+  - tutti-in-fila/09-manlio
+  - tutti-in-fila/11-l-esercito-del-surf
+  # ── a cappella: laptop silent ─────────────────────────────────────────
+  - diversamente-giovani/11-se-sei-felice
+  # ── closers: already finished ─────────────────────────────────────────
   - diversamente-giovani/13-la-ragazza-da-milano
   - diversamente-giovani/14-diversamente-giovani

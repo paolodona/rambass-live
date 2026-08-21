@@ -36,17 +36,25 @@ STAGES = (
 
 STATUS_VALUES = ("todo", "wip", "done", "n/a")
 
-#: How the drums for this song come into existence.
+#: Where this song's accompaniment comes from.
 #:
-#: ``backing-track`` means a finished backing track already exists with the
-#: drums mixed into it — nothing to separate, transcribe or quantise. That is the
-#: case for most of Diversamente Giovani, where the band mixed live bases
-#: straight out of the album sessions, and it makes the whole drum pipeline
-#: ``n/a`` for those songs.
-DRUM_ORIGINS = ("backing-track", "recorded", "extracted", "programmed")
+#: * ``a-cappella`` — nowhere. The band sings it unaccompanied, so there is no
+#:   backing track, no click, no count-in and nothing to play back. Everything
+#:   except getting a reference recording and rehearsing it is ``n/a``.
+#: * ``backing-track`` — a finished base already exists with the drums mixed
+#:   into it; nothing to separate, transcribe or quantise. Most of Diversamente
+#:   Giovani, plus I Pooh.
+#: * ``recorded`` / ``extracted`` / ``programmed`` — the drums still have to be
+#:   turned into MIDI, from real tracks, from the stereo mix, or from scratch.
+DRUM_ORIGINS = (
+    "a-cappella", "backing-track", "recorded", "extracted", "programmed",
+)
 
 #: Pipeline stages that make no sense once a finished backing track exists.
 BACKING_TRACK_NA = ("stems", "drums_midi", "quantize", "kit")
+
+#: An unaccompanied song needs none of the production pipeline at all.
+A_CAPPELLA_APPLICABLE = ("source", "rehearsed")
 
 
 def _as_list(value: Any) -> list:
@@ -140,15 +148,23 @@ class Song:
 
     status: dict = field(default_factory=dict)
     notes: str = ""
+    #: Cut from the show. Kept on disk so the decision is recorded rather than
+    #: lost, but excluded from the board and from every progress count.
+    excluded: bool = False
+    exclude_reason: str = ""
     extra: dict = field(default_factory=dict)
 
     # ── (de)serialisation ────────────────────────────────────────────────
     @classmethod
     def from_dict(cls, data: dict, directory: Path | None = None) -> Song:
+        # Any key not listed here is carried through untouched in `extra`, so a
+        # field the tools do not know about survives a round trip. Every field
+        # that *is* modelled must be listed, or its stale copy in `extra` will be
+        # written back over the modelled value on save.
         known = {
             "slug", "title", "album", "track", "tempo", "count_in", "bars", "key",
             "sections", "drums", "source", "stems", "click", "gx100", "video",
-            "status", "notes",
+            "status", "notes", "excluded", "reason",
         }
         tempo = data.get("tempo") or {}
         drums = data.get("drums") or {}
@@ -192,6 +208,11 @@ class Song:
             lyrics_file=str(video.get("lyrics", "lyrics.md")),
             status={k: str(v) for k, v in (data.get("status") or {}).items()},
             notes=str(data.get("notes", "")),
+            excluded=bool((data.get("excluded") or {}).get("from_set", False)
+                          if isinstance(data.get("excluded"), dict)
+                          else data.get("excluded", False)),
+            exclude_reason=str((data.get("excluded") or {}).get("reason", ""))
+            if isinstance(data.get("excluded"), dict) else str(data.get("reason", "")),
             extra={k: v for k, v in data.items() if k not in known},
         )
         song.validate()
@@ -231,6 +252,8 @@ class Song:
             "status": {stage: self.status.get(stage, "todo") for stage in STAGES},
             "notes": self.notes,
         }
+        if self.excluded:
+            out["excluded"] = {"from_set": True, "reason": self.exclude_reason}
         if self.tempo_changes:
             out["tempo"]["changes"] = [c.to_dict() for c in self.tempo_changes]
         out.update(self.extra)
@@ -355,6 +378,13 @@ class Song:
 
     def default_status(self) -> dict:
         """The status a freshly-scaffolded song of this kind should start with."""
+        if self.excluded:
+            return dict.fromkeys(STAGES, "n/a")
+        if self.drums_origin == "a-cappella":
+            return {
+                stage: ("todo" if stage in A_CAPPELLA_APPLICABLE else "n/a")
+                for stage in STAGES
+            }
         status = dict.fromkeys(STAGES, "todo")
         if self.drums_origin == "backing-track":
             for stage in BACKING_TRACK_NA:
@@ -382,7 +412,13 @@ class Song:
         return current
 
     def progress(self) -> tuple[int, int]:
-        """``(done, applicable)`` across the pipeline stages."""
+        """``(done, applicable)`` across the pipeline stages.
+
+        An excluded song contributes nothing to either number — a cut song must
+        not make the project look less finished than it is.
+        """
+        if self.excluded:
+            return 0, 0
         applicable = [s for s in STAGES if self.status.get(s, "todo") != "n/a"]
         done = [s for s in applicable if self.status.get(s) == "done"]
         return len(done), len(applicable)

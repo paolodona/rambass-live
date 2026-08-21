@@ -17,9 +17,19 @@ SHORT = {
 
 
 def board(songs: list[Song], *, markdown: bool = False) -> str:
-    """Render a per-song / per-stage grid."""
+    """Render a per-song / per-stage grid.
+
+    Songs cut from the show are listed separately rather than shown as a row of
+    dashes: they are not work, and leaving them in the grid makes the project
+    look less finished than it is.
+    """
     if not songs:
         return "no songs yet — start with `rambass new \"Titolo\" --album <album>`"
+
+    cut = [s for s in songs if s.excluded]
+    songs = [s for s in songs if not s.excluded]
+    if not songs:
+        return "every song is excluded from the set"
 
     width = max(len(f"{s.album}/{s.title}") for s in songs)
     headers = [SHORT.get(stage, stage[:3]) for stage in STAGES]
@@ -50,9 +60,24 @@ def board(songs: list[Song], *, markdown: bool = False) -> str:
 
     total_done = sum(s.progress()[0] for s in songs)
     total_all = sum(s.progress()[1] for s in songs)
-    lines += ["", f"{len(songs)} songs · {total_done}/{total_all} stages complete "
-                  f"({100 * total_done / max(total_all, 1):.0f}%)"]
+    lines += ["", f"{len(songs)} songs in the set · {total_done}/{total_all} stages "
+                  f"complete ({100 * total_done / max(total_all, 1):.0f}%)"]
+
+    unaccompanied = [s for s in songs if s.drums_origin == "a-cappella"]
+    if unaccompanied:
+        lines.append(
+            "a cappella (no backing track): "
+            + ", ".join(s.title for s in unaccompanied)
+        )
+    if cut:
+        lines.append("")
+        lines.append(f"cut from the set ({len(cut)}):")
+        for song in cut:
+            reason = f" — {song.exclude_reason}" if song.exclude_reason else ""
+            lines.append(f"    {song.album}/{song.title}{reason}")
+
     if not markdown:
+        lines.append("")
         lines.append("legend: " + "  ".join(f"{v} = {k}" for k, v in MARKS.items()))
     return "\n".join(lines)
 
@@ -62,7 +87,7 @@ def next_actions(songs: list[Song], limit: int = 10) -> str:
     if not songs:
         return ""
     rows: list[tuple[str, str]] = []
-    for song in songs:
+    for song in (s for s in songs if not s.excluded):
         for stage in STAGES:
             state = song.status.get(stage, "todo")
             if state in ("todo", "wip"):

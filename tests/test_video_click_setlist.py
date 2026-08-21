@@ -313,3 +313,37 @@ def test_next_actions_points_at_the_first_unfinished_stage(song):
     song.status["source"] = "done"
     assert "analyze" in next_actions([song])
     assert next_actions([]) == ""
+
+
+# ── the board and scope ──────────────────────────────────────────────────
+def test_board_lists_cut_songs_separately_and_excludes_them_from_the_count(song):
+    from rambass.manifest import Song
+
+    cut = Song.from_dict({
+        "title": "Solero", "album": "tutti-in-fila",
+        "excluded": {"from_set": True, "reason": "no WAV master"},
+    })
+    text = board([song, cut])
+    assert "1 songs in the set" in text or "1 song" in text
+    assert "cut from the set (1)" in text
+    assert "no WAV master" in text
+    # the cut song must not appear as a grid row
+    grid = text.split("cut from the set")[0]
+    assert "Solero" not in grid
+
+
+def test_board_names_the_a_cappella_songs(song):
+    song.drums_origin = "a-cappella"
+    text = board([song])
+    assert "a cappella (no backing track)" in text
+    assert song.title in text
+
+
+def test_board_when_everything_is_cut(song):
+    song.excluded = True
+    assert "every song is excluded" in board([song])
+
+
+def test_next_actions_skips_cut_songs(song):
+    song.excluded = True
+    assert next_actions([song]) == "everything is done — go and play the gig"

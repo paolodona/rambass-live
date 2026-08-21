@@ -24,33 +24,54 @@ Three facts set the whole plan:
 3. **The two albums cost wildly different amounts.** Diversamente Giovani is
    mostly done; Tutti in Fila is the real work. Do not average them in your head.
 
+### The set is decided: 23 songs
+
+**Cut (3)** — recorded as `excluded` in their own `song.yaml`, so they drop off
+the board and count for nothing:
+
+* Tutti in Fila 01 — Intro Portamistica Z.Z.I.
+* Tutti in Fila 10 — La Canzone Del Solero *(also the only track with no WAV master)*
+* Diversamente Giovani 15 — OUTRO
+
+**A cappella (2)** — in the running order, but nothing to produce. No backing
+track, no click, no count-in, no pedal change. `drums.origin: a-cappella` leaves
+only `source` and `rehearsed` applicable:
+
+* Tutti in Fila 07 — La Canzone Del Tonno
+* Diversamente Giovani 11 — Se Sei Felice
+
 ### Effort tiers
 
 | tier | songs | state | cost each |
 |---|---:|---|---|
 | **A** | 7 | base **and** lyric video already exist | an hour — fix the punch-list |
-| **B** | 7 | tempo + lyrics text known, base must be mixed | a mixing session |
-| **C** | 8 | Tutti in Fila — nothing but an MP3 | a day |
-| **D** | 4 | intros/outros — play as album audio | minutes, or cut them |
+| **B** | 6 | tempo + lyrics text known, base must be mixed | a mixing session |
+| **C** | 6 | Tutti in Fila — nothing but an MP3 | **a day** |
+| **D** | 2 | linking pieces — play as album audio | minutes |
+| a cappella | 2 | nothing to build | — |
 
-**Tier A is a playable 35-minute set on its own.** That matters: it means there
-is a working show early, and everything after it is expansion rather than
-prerequisite.
+**The whole remaining cost of the project is Tier C: six days of work.**
+Everything else is hours or a mixing session. Cutting Solero and making Tonno
+a cappella took Tier C from eight songs to six — a quarter off the expensive
+part of the project, for two decisions.
+
+**Tier A is a playable 35-minute set on its own,** so there is a working show
+early and everything after it is expansion rather than prerequisite.
 
 <details>
 <summary>Which songs are in which tier</summary>
 
-**A** — I Poohffi (TIF 02), ForMayGrana, Mother Sacher, Itturfiatrugoy,
+**A** — I Pooh (TIF 02), ForMayGrana, Mother Sacher, Itturfiatrugoy,
 Il Phurgone, La Ragazza da Milano, Diversamente Giovani
 
 **B** — Bambolina, Orologiaio, Il Cellulare, Per Niente Stanca, Superman,
-Se Sei Felice, Mandami un Faxe
+Mandami un Faxe
 
 **C** — Tutti In Fila, Ampiamente Contestabile, La Vera Storia Del Vibratore,
-La Canzone Del Tonno, Skizzo Sonovabic, Manlio, La Canzone Del Solero,
-L'Esercito Del Surf
+Skizzo Sonovabic, Manlio, L'Esercito Del Surf
 
-**D** — DG INTRO, DG OUTRO, TIF Intro Portamistica Z.Z.I., TIF Intro Vibratore
+**D** — DG INTRO, TIF Intro Vibratore *(runs into La Vera Storia Del Vibratore —
+treat the two as one backing track)*
 </details>
 
 ---
@@ -67,15 +88,26 @@ Edit `setlists/gig.yaml`, then:
 rambass setlist gig
 ```
 
-### Gate 0 ✅ when
-- [ ] `rambass setlist gig` lists the songs and a total running time the band agrees to
-- [ ] every listed song resolves (the command errors if one does not)
-- [ ] the intros/outros are explicitly in or out
-- [ ] someone has said out loud how long the set should be
+### Gate 0 ✅ — passed
 
-**Recommendation:** commit to Tier A + Tier B as the target set (14 songs, ~70
-minutes) and treat Tier C as a stretch list ordered by which songs the band most
-wants. Then a cut later costs a mixing session, not a week.
+`setlists/gig.yaml` holds the agreed 23. Cuts and a cappella calls are recorded
+in the songs themselves, so the board and the plan cannot drift from the decision:
+
+```
+rambass scope <song> out --reason "..."      # cut a song
+rambass accompaniment <song> a-cappella      # in the set, nothing to build
+```
+
+Still open, and worth settling before Lane B starts on the Tier C songs:
+
+- [ ] **Do the two a cappella numbers want anything on screen?** Their words
+      cannot be auto-synced — there is no backing track to time against. A static
+      title card is the sensible answer; a timed video would have to be started
+      by hand and left to run free.
+- [ ] **Do they want a stick count-in, or a starting pitch?** `rambass countin`
+      works on them already — it needs no base — and a count-in for an
+      unaccompanied entry is arguably more useful than for a song with a track.
+      A pitch reference would be new.
 
 ---
 
@@ -197,6 +229,6 @@ week.
 | measured by | `rambass setlist` | `rnd` | `lyr` `vid` | `gx` | manual | `reh` |
 | parallel? | no — do it first | per song | per song | per song | no | no |
 
-Run `rambass status` for the live numbers. As of the last update: 26 songs
-scaffolded, tempos known for 13, lyric cues done for 6, videos done for 6,
-backing tracks existing for 7.
+Run `rambass status` for the live numbers. As of the last update: 23 songs in
+the set (3 cut, 2 a cappella), tempos known for 14, lyric cues done for 6,
+videos done for 6, backing tracks existing for 7.

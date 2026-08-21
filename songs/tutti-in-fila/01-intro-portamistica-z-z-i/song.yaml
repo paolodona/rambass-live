@@ -19,6 +19,7 @@ drums:
 source:
   audio: 01 Intro Portamistica Z.Z.I..wav
   url: https://drive.google.com/file/d/1pyAsgAIqjmbIFb344fc21raB4fG_f3ui/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -34,14 +35,18 @@ video:
   style: lyrics
   lyrics: lyrics.md
 status:
-  source: todo
-  analyze: todo
-  stems: todo
-  drums_midi: todo
-  quantize: todo
-  kit: todo
-  render: todo
-  video: todo
-  gx100: todo
-  rehearsed: todo
+  source: n/a
+  analyze: n/a
+  stems: n/a
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
+  render: n/a
+  lyrics: n/a
+  video: n/a
+  gx100: n/a
+  rehearsed: n/a
 notes: short intro — probably plays as straight album audio
+excluded:
+  from_set: true
+  reason: cut from the set
