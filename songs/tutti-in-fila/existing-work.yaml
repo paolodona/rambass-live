@@ -1,0 +1,40 @@
+# What already exists for this album — which is almost nothing, with one
+# important exception.
+#
+# Tutti in Fila was never prepared for live use, so every song needs the full
+# pipeline: separate the drums out of the stereo mix, transcribe, quantise, voice
+# a kit, render a base. See README.md.
+#
+# The exception is track 2, "I Pooh" (the band call it Phooffi). It was played in
+# the 2023 live set, so it already has a finished base, a Reaper project and a
+# lyric video, exactly like the Diversamente Giovani songs.
+
+drive:
+  album: https://drive.google.com/drive/folders/1toFiyRWkFr8ddYD36Z3951ee8vJARoAc
+  live_projects: https://drive.google.com/drive/folders/1388pvUqImDKuc7dIlcMbC3DOHb1XZZOd
+  review_doc: https://docs.google.com/document/d/1jouy4-u0kPvl5gxqYfz0S82gP2zZ-7-m1L0WP-s56Lg/edit
+
+drums:
+  origin: extracted           # the default for this album — no drum tracks exist
+
+tracks:
+  - track: 2
+    slug: i-pooh
+    bpm: 90                   # from its own Reaper project (TEMPO 90 4 4)
+    # This one song does NOT need the drum pipeline: the base is finished.
+    drums_origin: backing-track
+    backing_track: "I Phooffi_base_2.wav"
+    base_id: 18KDEMY1FI6S2OhlFHdq0dHM5bSOfRuOt
+    reaper_project: 1Fr09Mz43S6ROGtblYc3dh3iUP9enB1xd
+    title_card: 1AC_p5GIbXaDp2iX1B4pOzc5RVSyrcouM
+    lyric_video_480p: 1slA36DXWRO5F_X9dnxruabXNhtA2jU2T
+    lyric_video_original: 1AqpuSq0XjAxuq3f8y03-xAEhxUQBSxMM
+    review: >-
+      signed off. Roberto's vocal is too low, and so is the whole base around
+      3:40; there are clicks at the start of that section that should not be
+      there. Ride too loud. Second clean guitar around 4:00 a little too loud.
+    note: >-
+      The lyric video exists and has the words burned in, but there is no SRT for
+      it — the six SRT files in Drive are all Diversamente Giovani. Timed cues are
+      only needed here if the video is ever re-rendered.
+    status: {render: wip, video: done}

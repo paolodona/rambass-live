@@ -50,8 +50,11 @@ def apply(path: Path, *, dry_run: bool = False) -> int:
                 notes.append("analyze = done")
                 song.status["analyze"] = "done"
 
-        # A finished backing track makes the whole drum pipeline moot.
-        origin = str((data.get("drums") or {}).get("origin", ""))
+        # A finished backing track makes the whole drum pipeline moot. A track
+        # may override the album default — Tutti in Fila is `extracted` except
+        # for the one song that was already prepared for the 2023 set.
+        origin = str(entry.get("drums_origin")
+                     or (data.get("drums") or {}).get("origin", ""))
         if origin and song.drums_origin != origin:
             notes.append(f"drums.origin {song.drums_origin} -> {origin}")
             song.drums_origin = origin
