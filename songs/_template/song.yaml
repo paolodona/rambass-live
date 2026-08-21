@@ -1,0 +1,80 @@
+# ─────────────────────────────────────────────────────────────────────────
+# song.yaml — the single source of truth for one song.
+#
+# Everything downstream is generated from this file: the click, the Reaper
+# project, the drum MIDI grid, the lyric video timings and the GX-100 patch
+# changes. If two of those ever disagree, this file is right and they need
+# regenerating.
+#
+# Copy this folder, or better: `rambass new "Titolo" --album <album>`.
+# Positions are always in BARS, never seconds — see docs/workflow.md.
+# ─────────────────────────────────────────────────────────────────────────
+
+slug: nome-canzone              # folder-safe name, used for output filenames
+title: Nome Canzone
+album: tutti-in-fila
+track: 1
+key: ""                         # free text, e.g. "Am" — for the band, not the tools
+bars: 0                         # length of the song proper; 0 = guess from sections
+
+tempo:
+  bpm: 124                      # the grid everything is quantised to
+  time_signature: 4/4
+  # Only for songs that genuinely change tempo or metre. Anchored to bars.
+  # changes:
+  #   - {bar: 65, bpm: 132}
+  #   - {bar: 81, time_signature: 3/4}
+
+count_in:
+  bars: 2                       # click before bar 1 — what the band starts on
+
+click:
+  enabled: true
+  accent_downbeat: true
+
+drums:
+  # recorded   — the album has real drum tracks; import the MIDI or the audio
+  # extracted  — pull the drums out of the stereo mix with demucs, transcribe
+  # programmed — written from scratch, no source performance
+  origin: extracted
+  kit: ""                       # which drum VST/preset ended up being used
+  map: general-midi             # a file in config/drum-maps/
+
+source:
+  audio: ""                     # filename inside source/; empty = first file found
+
+stems: [drums, bass, other, vocals]
+
+# Section markers become Reaper markers *and* regions, so the arrangement is
+# navigable from a footswitch during the show.
+sections:
+  - {name: intro, bar: 1}
+  # - {name: verse 1, bar: 9}
+  # - {name: chorus, bar: 25}
+  # - {name: solo, bar: 41, note: "guitar takes 8 bars"}
+
+gx100:
+  channel: 1                    # must match MENU:MIDI:MIDI SETTING:RX CHANNEL
+  changes: []
+  # - {bar: 1,  memory: U01-1, name: "clean"}
+  # - {bar: 25, memory: U02-3, name: "chorus crunch"}
+
+video:
+  style: lyrics
+  lyrics: lyrics.md             # cue file; see docs/video.md
+
+# Pipeline progress. `rambass status` reads this; `rambass mark` writes it.
+# Values: todo | wip | done | n/a
+status:
+  source: todo
+  analyze: todo
+  stems: todo
+  drums_midi: todo
+  quantize: todo
+  kit: todo
+  render: todo
+  video: todo
+  gx100: todo
+  rehearsed: todo
+
+notes: ""

@@ -1,0 +1,33 @@
+# BOSS GX-100 MIDI configuration.
+#
+# `channel` must match MENU:MIDI:MIDI SETTING:RX CHANNEL on the pedal.
+# Per-song overrides live in each song.yaml under `gx100.channel`.
+channel: 1
+
+# The GX-100 resolves an incoming program change through its own
+# MENU:MIDI:PROGRAM MAP, so this file has to mirror what is programmed into the
+# unit — otherwise the backing track will send PC 7 and the pedal will jump to
+# whatever *it* thinks slot 7 is.
+#
+# With `sequential_default: true` we assume the straightforward layout:
+#
+#     bank 0, PC 0   -> U01-1        bank 0, PC 4   -> U02-1
+#     bank 0, PC 1   -> U01-2        ...
+#     bank 0, PC 2   -> U01-3        bank 0, PC 127 -> U32-4
+#     bank 0, PC 3   -> U01-4        bank 1, PC 0   -> U33-1
+#
+# Run `rambass gx100 map --limit 40` to print the table, then verify a couple of
+# rows against the pedal before trusting it: send PC 4 and check that U02-1
+# lights up. If the pedal disagrees, either reprogram its PROGRAM MAP or list the
+# real mapping under `assignments` below.
+sequential_default: true
+
+assignments: []
+  # - {bank: 0, pc: 0, memory: U01-1, note: "clean — verses"}
+  # - {bank: 0, pc: 1, memory: U01-2, note: "crunch — choruses"}
+
+# Reference, from the official MIDI implementation (ver 1.10):
+#   bank select   CC#0 = 0..2, then CC#32 = 0
+#   program change 0..127 within the selected bank
+#   assign sources CC#1-31, CC#33-63, CC#64-95
+#   MIDI clock     followed when MENU:MIDI:MIDI SETTING:SYNC CLOCK != INTERNAL

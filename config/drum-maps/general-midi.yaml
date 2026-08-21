@@ -1,0 +1,34 @@
+# General MIDI percussion map (MIDI channel 10).
+#
+# This is the canonical, spec-defined map and the one `rambass drums transcribe`
+# writes by default. Every drum VST worth using can read a GM-mapped MIDI file,
+# so keep the transcription in GM and remap only at the very end if your kit
+# wants something else.
+name: general-midi
+description: General MIDI level 1 percussion key map
+channel: 10
+notes:
+  kick: 36            # Bass Drum 1
+  kick_alt: 35        # Acoustic Bass Drum
+  snare: 38           # Acoustic Snare
+  snare_electric: 40  # Electric Snare
+  sidestick: 37
+  clap: 39
+  hihat_closed: 42
+  hihat_pedal: 44
+  hihat_open: 46
+  tom_low: 41         # Low Floor Tom
+  tom_low_mid: 43     # High Floor Tom
+  tom_mid: 45         # Low Tom
+  tom_high_mid: 47    # Low-Mid Tom
+  tom_high: 48        # Hi-Mid Tom
+  tom_highest: 50     # High Tom
+  crash: 49           # Crash Cymbal 1
+  crash_2: 57         # Crash Cymbal 2
+  ride: 51            # Ride Cymbal 1
+  ride_2: 59          # Ride Cymbal 2
+  ride_bell: 53
+  china: 52           # Chinese Cymbal
+  splash: 55
+  tambourine: 54
+  cowbell: 56

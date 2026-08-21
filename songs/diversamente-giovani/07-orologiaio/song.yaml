@@ -1,0 +1,47 @@
+slug: orologiaio
+title: Orologiaio
+album: diversamente-giovani
+track: 7
+key: ''
+bars: 0
+tempo:
+  bpm: 120.0
+  time_signature: 4/4
+count_in:
+  bars: 2
+click:
+  enabled: true
+  accent_downbeat: true
+drums:
+  origin: recorded
+  kit: ''
+  map: general-midi
+source:
+  audio: 07_Orologiaio_MST1.wav
+  url: https://drive.google.com/file/d/1IfECSJFmqtraqGBGGJGPox9iVPaOphsE/view
+stems:
+- drums
+- bass
+- other
+- vocals
+sections:
+- name: intro
+  bar: 1
+gx100:
+  channel: 1
+  changes: []
+video:
+  style: lyrics
+  lyrics: lyrics.md
+status:
+  source: todo
+  analyze: todo
+  stems: n/a
+  drums_midi: todo
+  quantize: todo
+  kit: todo
+  render: todo
+  video: todo
+  gx100: todo
+  rehearsed: todo
+notes: ''

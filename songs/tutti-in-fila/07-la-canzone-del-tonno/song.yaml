@@ -1,0 +1,47 @@
+slug: la-canzone-del-tonno
+title: La Canzone Del Tonno
+album: tutti-in-fila
+track: 7
+key: ''
+bars: 0
+tempo:
+  bpm: 120.0
+  time_signature: 4/4
+count_in:
+  bars: 2
+click:
+  enabled: true
+  accent_downbeat: true
+drums:
+  origin: extracted
+  kit: ''
+  map: general-midi
+source:
+  audio: 07 - La_Canzone_Del_Tonno.wav
+  url: https://drive.google.com/file/d/1V_7KilXFJJgMmD-ZMPHHuI-7H4lNnbG3/view
+stems:
+- drums
+- bass
+- other
+- vocals
+sections:
+- name: intro
+  bar: 1
+gx100:
+  channel: 1
+  changes: []
+video:
+  style: lyrics
+  lyrics: lyrics.md
+status:
+  source: todo
+  analyze: todo
+  stems: todo
+  drums_midi: todo
+  quantize: todo
+  kit: todo
+  render: todo
+  video: todo
+  gx100: todo
+  rehearsed: todo
+notes: short — about a minute

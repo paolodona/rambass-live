@@ -1,0 +1,27 @@
+# Copy this to config/drum-maps/<your-kit>.yaml and fill in the note numbers
+# from your drum plugin's own key-map page, then set `drums.map: <your-kit>` in
+# a song.yaml (or pass `--map <your-kit>` to `rambass drums remap`).
+#
+# Superior Drummer, Addictive Drums, EZdrummer, MT Power Drum Kit and Kontakt
+# kits all ship a mapping chart — read the numbers off the plugin rather than
+# trusting a table found on the internet, because they differ per kit preset
+# and per articulation (a "snare" is typically 4-6 different notes: centre,
+# rimshot, edge, several ghost-note velocities).
+#
+# Any canonical name you leave out falls back to General MIDI.
+name: my-kit
+description: ""
+channel: 10
+notes:
+  kick:
+  snare:
+  sidestick:
+  hihat_closed:
+  hihat_pedal:
+  hihat_open:
+  tom_high:
+  tom_mid:
+  tom_low:
+  crash:
+  ride:
+  ride_bell:

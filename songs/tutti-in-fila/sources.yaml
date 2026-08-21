@@ -1,0 +1,25 @@
+# Where the masters for this album live.
+#
+# Titles were read off the master filenames — check them against the sleeve and
+# fix any that are wrong, here and in the song.yaml. `scripts/scaffold_album.py`
+# regenerates the song folders from this file (it never overwrites an existing
+# song.yaml).
+album: tutti-in-fila
+title: Tutti in Fila
+drums: extracted         # no original drum tracks — extract from the stereo mix
+drive_folder: https://drive.google.com/drive/folders/1toFiyRWkFr8ddYD36Z3951ee8vJARoAc
+masters_format: WAV (and MP3) in the album folder — no separate masters subfolder
+cover: https://drive.google.com/file/d/1S9J_VqlzfOynBzxcw_ZNayS1aC6hhmH6/view
+
+tracks:
+  - {track: 1,  title: "Intro Portamistica Z.Z.I.",   file: "01 Intro Portamistica Z.Z.I..wav",  id: 1pyAsgAIqjmbIFb344fc21raB4fG_f3ui, mp3: 1YpMsZG3itkV2SIszxNAxlXzSI09PySjQ, note: "short intro — probably plays as straight album audio"}
+  - {track: 2,  title: "I Pooh",                      file: "02 I PoohFFI.wav",                  id: 13ArsmPYFwrGRyVsfgAYihp2XEsy4DXSG, mp3: 1Ojy7wufejncitYxZpXJwmT7DepyNkSUL, note: "master filename is '02 I PoohFFI' — confirm the real title"}
+  - {track: 3,  title: "Tutti In Fila",               file: "03 Tutti In Fila.wav",              id: 1BfM_6UEy5hCaWfU53XR3SwMUJXNhzvDj, mp3: 1LMbI926n2S66QtfHEMVU_1lWWRVMW9-p}
+  - {track: 4,  title: "Ampiamente Contestabile",     file: "04 Ampiamente Contestabile.wav",    id: 1unOVxfwmB5-GWHuM34lN83ROf4pUghJf, mp3: 1cXeSvjNijYAljH8qBXwj2FAmUQGapepd}
+  - {track: 5,  title: "Intro Vibratore",             file: "05 Intro Vibratore.wav",            id: 1yj8kxnT9TrULu5x2XbbJ-KLC7p2HLfF5, mp3: 16ugKu0V-K9Gnme9xULNOGay6x1sHYVnb, note: "intro to track 6 — consider treating the two as one backing track"}
+  - {track: 6,  title: "La Vera Storia Del Vibratore", file: "06 La Vera Storia Del Vibratore.wav", id: 1j99ea3n3iGXKDZqWmO4A1PBZYGlFOvsf, mp3: 1OgWQbjyCId1V3H10BMQTuZFEVnG_2Tl4}
+  - {track: 7,  title: "La Canzone Del Tonno",        file: "07 - La_Canzone_Del_Tonno.wav",     id: 1V_7KilXFJJgMmD-ZMPHHuI-7H4lNnbG3, mp3: 1gA9z9055tnaZhiNNVpl36CyC0JpH14FU, note: "short — about a minute"}
+  - {track: 8,  title: "Skizzo Sonovabic",            file: "08 - Skizzo_Sonovabic.wav",         id: 1zEkANlrqUuZSVMxxziIrIihqfc6ZTwNk, mp3: 1ocbGD2EV0EgTsEGQsGWKPlsd-OW-xtnd}
+  - {track: 9,  title: "Manlio",                      file: "09 Manlio.wav",                     id: 1kDxz8I6egN0FwbGrWVPuxGJcFnvUn9rI, mp3: 19baiAOOiMtYto7xyTCRvfjacswV0NeK1}
+  - {track: 10, title: "La Canzone Del Solero",       file: "10 La Canzone Del Solero.mp3",      id: 1Q7B8pr8zLBp_-Bbh62MAfMkYJ0w4VfrD, note: "MP3 ONLY — no WAV in Drive. Separation and transcription off a 2005 MP3 will be noticeably worse; find the WAV if it exists anywhere"}
+  - {track: 11, title: "L'Esercito Del Surf",         file: "11 L'Esercito Del Surf.wav",        id: 1qDI8VqlExf8k18BGqF7WT-HE2GEAVxUG, mp3: 17jZ6r8MCRvb0_IXCF9otqxAkA0yXz2xG}

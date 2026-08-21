@@ -1,0 +1,7 @@
+# MIDI is small and we WANT it in git (it is the real deliverable), but it is
+# binary — never let git mangle line endings in it.
+*.mid  binary
+*.midi binary
+*.RPP  text eol=lf
+*.rpp  text eol=lf
+*.lua  text eol=lf

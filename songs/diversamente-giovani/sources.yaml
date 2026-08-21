@@ -1,0 +1,30 @@
+# Where the masters for this album live.
+#
+# Titles were read off the master filenames — check them against the sleeve and
+# fix any that are wrong, here and in the song.yaml. `scripts/scaffold_album.py`
+# regenerates the song folders from this file (it never overwrites an existing
+# song.yaml).
+album: diversamente-giovani
+title: Diversamente Giovani
+drums: recorded          # the drum tracks were recorded — import, don't extract
+drive_folder: https://drive.google.com/drive/folders/1Ceu5N9WGc0YJx_3skEkjLmOvUEAgkHDg
+masters_folder: https://drive.google.com/drive/folders/11ZZ--W1WJ19nDQLcvkD5ZsmUjEcpwQlj
+masters_format: 44100 Hz / 24 bit PCM WAV  (MP3 and 16-bit versions also in Drive)
+cover: https://drive.google.com/file/d/19z_-8JKtuo2X8cqUn5W8y3n8fgzVWlyQ/view
+
+tracks:
+  - {track: 1,  title: "INTRO",                file: "01_INTRO_MST1.wav",                 id: 1k_ABSjmpewY4-ex5XIMAlJpN05OJX1Bn, note: "short intro — probably plays as straight album audio"}
+  - {track: 2,  title: "ForMayGrana",          file: "02_ForMayGrana_MST1.wav",           id: 1y8R2McS-AfcOB_qzFM5Sj2DHTINXqoc_}
+  - {track: 3,  title: "Mother Sacher",        file: "03_Mother Sacher_MST1.wav",         id: 1pntd5FCRCgDkmaMcRbXnQozMhW4uWF_u}
+  - {track: 4,  title: "Bambolina",            file: "04_Bambolina_MST1.wav",             id: 1gkm7gPJESB94C9lyykCWOVML4AgWei4p}
+  - {track: 5,  title: "Itturfiatrugoy",       file: "05_Itturfiatrugoy_MST1.wav",        id: 1PlAzAPOxT_CV70e1CT2szYBgUm8rptk2}
+  - {track: 6,  title: "Il Phurgone",          file: "06_Il Phurgone_MST1.wav",           id: 1tKtKePir-ruFDZLgmfzHZZfuahOnYqEY}
+  - {track: 7,  title: "Orologiaio",           file: "07_Orologiaio_MST1.wav",            id: 1IfECSJFmqtraqGBGGJGPox9iVPaOphsE}
+  - {track: 8,  title: "Il Cellulare",         file: "08_Il Cellulare_MST1.wav",          id: 1SirazEstPJdE-oZ5bw_73yUsPPAD2739}
+  - {track: 9,  title: "Per Niente Stanca",    file: "09_PerNienteStanca_MST1.wav",       id: 1Xmzp9OEh_6HARWrlY4lQKKcZnrbMnNsT}
+  - {track: 10, title: "Superman",             file: "10_Superman_MST1.wav",              id: 1I1BXgEizv6RxGMm23SIheg3RWJGRHMto}
+  - {track: 11, title: "Se Sei Felice",        file: "11_Se Sei Felice_MST1.wav",         id: 1nOKxDpptDCCinB8f_8piTbMNRks1CKLc}
+  - {track: 12, title: "Mandami un Faxe",      file: "12_Mandami un Faxe_MST1.wav",       id: 1ov1brzXp6Wwjp1FWLCbUcjZTGWIKO6Oz}
+  - {track: 13, title: "La Ragazza da Milano", file: "13_La Ragazza da Milano_MST2.wav",  id: 1SWb4jBvJDco1KO5nioYnPYTrhq8vdqnW, note: "two masters exist — MST2 used here, MST1 is 1jU6amziYflSITijpz3L4m8oumYcAzskl; check which is the released one"}
+  - {track: 14, title: "Diversamente Giovani", file: "14_Diversamente Giovani_MST1.wav",  id: 1nx0t_LnDTLkUFKt1XIkI0u3OpfmX4WA4}
+  - {track: 15, title: "OUTRO",                file: "15_OUTRO_MST1.wav",                 id: 1dyslmGLdNUdpDaQfoxYgJQTjTm_cRIOn, note: "short outro — probably plays as straight album audio"}

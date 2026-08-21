@@ -1,0 +1,47 @@
+slug: intro-portamistica-z-z-i
+title: Intro Portamistica Z.Z.I.
+album: tutti-in-fila
+track: 1
+key: ''
+bars: 0
+tempo:
+  bpm: 120.0
+  time_signature: 4/4
+count_in:
+  bars: 2
+click:
+  enabled: true
+  accent_downbeat: true
+drums:
+  origin: extracted
+  kit: ''
+  map: general-midi
+source:
+  audio: 01 Intro Portamistica Z.Z.I..wav
+  url: https://drive.google.com/file/d/1pyAsgAIqjmbIFb344fc21raB4fG_f3ui/view
+stems:
+- drums
+- bass
+- other
+- vocals
+sections:
+- name: intro
+  bar: 1
+gx100:
+  channel: 1
+  changes: []
+video:
+  style: lyrics
+  lyrics: lyrics.md
+status:
+  source: todo
+  analyze: todo
+  stems: todo
+  drums_midi: todo
+  quantize: todo
+  kit: todo
+  render: todo
+  video: todo
+  gx100: todo
+  rehearsed: todo
+notes: short intro — probably plays as straight album audio

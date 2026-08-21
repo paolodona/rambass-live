@@ -1,0 +1,48 @@
+slug: la-ragazza-da-milano
+title: La Ragazza da Milano
+album: diversamente-giovani
+track: 13
+key: ''
+bars: 0
+tempo:
+  bpm: 120.0
+  time_signature: 4/4
+count_in:
+  bars: 2
+click:
+  enabled: true
+  accent_downbeat: true
+drums:
+  origin: recorded
+  kit: ''
+  map: general-midi
+source:
+  audio: 13_La Ragazza da Milano_MST2.wav
+  url: https://drive.google.com/file/d/1SWb4jBvJDco1KO5nioYnPYTrhq8vdqnW/view
+stems:
+- drums
+- bass
+- other
+- vocals
+sections:
+- name: intro
+  bar: 1
+gx100:
+  channel: 1
+  changes: []
+video:
+  style: lyrics
+  lyrics: lyrics.md
+status:
+  source: todo
+  analyze: todo
+  stems: n/a
+  drums_midi: todo
+  quantize: todo
+  kit: todo
+  render: todo
+  video: todo
+  gx100: todo
+  rehearsed: todo
+notes: two masters exist — MST2 used here, MST1 is 1jU6amziYflSITijpz3L4m8oumYcAzskl;
+  check which is the released one

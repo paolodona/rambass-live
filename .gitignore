@@ -1,0 +1,52 @@
+# ── Audio & video media never goes in git ────────────────────────────────
+# Source recordings, stems, renders and videos are large and binary.
+# Keep them on disk / in the band's cloud drive; git tracks the *recipes*.
+*.wav
+*.aif
+*.aiff
+*.flac
+*.mp3
+*.m4a
+*.ogg
+*.opus
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+
+# Reaper working files (the generated .RPP under reaper/build is disposable,
+# the project you actually save while editing is yours and stays local)
+*.RPP-bak
+*.rpp-bak
+*.reapeaks
+reaper/build/*.rbs
+songs/**/reaper/
+
+# Demucs / model caches
+.cache/
+models/
+*.ckpt
+*.pt
+*.pth
+*.th
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+._*
+Thumbs.db
+
+# Local overrides
+rambass.local.toml
+.env
