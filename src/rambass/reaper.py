@@ -40,16 +40,29 @@ class TrackSpec:
     pan: float = 0.0
     color: tuple[int, int, int] = (90, 90, 90)
     role: str = "reference"
+    muted: bool = False
 
 
+#: Two separate count-in / click tracks, never mixed into the backing track:
+#:
+#: * ``STICKS`` is the drumstick count-in and only the count-in. It is a musical
+#:   part — a drummer counting the band in — so it is fine for it to reach the
+#:   PA, and it stays unmuted.
+#: * ``CLICK`` is the click for the song itself, for rehearsal and for tracking
+#:   overdubs onto a finished base. It is **muted by default**: at a gig it must
+#:   not reach the front of house.
+#:
+#: The two do not overlap, so either can be muted without leaving a gap.
 DEFAULT_TRACKS: tuple[TrackSpec, ...] = (
-    TrackSpec("CLICK", -6.0, 0.0, (250, 190, 60), role="click"),
+    TrackSpec("STICKS", -3.0, 0.0, (250, 210, 120), role="sticks"),
+    TrackSpec("CLICK", -6.0, 0.0, (250, 190, 60), role="click", muted=True),
+    TrackSpec("BACKING", 0.0, 0.0, (120, 200, 160), role="backing"),
     TrackSpec("DRUMS MIDI", 0.0, 0.0, (120, 180, 255), role="drums"),
-    TrackSpec("REF drums", -6.0, 0.0, (110, 110, 110), role="reference"),
-    TrackSpec("REF bass", -6.0, 0.0, (110, 110, 110), role="reference"),
-    TrackSpec("REF other", -6.0, 0.0, (110, 110, 110), role="reference"),
-    TrackSpec("REF vocals", -6.0, 0.0, (110, 110, 110), role="reference"),
-    TrackSpec("REF mix", -6.0, 0.0, (150, 110, 110), role="reference"),
+    TrackSpec("REF drums", -6.0, 0.0, (110, 110, 110), role="reference", muted=True),
+    TrackSpec("REF bass", -6.0, 0.0, (110, 110, 110), role="reference", muted=True),
+    TrackSpec("REF other", -6.0, 0.0, (110, 110, 110), role="reference", muted=True),
+    TrackSpec("REF vocals", -6.0, 0.0, (110, 110, 110), role="reference", muted=True),
+    TrackSpec("REF mix", -6.0, 0.0, (150, 110, 110), role="reference", muted=True),
     TrackSpec("GX-100 MIDI", 0.0, 0.0, (180, 250, 140), role="gx100"),
 )
 
@@ -94,7 +107,9 @@ def build_song_script(
     song: Song,
     *,
     tracks: tuple[TrackSpec, ...] = DEFAULT_TRACKS,
+    sticks_wav: Path | None = None,
     click_wav: Path | None = None,
+    backing_wav: Path | None = None,
     drum_midi: Path | None = None,
     gx100_midi: Path | None = None,
     include_reference: bool = True,
@@ -114,7 +129,9 @@ def build_song_script(
         sig = timeline.time_signature_at(change_bar)
         script.add("TEMPO", position, timeline.bpm_at(change_bar), *sig)
 
-    wanted_roles = {"click", "drums", "gx100"} | ({"reference"} if include_reference else set())
+    wanted_roles = {"sticks", "click", "backing", "drums", "gx100"} | (
+        {"reference"} if include_reference else set()
+    )
     for track in tracks:
         if track.role not in wanted_roles:
             continue
@@ -122,12 +139,19 @@ def build_song_script(
             "TRACK", track.name, track.volume_db, track.pan,
             ",".join(str(c) for c in track.color),
         )
+        if track.muted:
+            script.add("MUTE", track.name, 1)
 
     def as_path(path: Path) -> str:
         return str(path.resolve()) if absolute_paths else str(path)
 
+    # STICKS sits at zero; everything musical starts after the count-in.
+    if sticks_wav and sticks_wav.exists():
+        script.add("ITEM", "STICKS", as_path(sticks_wav), 0.0)
     if click_wav and click_wav.exists():
-        script.add("ITEM", "CLICK", as_path(click_wav), 0.0)
+        script.add("ITEM", "CLICK", as_path(click_wav), timeline.count_in_seconds)
+    if backing_wav and backing_wav.exists():
+        script.add("ITEM", "BACKING", as_path(backing_wav), timeline.count_in_seconds)
     if drum_midi and drum_midi.exists():
         script.add("MIDI", "DRUMS MIDI", as_path(drum_midi), timeline.count_in_seconds)
     if gx100_midi and gx100_midi.exists():
@@ -194,7 +218,10 @@ def build_setlist_script(
         first.bpm if first else 120.0,
         *(first.time_signature if first else (4, 4)),
     )
+    script.add("TRACK", "STICKS", -3.0, 0.0, "250,210,120")
     script.add("TRACK", "BACKING", 0.0, 0.0, "120,200,160")
+    script.add("TRACK", "CLICK", -6.0, 0.0, "250,190,60")
+    script.add("MUTE", "CLICK", 1)
     script.add("TRACK", "GX-100 MIDI", 0.0, 0.0, "180,250,140")
 
     cursor = 0.0

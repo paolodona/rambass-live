@@ -12,7 +12,9 @@ different project between songs — is the thing a single session removes
 completely. Everything is open, on one timeline, before the first note.
 
 ```
-TRACK  BACKING     one pre-rendered stereo WAV per song, count-in included
+TRACK  STICKS      drumstick count-in, at 0.  May go to the PA.   unmuted
+TRACK  BACKING     the pre-rendered stereo base, starts after the count-in
+TRACK  CLICK       click for the song only. Rehearsal/overdubs.    MUTED
 TRACK  GX-100      short MIDI items: bank select + program change, to the pedal
 TRACK  VIDEO       title card, then the lyric video, per song
 REGION 01 … 14     one per song, in running order
@@ -143,18 +145,62 @@ lowering resolution and frame rate.
 
 ---
 
-## The click question
+## Count-in and click: two stems, never in the base
 
-Decide early, because it changes what you render:
+This is settled, and it is worth being precise about because it is the one
+decision in this area that cannot be undone later.
 
-* **Click in the band's monitors only** — the safe, normal choice. Keep the click
-  on its own track, render a separate click-only file, and give front-of-house a
-  clean feed. Requires the monitor path to exist.
-* **Count-in only, no click during the song** — what `rambass countin` gives you:
-  a count-in baked into the head of the base, then nothing. Simplest, and enough
-  if the band can hold time against the backing track itself.
-* **Click baked into the base** — never. It goes to the PA and cannot be removed.
+### STICKS — the count-in
 
-Your existing bases have no click, and four of them have no count-in either,
-which is what `rambass countin` fixes. If you decide you want click throughout,
-that is a re-render, so decide before Lane A closes in [plan.md](plan.md).
+Drumsticks, counting the band in, the way the drummer would have. This is a
+**musical part**, not a utility signal, so it is fine for it to reach the PA: an
+audience hearing four stick clicks before a song is completely normal, and the
+band gets a real cue instead of a beep.
+
+```
+rambass countin 02-formaygrana
+```
+
+writes `render/sticks.wav` — the count-in and nothing else, so on the timeline it
+sits at 0 and the backing track starts where it ends. Unmuted at the gig.
+
+The synthesised hit is a band-limited noise burst with a fast decay, which gets
+close to stick-on-stick. A real recording will always beat it, and it costs
+nothing to try:
+
+```
+rambass countin --all --sample sticks.wav
+```
+
+A phone recording of the drummer's own sticks is enough. One hit, trimmed.
+
+### CLICK — the song
+
+```
+rambass click 02-formaygrana
+```
+
+writes `render/click.wav`, covering **bar 1 to the end** — no count-in, because
+that is the sticks stem's job. For rehearsal, and for tracking overdubs onto a
+finished base (guitar doubles, choir vocals). **Muted on build, and it stays out
+of front of house.**
+
+### Why they do not overlap
+
+Sticks cover the count-in; the click covers the song. Nothing is ever doubled,
+so any combination can be enabled without a beat sounding twice or a gap opening
+up:
+
+| | sticks | click | for |
+|---|:--:|:--:|---|
+| gig | on | off | count-in audible, no click to the PA |
+| rehearsal | on | on | play to the click all the way through |
+| tracking overdubs | on | on | count-in, then click while recording |
+| checking a mix | off | off | just the base |
+
+### Never in the base
+
+`rambass` has no code path that writes a click into a backing track — the
+function that used to do it was removed rather than left as an option, and a test
+asserts it stays gone. A click mixed into the base goes to the PA, cannot be
+removed, and makes the base useless for anything else.

@@ -369,59 +369,59 @@ def cmd_drums_remap(args: argparse.Namespace) -> int:
 
 # ── commands: click, reaper, gx100, video ────────────────────────────────
 def cmd_click(args: argparse.Namespace) -> int:
+    """Render the rehearsal / overdub click for the song proper."""
     from .click import render_click_file
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
         bars = args.bars or song.total_bars()
-        target = song.path("render", "click.wav")
+        target = Path(args.out) if args.out else song.path("render", "click.wav")
         render_click_file(
             target, song.timeline(), bars,
             sample_rate=args.sample_rate,
             accent_downbeat=bool(song.click.get("accent_downbeat", True)),
             level_db=args.level,
         )
-        timeline = song.timeline()
-        _say(f"{song.title}: {target}  "
-             f"({song.count_in_bars} bar count-in = {timeline.count_in_seconds:.2f}s, "
-             f"then {bars} bars at {song.bpm:g} BPM)")
+        _say(f"{song.title}: {bars} bars at {song.bpm:g} BPM -> {target.name} "
+             f"(starts at bar 1 — the count-in is the sticks stem)")
+    _say()
+    _say("for rehearsal and for tracking overdubs onto a finished base. Keep it")
+    _say("out of the PA, and never render it into the backing track.")
     return 0
 
 
 def cmd_countin(args: argparse.Namespace) -> int:
-    """Prepend a click count-in to an already-finished backing track."""
-    from .audio import load_audio, write_wav
-    from .click import prepend_count_in
+    """Render the drumstick count-in as its own stem."""
+    from .audio import load_audio
+    from .click import render_sticks_file
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
-        source = Path(args.file) if args.file else song.backing_track_path()
-        if not source:
-            _say(f"{song.slug}: no backing track in render/ — name one in "
-                 f"source.backing_track, or pass --file")
-            continue
-
         bars = args.bars or song.count_in_bars
         if bars < 1:
-            _say(f"{song.slug}: count_in.bars is {song.count_in_bars}, nothing to add")
+            _say(f"{song.slug}: count_in.bars is {song.count_in_bars}, nothing to render")
             continue
 
-        base, sample_rate = load_audio(source, args.sample_rate, channels=args.channels)
-        combined = prepend_count_in(
-            base, sample_rate, song.timeline(), bars,
-            click_level_db=args.level,
-            gap_seconds=args.gap,
-        )
-        target = Path(args.out) if args.out else song.path(
-            "render", f"{source.stem}-countin.wav"
-        )
-        write_wav(target, combined, sample_rate, bit_depth=24)
+        sample = None
+        if args.sample:
+            data, _ = load_audio(args.sample, args.sample_rate, channels=1)
+            sample = data[:, 0]
 
-        added = (len(combined) - len(base)) / sample_rate
-        _say(f"{song.title}: {source.name} + {bars} bar count-in "
-             f"({added:.2f}s at {song.bpm:g} BPM) -> {target.name}")
-        if args.mark:
-            _mark(song, "render")
+        target = Path(args.out) if args.out else song.path("render", "sticks.wav")
+        render_sticks_file(
+            target, song.timeline(), bars,
+            sample_rate=args.sample_rate,
+            level_db=args.level,
+            sample=sample,
+        )
+        timeline = song.timeline()
+        _say(f"{song.title}: {bars} bar count-in at {song.bpm:g} BPM "
+             f"({timeline.count_in_seconds:.2f}s"
+             + (f", from {Path(args.sample).name}" if args.sample else ", synthesised")
+             + f") -> {target.name}")
+    _say()
+    _say("this is a separate stem — it sits at 0 on the timeline and the backing")
+    _say("track starts where it ends. Nothing was written into the base.")
     return 0
 
 
@@ -433,7 +433,9 @@ def cmd_reaper_build(args: argparse.Namespace) -> int:
     for song in _songs(project, args.song, args.album, args.all):
         script = build_song_script(
             song,
+            sticks_wav=song.path("render", "sticks.wav"),
             click_wav=song.path("render", "click.wav"),
+            backing_wav=song.backing_track_path(),
             drum_midi=song.drum_midi_path(args.midi),
             gx100_midi=song.path("midi", "gx100.mid"),
             include_reference=not args.no_reference,
@@ -1054,27 +1056,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--set-default", action="store_true")
     p.set_defaults(func=cmd_drums_remap)
 
-    p = sub.add_parser("click", help="render the click track")
+    p = sub.add_parser(
+        "click",
+        help="render the rehearsal/overdub click (song only, its own stem)",
+    )
     _add_song_args(p)
     p.add_argument("--bars", type=int, default=0, help="override the song length")
+    p.add_argument("--out", help="explicit output path")
     p.add_argument("--sample-rate", type=int, default=48000)
     p.add_argument("--level", type=float, default=-9.0, help="click level in dBFS")
     p.set_defaults(func=cmd_click)
 
     p = sub.add_parser(
         "countin",
-        help="prepend a click count-in to a finished backing track",
+        help="render the drumstick count-in as its own stem",
     )
     _add_song_args(p)
-    p.add_argument("--file", help="use this audio instead of source.backing_track")
     p.add_argument("--out", help="explicit output path")
     p.add_argument("--bars", type=int, default=0, help="override count_in.bars")
-    p.add_argument("--level", type=float, default=-6.0, help="click level in dBFS")
-    p.add_argument("--gap", type=float, default=0.0,
-                   help="silence between the last click and the song")
+    p.add_argument("--level", type=float, default=-8.0, help="stick level in dBFS")
+    p.add_argument("--sample",
+                   help="use a real recorded stick hit instead of the synth — "
+                        "a phone recording of the drummer's own sticks beats any "
+                        "synthesised one")
     p.add_argument("--sample-rate", type=int, default=48000)
-    p.add_argument("--channels", type=int, default=2)
-    p.add_argument("--mark", action="store_true", help="mark the render stage done")
     p.set_defaults(func=cmd_countin)
 
     reaper = sub.add_parser("reaper", help="generate Reaper build scripts")

@@ -28,7 +28,9 @@ You get:
 
 | track | contents |
 |---|---|
-| CLICK | `render/click.wav`, at −6 dB |
+| STICKS | `render/sticks.wav` — the drumstick count-in, at 0. Unmuted; may go to the PA |
+| BACKING | the finished base, starting after the count-in |
+| CLICK | `render/click.wav` — the song click. **Muted on build**; rehearsal and overdubs only |
 | DRUMS MIDI | the quantised drum MIDI — put your drum VST here |
 | REF drums / bass / other / vocals | the demucs stems, muted reference |
 | REF mix | the original mix, muted reference |
@@ -74,9 +76,10 @@ Render the CLICK + DRUMS MIDI tracks (and nothing else) to
 setlist` looks for when assembling the whole-show project, and what `rambass
 video render --with-audio` muxes in.
 
-Keep the click on its own channel if the front-of-house can give the band a
-separate monitor feed — click in the ears, drums to the PA. If not, render two
-files: one with click for the band's mixer, one without for the PA.
+The count-in and the click are two separate stems and are never mixed into the
+base — see [live-playback.md](live-playback.md#count-in-and-click-two-stems-never-in-the-base).
+Render the backing track from BACKING alone; STICKS and CLICK stay as their own
+files so they can be muted independently.
 
 ## Whole-show project
 

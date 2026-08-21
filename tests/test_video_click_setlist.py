@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pathlib
 import wave
 
 import numpy as np
@@ -90,10 +91,14 @@ def test_empty_lyrics_produce_a_valid_but_empty_ass():
     assert "Dialogue:" not in text
 
 
-# ── click ────────────────────────────────────────────────────────────────
-def _click_onsets(buffer: np.ndarray, sample_rate: int) -> list[float]:
-    above = np.abs(buffer) > 0.02
-    starts = np.where(above[1:] & ~above[:-1])[0] + 1
+# ── sticks: the count-in, its own stem ───────────────────────────────────
+def _click_onsets(buffer: np.ndarray, sample_rate: int, threshold: float = 0.02):
+    above = np.abs(buffer) > threshold
+    starts = list(np.where(above[1:] & ~above[:-1])[0] + 1)
+    # A hit that begins on sample 0 has no preceding sample to rise from, so the
+    # edge test cannot see it. That is the normal case for the first stick.
+    if above.size and above[0]:
+        starts.insert(0, 0)
     merged: list[int] = []
     for start in starts:
         if not merged or start - merged[-1] > 0.05 * sample_rate:
@@ -101,49 +106,150 @@ def _click_onsets(buffer: np.ndarray, sample_rate: int) -> list[float]:
     return [s / sample_rate for s in merged]
 
 
-def test_click_has_one_tick_per_beat_including_the_count_in():
+def test_a_stick_hit_sounds_like_wood_not_a_beep():
+    """Broadband, bright, no low end, and gone in a few tens of milliseconds."""
+    from rambass.click import stick_hit
+
+    sample_rate = 48000
+    hit = stick_hit(sample_rate, seed=0)
+    spectrum = np.abs(np.fft.rfft(hit * np.hanning(len(hit))))
+    freqs = np.fft.rfftfreq(len(hit), 1 / sample_rate)
+    power = spectrum ** 2
+    total = float(power.sum())
+
+    def share(low, high):
+        return float(power[(freqs >= low) & (freqs < high)].sum()) / total
+
+    assert share(0, 300) < 0.02          # no boom — it is not a drum
+    assert share(1500, 8000) > 0.6       # the crack lives here
+    assert share(10000, 24000) < 0.10    # not hiss
+
+    rms = lambda a: float(np.sqrt((a ** 2).mean()))  # noqa: E731
+    assert rms(hit[: int(0.002 * sample_rate)]) > 10 * rms(hit[int(0.03 * sample_rate):])
+
+
+def test_stick_hits_are_seeded_and_vary():
+    """Identical hits in a row read as a machine; the seed keeps it repeatable."""
+    from rambass.click import stick_hit
+
+    assert np.allclose(stick_hit(48000, seed=4), stick_hit(48000, seed=4))
+    assert not np.allclose(stick_hit(48000, seed=4), stick_hit(48000, seed=5))
+
+
+def test_accent_on_beat_one_is_brighter():
+    from rambass.click import stick_hit
+
+    def centroid(hit):
+        spectrum = np.abs(np.fft.rfft(hit))
+        freqs = np.fft.rfftfreq(len(hit), 1 / 48000)
+        return float((spectrum * freqs).sum() / spectrum.sum())
+
+    assert centroid(stick_hit(48000, accent=True, seed=0)) > centroid(
+        stick_hit(48000, accent=False, seed=0)
+    )
+
+
+def test_sticks_cover_the_count_in_only():
+    from rambass.click import render_sticks
+
     timeline = Timeline(bpm=120, time_signature="4/4", count_in_bars=2)
-    buffer = render_click(timeline, 8, sample_rate=48000)
-    assert len(_click_onsets(buffer, 48000)) == (2 + 8) * 4
+    buffer = render_sticks(timeline, sample_rate=48000, tail_seconds=0.0)
+    # two bars at 120 = 4.0 s, and nothing beyond it
+    assert len(buffer) / 48000 == pytest.approx(4.0, abs=0.01)
+    assert len(_click_onsets(buffer, 48000)) == 8
+
+
+def test_sticks_land_on_the_beat():
+    from rambass.click import render_sticks
+
+    timeline = Timeline(bpm=120, count_in_bars=1)
+    onsets = _click_onsets(render_sticks(timeline, sample_rate=48000), 48000)
+    assert onsets == [pytest.approx(t, abs=0.002) for t in (0.0, 0.5, 1.0, 1.5)]
+
+
+def test_sticks_respect_the_metre():
+    from rambass.click import render_sticks
+
+    timeline = Timeline(bpm=90, time_signature="7/8", count_in_bars=1)
+    assert len(_click_onsets(render_sticks(timeline, sample_rate=48000), 48000)) == 7
+
+
+def test_sticks_use_the_bars_argument_over_the_manifest():
+    from rambass.click import render_sticks
+
+    timeline = Timeline(bpm=120, count_in_bars=2)
+    buffer = render_sticks(timeline, 1, sample_rate=48000, tail_seconds=0.0)
+    assert len(buffer) / 48000 == pytest.approx(2.0, abs=0.01)
+
+
+def test_sticks_reject_a_zero_bar_count_in():
+    from rambass.click import render_sticks
+
+    with pytest.raises(ValueError):
+        render_sticks(Timeline(bpm=120, count_in_bars=0))
+
+
+def test_sticks_can_use_a_real_recorded_sample():
+    from rambass.click import render_sticks
+
+    impulse = np.zeros(480, dtype=np.float32)
+    impulse[0] = 1.0
+    buffer = render_sticks(
+        Timeline(bpm=120, count_in_bars=1), sample_rate=48000, sample=impulse
+    )
+    assert len(_click_onsets(buffer, 48000)) == 4
+
+
+def test_sticks_write_a_24_bit_wav(tmp_path):
+    from rambass.click import render_sticks_file
+
+    path = render_sticks_file(tmp_path / "sticks.wav", Timeline(bpm=120, count_in_bars=2))
+    with wave.open(str(path)) as handle:
+        assert handle.getnchannels() == 1
+        assert handle.getsampwidth() == 3
+        assert handle.getframerate() == 48000
+
+
+# ── click: the song only, its own stem ───────────────────────────────────
+def test_click_starts_at_bar_one_not_at_the_count_in():
+    """The two stems must not overlap, or muting one leaves a doubled beat."""
+    timeline = Timeline(bpm=120, time_signature="4/4", count_in_bars=2)
+    buffer = render_click(timeline, 8, sample_rate=48000, tail_seconds=0.0)
+    assert len(buffer) / 48000 == pytest.approx(16.0, abs=0.01)
+    assert len(_click_onsets(buffer, 48000)) == 8 * 4
+    assert _click_onsets(buffer, 48000)[0] == pytest.approx(0.0, abs=0.002)
 
 
 def test_click_respects_the_metre():
-    timeline = Timeline(bpm=90, time_signature="7/8", count_in_bars=1)
+    timeline = Timeline(bpm=90, time_signature="7/8")
     buffer = render_click(timeline, 4, sample_rate=48000)
-    assert len(_click_onsets(buffer, 48000)) == (1 + 4) * 7
-
-
-def test_click_ticks_land_on_the_beat():
-    timeline = Timeline(bpm=120, count_in_bars=1)
-    onsets = _click_onsets(render_click(timeline, 2, sample_rate=48000), 48000)
-    assert onsets[:5] == [pytest.approx(t, abs=0.002) for t in (0.0, 0.5, 1.0, 1.5, 2.0)]
-
-
-def test_click_length_covers_the_song_plus_count_in_and_tail():
-    timeline = Timeline(bpm=120, count_in_bars=2)
-    buffer = render_click(timeline, 8, sample_rate=48000, tail_seconds=1.0)
-    assert len(buffer) / 48000 == pytest.approx(4.0 + 16.0 + 1.0, abs=0.01)
+    assert len(_click_onsets(buffer, 48000)) == 4 * 7
 
 
 def test_click_never_clips():
-    timeline = Timeline(bpm=200, count_in_bars=2)
+    timeline = Timeline(bpm=200)
     buffer = render_click(timeline, 16, sample_rate=48000, level_db=0.0, accent_db=0.0)
     assert float(np.max(np.abs(buffer))) <= 1.0
 
 
 def test_click_writes_a_24_bit_wav(tmp_path):
-    path = render_click_file(
-        tmp_path / "click.wav", Timeline(bpm=120, count_in_bars=1), 4
-    )
+    path = render_click_file(tmp_path / "click.wav", Timeline(bpm=120), 4)
     with wave.open(str(path)) as handle:
-        assert handle.getnchannels() == 1
-        assert handle.getsampwidth() == 3          # 24 bit
-        assert handle.getframerate() == 48000
+        assert handle.getsampwidth() == 3
 
 
 def test_click_rejects_a_zero_length_song():
     with pytest.raises(ValueError):
         render_click(Timeline(bpm=120), 0)
+
+
+def test_nothing_in_the_click_module_touches_a_backing_track():
+    """A click mixed into the base is unremovable, so the path must not exist."""
+    import rambass.click as click_module
+
+    assert not hasattr(click_module, "prepend_count_in")
+    source = pathlib.Path(click_module.__file__).read_text()
+    assert "backing" not in source.lower().replace("backing track", "")
 
 
 # ── setlists ─────────────────────────────────────────────────────────────
@@ -207,61 +313,3 @@ def test_next_actions_points_at_the_first_unfinished_stage(song):
     song.status["source"] = "done"
     assert "analyze" in next_actions([song])
     assert next_actions([]) == ""
-
-
-# ── count-in prepended to a finished backing track ───────────────────────
-def test_count_in_only_length_and_clicks():
-    from rambass.click import count_in_only
-
-    timeline = Timeline(bpm=120, time_signature="4/4")
-    buffer = count_in_only(timeline, 2, sample_rate=48000)
-    assert len(buffer) / 48000 == pytest.approx(4.0, abs=0.01)
-    assert len(_click_onsets(buffer, 48000)) == 8
-
-
-def test_count_in_only_respects_the_metre():
-    from rambass.click import count_in_only
-
-    buffer = count_in_only(Timeline(bpm=90, time_signature="7/8"), 1, sample_rate=48000)
-    assert len(_click_onsets(buffer, 48000)) == 7
-
-
-def test_count_in_only_rejects_zero_bars():
-    from rambass.click import count_in_only
-
-    with pytest.raises(ValueError):
-        count_in_only(Timeline(bpm=120), 0)
-
-
-def test_prepend_count_in_keeps_the_base_intact_and_stereo():
-    from rambass.click import prepend_count_in
-
-    timeline = Timeline(bpm=120, time_signature="4/4")
-    base = np.full((48000 * 3, 2), 0.5, dtype=np.float32)
-    out = prepend_count_in(base, 48000, timeline, 2)
-
-    added = len(out) - len(base)
-    assert added / 48000 == pytest.approx(4.0, abs=0.01)
-    assert out.shape[1] == 2
-    # the base is untouched at the end
-    assert np.allclose(out[-len(base):], base)
-
-
-def test_prepend_count_in_writes_the_click_to_every_channel():
-    from rambass.click import prepend_count_in
-
-    base = np.zeros((4800, 2), dtype=np.float32)
-    out = prepend_count_in(base, 48000, Timeline(bpm=120), 1)
-    lead = out[: len(out) - len(base)]
-    assert np.abs(lead[:, 0]).max() > 0.1
-    assert np.allclose(lead[:, 0], lead[:, 1])
-
-
-def test_prepend_count_in_accepts_mono_and_a_gap():
-    from rambass.click import prepend_count_in
-
-    base = np.zeros(4800, dtype=np.float32)
-    out = prepend_count_in(base, 48000, Timeline(bpm=120), 1, gap_seconds=0.5)
-    assert out.shape[1] == 1
-    added = (len(out) - len(base)) / 48000
-    assert added == pytest.approx(2.0 + 0.5, abs=0.01)

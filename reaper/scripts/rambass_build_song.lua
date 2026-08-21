@@ -8,8 +8,15 @@
   3. Actions > Show action list > ReaScript: Load... > pick this file, then Run
   4. Choose the .rbs file from reaper/build/
 
-  It creates the tracks, imports the click / drum MIDI / reference stems, writes
-  the tempo map and drops a marker and a region on every section.
+  It creates the tracks, imports the count-in / click / backing / drum MIDI /
+  reference stems, writes the tempo map and drops a marker and a region on every
+  section.
+
+  Two separate count-in tracks, and they are not interchangeable:
+    STICKS  the drumstick count-in only. A musical part; may go to the PA.
+    CLICK   the click for the song itself, for rehearsal and overdubs.
+            Muted on build, and it must stay out of front of house.
+  Neither is ever mixed into the backing track.
 
   Nothing here is destructive: it only adds to the current project. Run it on a
   fresh project, or on a copy.
@@ -154,6 +161,14 @@ local function build(path)
       elseif kind == "TRACK" then
         add_track(f[2], tonum(f[3], 0), tonum(f[4], 0), f[5])
         counts.TRACK = counts.TRACK + 1
+
+      elseif kind == "MUTE" then
+        local track = find_track(f[2])
+        if track then
+          reaper.SetMediaTrackInfo_Value(track, "B_MUTE", tonum(f[3], 1))
+        else
+          log("  ! no track named '%s' to mute", tostring(f[2]))
+        end
 
       elseif kind == "ITEM" or kind == "MIDI" then
         if insert_media(f[2], f[3], tonum(f[4], 0)) then

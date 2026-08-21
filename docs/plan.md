@@ -97,14 +97,16 @@ song ───┼─ Lane B: lyrics ─────────┼──> song r
 
 | tier | what to do |
 |---|---|
-| A | `rambass countin <song>` for the four missing a count-in; remix the rest of the punch-list in the album session |
-| B | mix a BASE in the album session — album mix minus what the band plays live — then `rambass countin` |
+| A | `rambass countin <song>` for the four missing a count-in, plus `rambass click`; remix the rest of the punch-list in the album session |
+| B | mix a BASE in the album session — album mix minus what the band plays live — then `rambass countin` and `rambass click` |
 | C | `rambass analyze --write` → `rambass stems --drums-only` → `rambass drums transcribe` → `rambass drums clean` → voice the kit → render |
 | D | none; use the album audio as-is |
 
 **Gate A ✅ when**
 - [ ] a single stereo WAV exists in `render/`, at the gig sample rate
-- [ ] it starts with a count-in the band can come in on
+- [ ] `render/sticks.wav` exists — the drumstick count-in, as its own stem
+- [ ] `render/click.wav` exists — the song click, as its own stem
+- [ ] **no click anywhere in the base itself**
 - [ ] loudness is matched across songs (nothing jumps between tracks)
 - [ ] `rambass status` shows `rnd` as `X`
 - [ ] **the filename is frozen** — Lanes B and C are timed against this file

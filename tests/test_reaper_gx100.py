@@ -54,13 +54,35 @@ def test_build_script_skips_media_that_is_not_there(song):
     assert not _records(script, "MIDI")
 
 
-def test_build_script_includes_media_that_is_there(song):
+def test_build_script_places_the_two_stems_on_their_own_tracks(song):
+    """Sticks at zero; the click starts with the song, so they never overlap."""
+    sticks = song.path("render", "sticks.wav")
     click = song.path("render", "click.wav")
-    click.write_bytes(b"RIFF")
-    script = build_song_script(song, click_wav=click)
-    items = _records(script, "ITEM")
-    assert items[0][1] == "CLICK"
-    assert items[0][3] == "0"
+    base = song.path("render", "base.wav")
+    for path in (sticks, click, base):
+        path.write_bytes(b"RIFF")
+
+    script = build_song_script(song, sticks_wav=sticks, click_wav=click, backing_wav=base)
+    placed = {r[1]: float(r[3]) for r in _records(script, "ITEM")}
+    assert placed["STICKS"] == pytest.approx(0.0)
+    assert placed["CLICK"] == pytest.approx(4.0)      # two bars of count-in at 120
+    assert placed["BACKING"] == pytest.approx(4.0)
+
+
+def test_build_script_mutes_the_click_but_not_the_sticks(song):
+    """The click must never reach front of house; the sticks may."""
+    script = build_song_script(song)
+    muted = {r[1] for r in _records(script, "MUTE")}
+    assert "CLICK" in muted
+    assert "STICKS" not in muted
+    assert "BACKING" not in muted
+
+
+def test_setlist_script_also_mutes_the_click(song):
+    script = build_setlist_script([song])
+    assert ("MUTE", "CLICK", "1") in script.records
+    names = [r[1] for r in _records(script, "TRACK")]
+    assert names[:3] == ["STICKS", "BACKING", "CLICK"]
 
 
 def test_build_script_can_leave_out_the_reference_tracks(song):
