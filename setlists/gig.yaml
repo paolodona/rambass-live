@@ -7,9 +7,15 @@
 #
 # Why the order is what it is — the decisions worth arguing with:
 #
-#   * The three hits are front-loaded (I Puffi, Tutti In Fila, ForMayGrana).
-#     The front of the set is where you buy the audience's attention for
-#     everything after it.
+#   * I Puffi is at 22, not at the front. It is the signature song — the one
+#     people came for — and that is a card you play once. Metallica ran 99 shows
+#     on the M72 tour with no encore at all, and put Enter Sandman at 17 and
+#     Master of Puppets at 18, of 19. The biggest songs go near the end of the
+#     main set: not spent first, and not held back for an encore either.
+#   * ForMayGrana opens instead: a hit, upbeat and happy, with a riff they know
+#     straight away. The slot wants recognisable and upper-mid, not the heaviest
+#     thing available — opening on Mother Sacher would be the mistake.
+#   * Tutti In Fila at 3 locks the room in behind the opener.
 #   * The deep cuts are clustered at 12-15 (Intro Vibratore, La Vera Storia,
 #     Skizzo, Mandami un Faxe) — the middle is where unfamiliar material belongs,
 #     carried by the known songs either side. It is also where a long song like
@@ -23,10 +29,11 @@
 #     does nothing. They are spread apart on purpose: they are both the
 #     breathers and the natural places to talk, retune, or recover if something
 #     has gone wrong.
-#   * The last three are known, known, hit. Mother Sacher at 22 is the heaviest
-#     thing in the set, and La Ragazza follows it as the anthem — brutal, then
-#     the singalong. La Ragazza is not the highest-energy song by number, but
-#     its repeatable finale is what actually ends a show.
+#   * The closing run is Mother Sacher (heaviest) → I Puffi (signature) → La
+#     Ragazza (the anthem). That mirrors the shape above: the two biggest at 21
+#     and 22, with the structural ender last. La Ragazza is not the
+#     highest-energy song by number, but a finale that repeats as long as it
+#     keeps working is what actually ends a show.
 #   * Orologiaio at 7 is ninety seconds of death metal with a guest, straight
 #     after bluesy rock. It costs almost no time and the contrast is the point.
 #   * Intro Vibratore is attached to La Vera Storia Del Vibratore — they run
@@ -35,18 +42,19 @@ name: Ramba S.S. — the set
 date: ""
 venue: ""
 notes: |
-  Shape: open hard on three hits, first trough at Manlio, peak at Orologiaio and
-  Itturfiatrugoy, breathe on Tonno. Restart, work through the deep cuts, second
-  trough at Mandami un Faxe, climb back on Bambolina. Last breather at Se Sei
-  Felice, then Mother Sacher — the heaviest thing we have — into La Ragazza da
-  Milano, whose finale repeats as long as it keeps working.
+  Shape: open on ForMayGrana and Tutti In Fila, first trough at Manlio, peak at
+  Orologiaio into Itturfiatrugoy, breathe on Tonno. Restart, work through the deep
+  cuts, second trough at Mandami un Faxe, climb back on Bambolina. Last breather
+  at Se Sei Felice, then the closing run: Mother Sacher, I Puffi, La Ragazza da
+  Milano — whose finale repeats as long as it keeps working.
+
+  No encore. The big songs are in the set, not held back behind a walk-off.
 
   Two songs need no playback at all: La Canzone Del Tonno and Se Sei Felice.
 songs:
-  - diversamente-giovani/01-intro                       # walk-on
-  - tutti-in-fila/02-i-puffi                            # HIT · opener
-  - tutti-in-fila/03-tutti-in-fila                      # HIT · metal
-  - diversamente-giovani/02-formaygrana                 # HIT · happy
+  - diversamente-giovani/01-intro                       # walk-on, from tape
+  - diversamente-giovani/02-formaygrana                 # HIT · opener — happy, recognisable
+  - tutti-in-fila/03-tutti-in-fila                      # HIT · metal, locks it in
   - diversamente-giovani/06-il-phurgone                 # feel change, funky
   - tutti-in-fila/09-manlio                             # trough 1
   - diversamente-giovani/10-superman                    # lift
@@ -58,11 +66,12 @@ songs:
   - tutti-in-fila/06-la-vera-storia-del-vibratore       # deep cuts, mid-set
   - tutti-in-fila/08-skizzo-sonovabic                   # the long epic
   - diversamente-giovani/12-mandami-un-faxe             # trough 2
-  - diversamente-giovani/04-bambolina                   # lift on a famous one
+  - diversamente-giovani/04-bambolina                   # HIT · lift
   - diversamente-giovani/14-diversamente-giovani        # the new one, carried
   - diversamente-giovani/09-per-niente-stanca
   - diversamente-giovani/08-il-cellulare
   - diversamente-giovani/11-se-sei-felice               # last breather
   - tutti-in-fila/11-l-esercito-del-surf
   - diversamente-giovani/03-mother-sacher               # peak · heaviest
-  - diversamente-giovani/13-la-ragazza-da-milano        # CLOSER · the anthem
+  - tutti-in-fila/02-i-puffi                            # SIGNATURE · the one they came for
+  - diversamente-giovani/13-la-ragazza-da-milano        # CLOSER · the anthem finale

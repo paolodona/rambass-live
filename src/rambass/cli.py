@@ -929,7 +929,8 @@ def cmd_setlist_arc(args: argparse.Namespace) -> int:
     setlist = Setlist.load(find_setlist(project, args.setlist))
     songs = setlist.resolve(project)
 
-    _say(f"{setlist.name} — {len(songs)} songs")
+    _say(f"{setlist.name} — {len(songs)} songs"
+         + ("   [already played — reviewed, not judged]" if setlist.historical else ""))
     _say()
     _say(table(songs))
     _say()
@@ -949,6 +950,9 @@ def cmd_setlist_arc(args: argparse.Namespace) -> int:
         _say(f"     {finding.what}")
     _say()
     _say(f"{len(problems)} problem(s), {len(watch)} to look at")
+    if setlist.historical:
+        _say("(a played set — findings are hindsight, not a failing grade)")
+        return 0
     return 1 if problems else 0
 
 

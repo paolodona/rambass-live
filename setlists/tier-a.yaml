@@ -4,21 +4,23 @@
 #
 # Worth keeping as its own file even after the full set is ready — it is the
 # fallback if a rehearsal goes badly, and the answer to a support slot.
+#
+# I Puffi still sits at 6, not at 1. A short set makes the temptation worse, not
+# better: with only seven songs there is even less after it to hold the room.
 name: Ramba S.S. — playable now (Tier A)
 date: ""
 venue: ""
 notes: |
-  Seven songs, all finished. Opens on a hit, one trough, ends on the heaviest
-  song into the anthem.
+  Seven songs, all finished. Opens on a hit, one trough, and the closing run is
+  the same as the full set: heaviest, then the signature song, then the anthem.
 
   Diversamente Giovani is the least-known song here and takes the trough at 4 —
-  in a set this short there is nowhere better for it, and it is surrounded by
-  material the audience knows.
+  dead centre, with material the audience knows on both sides.
 songs:
-  - tutti-in-fila/02-i-puffi                            # HIT · opener
-  - diversamente-giovani/02-formaygrana                 # HIT · happy
+  - diversamente-giovani/02-formaygrana                 # HIT · opener
   - diversamente-giovani/06-il-phurgone                 # feel change, funky
+  - diversamente-giovani/05-itturfiatrugoy              # silly metal
   - diversamente-giovani/14-diversamente-giovani        # trough · the new one
-  - diversamente-giovani/05-itturfiatrugoy              # lift · silly metal
   - diversamente-giovani/03-mother-sacher               # peak · heaviest
+  - tutti-in-fila/02-i-puffi                            # SIGNATURE
   - diversamente-giovani/13-la-ragazza-da-milano        # CLOSER · the anthem

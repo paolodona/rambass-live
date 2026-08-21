@@ -56,10 +56,15 @@ BACKING_TRACK_NA = ("stems", "drums_midi", "quantize", "kit")
 #: An unaccompanied song needs none of the production pipeline at all.
 A_CAPPELLA_APPLICABLE = ("source", "rehearsed")
 
-#: How well the audience knows a song. Drives where it can safely sit in a set:
-#: crowd-pleasers belong at the front and the tail, unfamiliar material in the
-#: middle where familiar songs either side carry it.
-STANDINGS = ("hit", "known", "deep", "new")
+#: How the audience relates to a song. Drives where it can safely sit in a set.
+#:
+#: ``signature`` is the one song people came for, and it is a tier of its own
+#: rather than a loud ``hit``: it is a card you play once, so it belongs in the
+#: closing run. Metallica's M72 tour ran 99 shows with no encore at all and put
+#: Enter Sandman at 17 and Master of Puppets at 18 — of 19. The biggest songs go
+#: near the end of the main set, not first and not held back for an encore.
+#: Unfamiliar material goes in the middle, where the songs either side carry it.
+STANDINGS = ("signature", "hit", "known", "deep", "new")
 
 #: What a song is *for* in a set, where that is fixed rather than a choice.
 ROLES = ("", "opener", "closer", "interlude", "detour", "linking")

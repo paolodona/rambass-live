@@ -20,8 +20,9 @@ from rambass.project import Project  # noqa: E402
 #        slug:                    (genre, energy, heaviness, standing, role, note)
 CHARACTER = {
     # ── Tutti in Fila ────────────────────────────────────────────────────
-    "i-puffi": ("rock, upbeat", 4, 3, "hit", "",
-               "one of the big ones. Master file is the pun spelling 'I PoohFFI'"),
+    "i-puffi": ("rock, upbeat", 4, 3, "signature", "",
+                "the biggest one — the song people came for. Master file is the "
+                "pun spelling 'I PoohFFI'"),
     "tutti-in-fila": ("metal", 5, 5, "hit", "", "one of the biggest"),
     "ampiamente-contestabile": ("rock, fun", 4, 2, "known", "", "less heavy"),
     "intro-vibratore": ("linking", 2, 1, "deep", "linking",

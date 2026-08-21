@@ -8,6 +8,12 @@
 # Note the running order mixes the albums and opens with a Tutti in Fila track,
 # and that "Ragazza Bis" is a reprise of La Ragazza da Milano rather than a
 # separate song — it has its own Reaper project but shares the lyric video.
+# A record of what was played, not a proposal — `rambass arc live-2023` reviews
+# it but does not fail on it. Worth reviewing anyway: it opened with I Puffi,
+# which is the one thing this repo's own checker now calls a problem. Spending
+# the signature song first is the easiest set-list mistake to make, and the 2023
+# set made it.
+historical: true
 name: Ramba S.S. — live 2023 (already built)
 date: "2023-09"
 venue: ""

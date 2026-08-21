@@ -75,6 +75,38 @@ def review(songs: list[Song]) -> list[Finding]:
             f"opening at energy {opener.character.energy}. An opener is a "
             "statement of intent, not a warm-up",
         ))
+    if opener.character.energy >= 5 and opener.character.heaviness >= 4:
+        out.append(Finding(
+            "watch", f"1. {opener.title}",
+            "opening on the most punishing thing in the set. The slot wants an "
+            "upper-mid-tempo song with a riff they recognise straight away — not "
+            "the fastest or heaviest one you have",
+        ))
+
+    # ── the signature song is a card you play once ───────────────────────
+    signatures = [i for i, s in enumerate(songs) if s.character.standing == "signature"]
+    for index in signatures:
+        song = songs[index]
+        if index < front:
+            out.append(Finding(
+                "problem", f"{index + 1}. {song.title}",
+                "this is the song people came for, and it is in the opening "
+                "stretch. Spending it first deflates everything after it — it "
+                "belongs in the closing run",
+            ))
+        elif index < total * 2 / 3:
+            out.append(Finding(
+                "watch", f"{index + 1}. {song.title}",
+                "the signature song sits in the middle. Holding it back builds "
+                "anticipation across the whole set and gives the night a clear "
+                "climax — it wants the last quarter",
+            ))
+    if len(signatures) > 1:
+        out.append(Finding(
+            "watch", "whole set",
+            f"{len(signatures)} songs marked signature — if everything is the one "
+            "they came for, nothing is",
+        ))
 
     closer = songs[-1]
     if closer.character.standing in ("deep", "new"):
@@ -132,7 +164,10 @@ def review(songs: list[Song]) -> list[Finding]:
     # ── where the crowd-pleasers sit ─────────────────────────────────────
     # A linking piece at the front is a walk-on, not a song that has to carry
     # the opening — judge the stretch on the real songs in it.
-    hits = [i for i, s in enumerate(songs) if s.character.standing == "hit"]
+    hits = [
+        i for i, s in enumerate(songs)
+        if s.character.standing in ("hit", "signature")
+    ]
     if hits:
         if not any(i < front for i in hits):
             out.append(Finding(

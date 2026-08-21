@@ -38,9 +38,10 @@ character:
   genre: rock, upbeat
   energy: 4
   heaviness: 3
-  standing: hit
+  standing: signature
   role: ''
-  note: one of the big ones. Master file is the pun spelling 'I PoohFFI'
+  note: the biggest one — the song people came for. Master file is the pun spelling
+    'I PoohFFI'
 status:
   source: todo
   analyze: done

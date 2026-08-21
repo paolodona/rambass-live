@@ -161,15 +161,107 @@ def test_sparkline_and_table_render():
     assert "Opener" in text and "energy" in text
 
 
-def test_the_repos_own_setlists_pass_the_review():
-    """Guards the real running orders in this checkout."""
+def test_the_repos_own_proposed_setlists_pass_the_review():
+    """Guards the real running orders in this checkout.
+
+    Historical setlists are exempt: they record what was played, and the 2023 one
+    opened with the signature song, which is exactly what the checker now flags.
+    """
     from pathlib import Path
 
     from rambass.project import Project
     from rambass.setlist import Setlist
 
     project = Project.discover(Path(__file__).resolve().parent)
+    checked = 0
     for path in sorted(project.setlists_dir.glob("*.y*ml")):
-        songs = Setlist.load(path).resolve(project)
+        setlist = Setlist.load(path)
+        songs = setlist.resolve(project)
         problems = [f for f in review(songs) if f.severity == "problem"]
+        if setlist.historical:
+            continue
         assert problems == [], f"{path.name}: {[f.what for f in problems]}"
+        checked += 1
+    assert checked >= 2, "expected at least the gig and tier-a setlists"
+
+
+def test_the_2023_set_shows_the_mistake_it_made():
+    """The checker has to be able to fault a real set, or it proves nothing."""
+    from pathlib import Path
+
+    from rambass.project import Project
+    from rambass.setlist import Setlist
+
+    project = Project.discover(Path(__file__).resolve().parent)
+    setlist = Setlist.load(project.setlists_dir / "live-2023.yaml")
+    assert setlist.historical is True
+    problems = [f for f in review(setlist.resolve(project)) if f.severity == "problem"]
+    assert any("song people came for" in f.what for f in problems)
+
+
+# ── the signature song ───────────────────────────────────────────────────
+def _long_set(signature_at: int) -> list[Song]:
+    """A twelve-song order with the signature song placed where asked."""
+    songs = [
+        _song("Open", 4, "hit"),
+        _song("Two", 5, "known", genre="metal"),
+        _song("Three", 4, "known", genre="funk"),
+        _song("Four", 1, "known", genre="ballad"),
+        _song("Five", 4, "known", genre="pop"),
+        _song("Six", 3, "known", genre="ambient"),
+        _song("Seven", 2, "new", genre="ballad"),
+        _song("Eight", 3, "known", genre="jazz"),
+        _song("Nine", 4, "known", genre="rap"),
+        _song("Ten", 5, "known", genre="metal"),
+        _song("Eleven", 4, "known", genre="rock"),
+        _song("Closer", 4, "hit", role="closer"),
+    ]
+    songs[signature_at].character.standing = "signature"
+    return songs
+
+
+def test_the_signature_song_must_not_open():
+    """Metallica do not open with Enter Sandman."""
+    songs = _long_set(0)
+    found = _problems(songs)
+    assert any("song people came for" in f.what for f in found)
+    assert any("closing run" in f.what for f in found)
+
+
+def test_the_signature_song_in_the_middle_is_only_a_watch():
+    findings = review(_long_set(5))
+    assert not [f for f in findings if f.severity == "problem"]
+    assert any("wants the last quarter" in f.what for f in findings)
+
+
+def test_the_signature_song_in_the_closing_run_passes():
+    assert review(_long_set(10)) == []
+
+
+def test_a_signature_song_counts_as_a_crowd_pleaser_at_the_ends():
+    songs = _long_set(10)
+    songs[0].character.standing = "known"        # no hit at the front any more
+    songs[1].character.standing = "signature"    # but a signature is
+    found = _problems(songs)
+    assert not any("no hit in the opening stretch" in f.what for f in found)
+
+
+def test_more_than_one_signature_song_is_questioned():
+    songs = _long_set(10)
+    songs[9].character.standing = "signature"
+    assert any("nothing is" in f.what for f in review(songs))
+
+
+def test_opening_on_the_heaviest_thing_is_questioned():
+    songs = _long_set(10)
+    songs[0] = _song("Brutal", 5, "hit", genre="death metal")
+    songs[0].character.heaviness = 5
+    assert any("not the fastest or heaviest" in f.what for f in review(songs))
+
+
+def test_a_fast_but_light_opener_is_fine():
+    """Energy 5 alone is not the problem — energy 5 plus maximum weight is."""
+    songs = _long_set(10)
+    songs[0] = _song("Happy", 5, "hit", genre="power pop")
+    songs[0].character.heaviness = 2
+    assert not any("heaviest" in f.what for f in review(songs))

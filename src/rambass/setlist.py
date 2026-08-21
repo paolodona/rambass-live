@@ -24,6 +24,10 @@ class Setlist:
     date: str = ""
     venue: str = ""
     notes: str = ""
+    #: A record of a set that was already played, rather than a proposal. Still
+    #: worth reviewing — that is how you learn what to do differently — but its
+    #: findings are not failures.
+    historical: bool = False
     path: Path | None = None
 
     @classmethod
@@ -46,6 +50,7 @@ class Setlist:
             date=str(data.get("date", "")),
             venue=str(data.get("venue", "")),
             notes=str(data.get("notes", "")),
+            historical=bool(data.get("historical", False)),
             path=path,
         )
 
