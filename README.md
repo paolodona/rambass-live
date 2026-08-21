@@ -8,6 +8,7 @@ better drum sound than the originals, plus lyric/visual video on the screen and
 automatic patch changes on the guitarist's BOSS GX-100.
 
 This repository holds the recipes for all of that. The DAW is **Reaper**.
+The band itself lives at <https://rambass.com/> — photos, discography and video.
 
 ```
 rambass doctor                                  # is the toolchain usable?
