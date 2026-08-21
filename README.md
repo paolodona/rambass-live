@@ -93,6 +93,8 @@ work and those are tracked.
 
 | | |
 |---|---|
+| **[plan.md](docs/plan.md)** | **the phased plan, gates, and what runs in parallel** |
+| **[live-playback.md](docs/live-playback.md)** | **how the show is driven on stage, and why it never stutters** |
 | [setup.md](docs/setup.md) | installing, and what each dependency tier buys |
 | [workflow.md](docs/workflow.md) | the per-song sequence, and the tempo-drift decision |
 | [drums.md](docs/drums.md) | what the transcriber does well and badly; cleanup settings |

@@ -186,8 +186,10 @@ def test_running_order_accumulates_time(song):
 def test_board_counts_progress_and_skips_not_applicable(song):
     song.status["source"] = "done"
     song.status["stems"] = "n/a"
+    from rambass.manifest import STAGES
+
     text = board([song])
-    assert "1/9" in text
+    assert f"1/{len(STAGES) - 1}" in text
     assert "legend:" in text
 
 

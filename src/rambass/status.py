@@ -11,8 +11,8 @@ MARKS_MD = {"done": "✅", "wip": "🔧", "todo": "·", "n/a": "—"}
 #: Short column headers so the table fits in a terminal.
 SHORT = {
     "source": "src", "analyze": "anl", "stems": "stm", "drums_midi": "mid",
-    "quantize": "qnt", "kit": "kit", "render": "rnd", "video": "vid",
-    "gx100": "gx", "rehearsed": "reh",
+    "quantize": "qnt", "kit": "kit", "render": "rnd", "lyr": "lyr",
+    "lyrics": "lyr", "video": "vid", "gx100": "gx", "rehearsed": "reh",
 }
 
 

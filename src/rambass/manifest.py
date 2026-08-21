@@ -27,10 +27,11 @@ STAGES = (
     "drums_midi",   # drum performance exists as MIDI
     "quantize",     # MIDI cleaned up and on the grid
     "kit",          # drum VST kit chosen and sounding right
-    "render",       # backing track bounced
-    "video",        # lyric / visual video built
+    "render",       # backing track bounced, count-in in place, loudness matched
+    "lyrics",       # timed cue file exists and passes `rambass lyrics check`
+    "video",        # lyric video rendered against the final backing track
     "gx100",        # pedalboard patch changes programmed
-    "rehearsed",    # played through with the band
+    "rehearsed",    # played through with the band on the gig rig
 )
 
 STATUS_VALUES = ("todo", "wip", "done", "n/a")

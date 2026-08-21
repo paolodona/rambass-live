@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from rambass.manifest import Song, load_song, save_song
+from rambass.manifest import STAGES, Song, load_song, save_song
 from rambass.project import ProjectError, slugify
 
 
@@ -86,7 +86,8 @@ def test_progress_ignores_not_applicable_stages(song):
     song.status["stems"] = "n/a"
     song.status["source"] = "done"
     done, total = song.progress()
-    assert (done, total) == (1, 9)
+    assert total == len(STAGES) - 1        # stems is n/a
+    assert done == 1
 
 
 def test_section_at_returns_the_current_section(song):
@@ -153,4 +154,5 @@ def test_progress_with_a_backing_track_ignores_the_drum_stages():
                    "quantize": "n/a", "kit": "n/a"},
     })
     done, total = item.progress()
-    assert total == 6 and done == 1
+    assert total == len(STAGES) - 4        # the four drum stages are n/a
+    assert done == 1

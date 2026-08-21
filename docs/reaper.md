@@ -80,6 +80,10 @@ files: one with click for the band's mixer, one without for the PA.
 
 ## Whole-show project
 
+See [live-playback.md](live-playback.md) for why this — rather than one project
+per song — is the recommended way to run the gig, and for the anti-stutter
+checklist.
+
 ```
 rambass reaper setlist gig
 ```

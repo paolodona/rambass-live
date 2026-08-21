@@ -42,6 +42,7 @@ status:
   quantize: n/a
   kit: n/a
   render: wip
+  lyrics: done
   video: done
   gx100: todo
   rehearsed: todo
