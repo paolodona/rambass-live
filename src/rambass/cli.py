@@ -840,8 +840,17 @@ def cmd_video_ass(args: argparse.Namespace) -> int:
             continue
         target = song.path("video", f"{song.slug}.ass")
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(format_ass(cues, title=song.title), encoding="utf-8")
-        _say(f"{song.title}: {origin} -> {target}  ({len(cues)} cues)")
+        card_seconds = _card_seconds(song, args)
+        target.write_text(
+            format_ass(
+                cues, title=song.title,
+                card_seconds=card_seconds, card_subtitle=args.subtitle,
+            ),
+            encoding="utf-8",
+        )
+        _say(f"{song.title}: {origin} -> {target}  ({len(cues)} cues"
+             + (f", title card for {card_seconds:.1f}s" if card_seconds else "")
+             + ")")
     return 0
 
 
@@ -866,7 +875,14 @@ def cmd_video_render(args: argparse.Namespace) -> int:
 
         ass_path = song.path("video", f"{song.slug}.ass")
         ass_path.parent.mkdir(parents=True, exist_ok=True)
-        ass_path.write_text(format_ass(cues, title=song.title), encoding="utf-8")
+        card_seconds = _card_seconds(song, args)
+        ass_path.write_text(
+            format_ass(
+                cues, title=song.title,
+                card_seconds=card_seconds, card_subtitle=args.subtitle,
+            ),
+            encoding="utf-8",
+        )
 
         audio = None
         if args.with_audio:
@@ -879,6 +895,7 @@ def cmd_video_render(args: argparse.Namespace) -> int:
         style = {"width": args.width, "height": args.height} if args.width else None
         _say(f"── {song.title}: {len(cues)} cues from {origin}, "
              f"{len(images)} image cues, {duration:.1f}s"
+             + (f", title card for {card_seconds:.1f}s" if card_seconds else "")
              + (f", audio from {Path(audio).name}" if audio else ", silent"))
         target = song.path("video", f"{song.slug}.mp4")
         render_video(
@@ -892,6 +909,57 @@ def cmd_video_render(args: argparse.Namespace) -> int:
         )
         _say(f"→ {target}")
         _mark(song, "video")
+    return 0
+
+
+def _card_seconds(song: Song, args: argparse.Namespace) -> float:
+    """How long the title card holds at the head of a song's own video.
+
+    The count-in, because that is exactly the stretch of video with no lyric on
+    it — cues start at bar 1 — and because the show project parks the transport
+    at the region start between songs, so this is what is on the projector while
+    the band talks. A song with no count-in gets no card in its video; it needs a
+    standalone one from `rambass video card`.
+    """
+    if getattr(args, "no_card", False):
+        return 0.0
+    return song.timeline().count_in_seconds
+
+
+def cmd_video_card(args: argparse.Namespace) -> int:
+    """Render a standalone title card — the whole screen for a song with no video.
+
+    Two songs in the set are a cappella and can never have a lyric video: there
+    is no backing track to time cues against. The Tier C songs have no cues yet
+    either. A still title card is what goes on the screen instead, and the show
+    project holds it for the length of the region.
+    """
+    from .reaper import card_path, project_length_seconds
+    from .video import card_ass, render_card
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        duration = args.duration or project_length_seconds(song)
+        style = {"width": args.width, "height": args.height} if args.width else None
+
+        ass_path = song.path("video", f"{song.slug}-card.ass")
+        ass_path.parent.mkdir(parents=True, exist_ok=True)
+        ass_path.write_text(
+            card_ass(song.title, subtitle=args.subtitle, duration=duration, style=style),
+            encoding="utf-8",
+        )
+        _say(f"{song.title}: {ass_path}")
+        if args.ass_only:
+            continue
+
+        target = (
+            song.path("video", f"{song.slug}-card.mp4") if args.mp4 else card_path(song)
+        )
+        render_card(
+            target, ass_path,
+            duration=duration, background=args.background, style=style, crf=args.crf,
+        )
+        _say(f"→ {target}")
     return 0
 
 
@@ -1070,6 +1138,14 @@ def _add_song_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("song", nargs="*", help="song reference (slug, album/slug or path)")
     parser.add_argument("--album", help="operate on every song in this album")
     parser.add_argument("--all", action="store_true", help="operate on every song")
+
+
+def _add_card_args(parser: argparse.ArgumentParser) -> None:
+    """The title card that fills a lyric video's count-in."""
+    parser.add_argument("--subtitle", default="",
+                        help="second, smaller line under the title on the card")
+    parser.add_argument("--no-card", action="store_true",
+                        help="leave the count-in blank instead of showing the title")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1266,6 +1342,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = video_sub.add_parser("ass", help="write the subtitle file only")
     _add_song_args(p)
+    _add_card_args(p)
     p.set_defaults(func=cmd_video_ass)
 
     p = video_sub.add_parser("render", help="render the MP4")
@@ -1276,7 +1353,26 @@ def build_parser() -> argparse.ArgumentParser:
                    help="override the length in seconds")
     p.add_argument("--width", type=int, default=0, help="output width (with --height)")
     p.add_argument("--height", type=int, default=0)
+    _add_card_args(p)
     p.set_defaults(func=cmd_video_render)
+
+    p = video_sub.add_parser(
+        "card", help="render a still title card for a song with no lyric video")
+    _add_song_args(p)
+    p.add_argument("--subtitle", default="",
+                   help="second, smaller line under the title")
+    p.add_argument("--background", help="image behind the text")
+    p.add_argument("--duration", type=float, default=0.0,
+                   help="seconds (only matters with --mp4)")
+    p.add_argument("--mp4", action="store_true",
+                   help="a still video instead of a PNG, for a screen that "
+                        "will not take an image")
+    p.add_argument("--ass-only", action="store_true",
+                   help="write the subtitle file and stop — no ffmpeg needed")
+    p.add_argument("--crf", type=int, default=20)
+    p.add_argument("--width", type=int, default=0, help="output width (with --height)")
+    p.add_argument("--height", type=int, default=0)
+    p.set_defaults(func=cmd_video_card)
 
     p = video_sub.add_parser("probe", help="report which software wrote a video file")
     p.add_argument("file")

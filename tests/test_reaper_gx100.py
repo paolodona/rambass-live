@@ -263,7 +263,7 @@ def test_describe_surfaces_the_notes_and_the_backing_track(song):
 
 # ── assembling the whole show ────────────────────────────────────────────
 def _stub_artifacts(song, *, backing=True, sticks=True, click=True,
-                    gx100=True, video=True):
+                    gx100=True, video=True, card=False):
     """Create the files the show project looks for."""
     if backing:
         song.backing_track = "base.wav"
@@ -278,6 +278,9 @@ def _stub_artifacts(song, *, backing=True, sticks=True, click=True,
     if video:
         (song.dir / "video").mkdir(exist_ok=True)
         (song.dir / "video" / f"{song.slug}.mp4").write_bytes(b"\x00")
+    if card:
+        (song.dir / "video").mkdir(exist_ok=True)
+        (song.dir / "video" / f"{song.slug}-card.png").write_bytes(b"\x89PNG")
 
 
 def test_song_artifacts_reports_only_what_exists(song):
@@ -301,8 +304,44 @@ def test_the_show_places_every_per_song_artifact_in_its_region(song):
     assert items["BACKING"] == pytest.approx(4.0)
     assert items["CLICK"] == pytest.approx(4.0)
     assert midi["GX-100 MIDI"] == pytest.approx(4.0)
-    # the video starts with the region so its title card covers the count-in
+    # The lyric video runs on the audio clock, so it already contains the
+    # count-in and has to start with the region — where the transport parks.
     assert items["VIDEO"] == pytest.approx(0.0)
+
+
+def test_the_video_track_never_gets_two_items_for_one_song(song):
+    """A card *and* a lyric video is not a compositing question to answer."""
+    _stub_artifacts(song, card=True)
+    script = build_setlist_script([song], measure=lambda p: 100.0)
+    video_items = [r for r in _records(script, "ITEM") if r[1] == "VIDEO"]
+    assert len(video_items) == 1
+    assert video_items[0][2].endswith(".mp4")      # the lyric video wins
+
+
+def test_a_song_with_only_a_card_gets_it_held_for_the_whole_region(song):
+    """No lyric video: the still is the screen, so it has to be given a length."""
+    from rambass.reaper import plan_show
+
+    _stub_artifacts(song, video=False, card=True)
+    slot = plan_show([song], measure=lambda p: 100.0)[0]
+    script = build_setlist_script([song], measure=lambda p: 100.0)
+    video_items = [r for r in _records(script, "ITEM") if r[1] == "VIDEO"]
+    assert len(video_items) == 1
+    assert video_items[0][2].endswith("-card.png")
+    assert float(video_items[0][4]) == pytest.approx(slot.length)
+
+
+def test_an_a_cappella_song_only_ever_needs_a_screen(song):
+    """The two unaccompanied numbers were decided to have nothing to build."""
+    from rambass.reaper import plan_show, required_artifacts
+
+    song.drums_origin = "a-cappella"
+    assert required_artifacts(song) == ("screen",)
+    assert set(plan_show([song])[0].missing) == {"screen"}
+
+    _stub_artifacts(song, backing=False, sticks=False, click=False,
+                    gx100=False, video=False, card=True)
+    assert plan_show([song])[0].missing == []
 
 
 def test_the_show_mutes_the_click_and_not_the_sticks(song):
@@ -341,8 +380,8 @@ def test_a_song_with_nothing_built_still_gets_a_region(song):
 def test_missing_lists_what_a_song_still_needs(song):
     from rambass.reaper import plan_show
 
-    _stub_artifacts(song, gx100=False, sticks=False)
-    assert set(plan_show([song])[0].missing) == {"sticks", "gx100"}
+    _stub_artifacts(song, gx100=False, sticks=False, video=False)
+    assert set(plan_show([song])[0].missing) == {"sticks", "gx100", "screen"}
 
 
 def test_songs_are_laid_out_end_to_end_with_a_gap(song):

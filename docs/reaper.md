@@ -86,7 +86,7 @@ files so they can be muted independently.
 Per-song projects are for *making* the songs; this one is for *playing* them, and
 the two never mix — see
 [live-playback.md](live-playback.md#two-kinds-of-reaper-session-and-the-line-between-them)
-for the split, the five files each song must produce, and the anti-stutter
+for the split, the files each song must produce, and the anti-stutter
 checklist.
 
 ```

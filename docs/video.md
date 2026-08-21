@@ -29,11 +29,12 @@ Ritornello che parte in levare
 Text and image cues are tracked separately, so an image can hold across several
 lyric changes and vice versa.
 
-## Two commands
+## Three commands
 
 ```
 rambass video ass 04-titolo      # subtitles only — fast
 rambass video render 04-titolo   # the MP4 — slow
+rambass video card 04-titolo     # a still title card, for a song with no cues
 ```
 
 Always run `ass` first and read it. It is a text file; a typo or a mistimed line
@@ -53,6 +54,48 @@ subtitles burned on last so the lyrics stay legible over any image. One ffmpeg
 pass. `--with-audio` muxes in `render/<slug>.wav` if it exists, otherwise the
 original mix — handy for checking sync, and you would normally play the video
 silent at the gig with the audio coming from Reaper.
+
+## Title cards
+
+Every song needs something on screen before its first note, and the screen also
+has to show *something* while the band talks between numbers — the show project
+parks the transport at the head of the next region, so whatever is there is what
+the audience is looking at.
+
+That comes two ways, and which one a song gets is not a preference:
+
+**A song with lyric cues** gets the card as the **lead-in of its own video**.
+`video ass` and `video render` put the title on screen from the first frame until
+the end of the count-in, which is the one stretch of the video with no lyric on
+it — cues start at bar 1.
+
+```
+rambass video render 04-titolo --subtitle "Tutti in Fila"
+rambass video render 04-titolo --no-card         # leave the count-in blank
+```
+
+**A song with no cues** — the two a cappella numbers, which can never have any
+because there is no backing track to time against, and any song whose words are
+not written yet — gets a standalone still:
+
+```
+rambass video card 11-se-sei-felice --subtitle "Diversamente Giovani"
+rambass video card --all                          # one for every song
+rambass video card 04-titolo --background foto.jpg
+rambass video card 04-titolo --ass-only           # no ffmpeg needed
+```
+
+A PNG, deliberately: the show project holds it for the length of the region, and
+Reaper can stretch a still to any length, whereas an MP4 would have to be
+rendered at a duration nobody knows until the base is finished. `--mp4` exists
+for a screen that will not take an image, and then `--duration` matters.
+
+What must **not** happen is a card item laid over the front of a lyric video. A
+rendered video runs on the audio clock, so it already contains the count-in and
+must start at the region start; two items in the same place on one video track is
+a question about Reaper's compositing that this repo does not need to answer.
+`rambass reaper setlist` therefore places exactly one item per region and prefers
+the lyric video.
 
 ## Style
 
@@ -77,7 +120,11 @@ the rendering, ffmpeg silently substitutes something else.
   for attention loses.
 * Keep source images in `video/assets/` if they are shared between songs, or in
   the song folder if they are specific to it. Images are gitignored — keep them
-  in the band's shared drive and note the source in `notes:`.
+  in the band's shared drive and note the source in `notes:`. Generated cards are
+  covered by the same rule: they are rebuilt from `song.yaml` in a second.
+* **A card is not a substitute for a video** on a song that is going to have
+  one. It is what goes up when there is nothing else, and for the a cappella
+  numbers that is the finished answer, not a placeholder.
 
 ## If ffmpeg is being difficult
 

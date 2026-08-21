@@ -15,6 +15,14 @@
 *.webm
 *.avi
 
+# Images: the photos behind the band, and the generated title cards. Both are
+# rebuildable or live in the band's shared drive; docs/video.md says where.
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+
 # Reaper working files (the generated .RPP under reaper/build is disposable,
 # the project you actually save while editing is yours and stays local)
 *.RPP-bak
@@ -22,6 +30,10 @@
 *.reapeaks
 reaper/build/*.rbs
 songs/**/reaper/
+
+# Generated subtitle files. The tracked source is lyrics.srt at the song root;
+# everything under video/ is rebuilt from it and from song.yaml.
+songs/**/video/*.ass
 
 # Demucs / model caches
 .cache/

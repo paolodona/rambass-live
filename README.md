@@ -20,6 +20,7 @@ rambass click 04-titolo                         # click + count-in
 rambass gx100 midi 04-titolo                    # pedalboard patch changes
 rambass reaper build 04-titolo                  # Reaper project
 rambass video ass 04-titolo                     # lyric timings
+rambass video card 11-se-sei-felice             # a title card for the screen
 rambass arc gig                                  # the set's energy shape + what it breaks
 rambass status                                  # what is left to do
 ```

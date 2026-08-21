@@ -32,16 +32,38 @@ back into a song's own session:
 
 ```
 songs/<album>/<slug>/
-  render/<slug>.wav     the backing track — no click, no count-in
-  render/sticks.wav     the drumstick count-in
-  render/click.wav      the rehearsal click
-  midi/gx100.mid        the patch changes
-  video/<slug>.mp4      the lyric video
+  render/<slug>.wav        the backing track — no click, no count-in
+  render/sticks.wav        the drumstick count-in
+  render/click.wav         the rehearsal click
+  midi/gx100.mid           the patch changes
+  video/<slug>.mp4         the lyric video
+  video/<slug>-card.png    the title card, for a song with no lyric video
 ```
 
-`rambass reaper setlist gig` places all five per song, at the right offsets: the
-count-in at the region start, everything musical after it, and the video from the
-region start so its title card is on screen through the count-in.
+`rambass reaper setlist gig` places them per song, at the right offsets: the
+count-in at the region start, everything musical after it, and **one** item on
+the video track from the region start.
+
+One item, never two, and the reason is the clock. A rendered lyric video runs on
+the audio clock — its first frame is the first sample of the song's audio — so it
+already contains the count-in, and it has to start at the region start or the
+words drift by the length of the count-in. The title card therefore cannot be a
+second item laid over the front of it; instead:
+
+* a song **with** a lyric video carries its card *inside* that video, as the
+  lead-in that fills the count-in. Nothing else is on screen there anyway,
+  because cues start at bar 1.
+* a song **without** one — the two a cappella numbers, and every song whose
+  cues are not written yet — gets `video/<slug>-card.png`, held for the whole
+  region.
+
+Either way the head of the region is a title card, which is what makes parking
+between songs work.
+
+The two a cappella songs need **only** that card: no base, no count-in stem, no
+patch change. `rambass reaper setlist` knows this, so they count as complete
+once the card exists rather than sitting on the report forever asking for a
+backing track that was never going to be made.
 
 ### The order can change whenever you like
 
@@ -89,7 +111,7 @@ TRACK  STICKS      drumstick count-in, at 0.  May go to the PA.   unmuted
 TRACK  BACKING     the pre-rendered stereo base, starts after the count-in
 TRACK  CLICK       click for the song only. Rehearsal/overdubs.    MUTED
 TRACK  GX-100      short MIDI items: bank select + program change, to the pedal
-TRACK  VIDEO       title card, then the lyric video, per song
+TRACK  VIDEO       one item per song: the lyric video, or the title card
 REGION 01 … 14     one per song, in running order
 ```
 

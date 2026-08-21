@@ -109,6 +109,20 @@ their lyrics docs. They are better than anything `rambass analyze` would produce
 review punch-list per base; `rambass countin` exists because four of the seven
 finished bases are missing their count-in.
 
+**The video track carries exactly one item per song, and it starts at the region
+start.** A rendered lyric video runs on the *audio* clock, so it already contains
+the count-in; starting it anywhere else drifts the words by the count-in length.
+The title card is therefore the video's own lead-in (filling the count-in, which
+has no cues on it) for a song that has cues, and a standalone
+`video/<slug>-card.png` held for the whole region for one that does not. Do not
+"improve" this by laying a card item over the head of a lyric video — that asks a
+question about Reaper's compositing order that nothing here needs to answer.
+
+**The two a cappella songs need a title card and nothing else.** `a-cappella` is
+not an unfinished state: `reaper.required_artifacts` returns `("screen",)` for
+them, so they count as complete once the card exists. Don't add backing track,
+count-in or patch-change requirements back for them.
+
 `arrange.py` deliberately **does not generate** a running order. Sequencing is a
 musical judgement; what a tool can usefully do is catch what a human misses in
 their own list. Don't add an auto-sequencer — add checks.

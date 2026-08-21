@@ -14,7 +14,13 @@ from rambass.project import ProjectError
 from rambass.setlist import Setlist, find_setlist, running_order
 from rambass.status import board, next_actions
 from rambass.timeline import Timeline
-from rambass.video import build_ass, image_segments, parse_lyrics
+from rambass.video import (
+    build_ass,
+    card_ass,
+    card_command,
+    image_segments,
+    parse_lyrics,
+)
 
 LYRICS = """\
 # Nome Canzone
@@ -89,6 +95,75 @@ def test_empty_lyrics_produce_a_valid_but_empty_ass():
     text = build_ass([], Timeline(bpm=120), end_seconds=10.0)
     assert "[Events]" in text
     assert "Dialogue:" not in text
+
+
+# ── title cards ──────────────────────────────────────────────────────────
+def test_a_card_is_one_event_over_a_playable_header():
+    text = card_ass("La Ragazza da Milano", duration=8.0)
+    assert "[Script Info]" in text and "ScriptType: v4.00+" in text
+    assert text.count("Style: Card,") == 1
+    assert text.count("Dialogue:") == 1
+    assert "0:00:00.00,0:00:08.00" in text
+    assert "La Ragazza da Milano" in text
+
+
+def test_a_card_subtitle_is_smaller_than_the_title():
+    text = card_ass("Manlio", subtitle="Tutti in Fila", duration=4.0)
+    line = next(x for x in text.splitlines() if x.startswith("Dialogue:"))
+    assert line.endswith(r"Manlio\N{\fs60}Tutti in Fila")
+
+
+def test_card_text_cannot_break_the_ass_file():
+    """A stray brace or backslash would silently eat the rest of the line."""
+    text = card_ass("Sk{izzo}", subtitle="a\\b", duration=4.0)
+    line = next(x for x in text.splitlines() if x.startswith("Dialogue:"))
+    body = line.split(",,0,0,0,,", 1)[1]
+    assert "Sk(izzo)" in body
+    assert "a/b" in body
+
+
+def test_a_zero_length_card_still_renders_a_visible_frame():
+    """A song with no count-in must not produce a zero-duration event."""
+    text = card_ass("X", duration=0.0)
+    assert "0:00:00.00,0:00:00.04" in text
+
+
+def test_a_png_card_is_a_single_frame_and_an_mp4_is_a_still_video(tmp_path):
+    png = card_command(tmp_path / "x-card.png", tmp_path / "x.ass",
+                       duration=30.0, ffmpeg="ffmpeg")
+    assert png[-3:] == ["-frames:v", "1", str(tmp_path / "x-card.png")]
+    assert "libx264" not in png
+
+    mp4 = card_command(tmp_path / "x-card.mp4", tmp_path / "x.ass",
+                       duration=30.0, ffmpeg="ffmpeg")
+    assert "-frames:v" not in mp4
+    assert "libx264" in mp4 and "30.000" in mp4
+
+
+def test_a_card_background_that_does_not_exist_is_caught_before_ffmpeg(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        card_command(tmp_path / "x-card.png", tmp_path / "x.ass",
+                     duration=4.0, background=tmp_path / "nope.png", ffmpeg="ffmpeg")
+
+
+def test_the_card_fills_the_count_in_of_a_songs_own_video():
+    """The count-in is the one stretch of a lyric video with nothing on it."""
+    timeline = Timeline(bpm=120, count_in_bars=2)      # 4 s of count-in
+    text = build_ass(parse_lyrics(LYRICS), timeline, end_seconds=120.0,
+                     title="Il Phurgone", card_seconds=timeline.count_in_seconds)
+    assert text.count("Style: Card,") == 1
+    card = next(x for x in text.splitlines() if ",Card,," in x)
+    assert card.startswith("Dialogue: 0,0:00:00.00,0:00:04.00")
+    assert card.endswith("Il Phurgone")
+    # and it stops before the first lyric, which is at bar 9 = 20 s
+    assert "Dialogue: 0,0:00:20.00" in text
+
+
+def test_no_card_is_the_same_file_as_before_cards_existed():
+    plain = build_ass(parse_lyrics(LYRICS), Timeline(bpm=120), end_seconds=60.0,
+                      title="X")
+    assert "Style: Card," not in plain
+    assert ",Card,," not in plain
 
 
 # ── sticks: the count-in, its own stem ───────────────────────────────────
