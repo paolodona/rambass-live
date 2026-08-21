@@ -347,3 +347,35 @@ def test_board_when_everything_is_cut(song):
 def test_next_actions_skips_cut_songs(song):
     song.excluded = True
     assert next_actions([song]) == "everything is done — go and play the gig"
+
+
+def test_running_order_does_not_invent_lengths(song):
+    """A set time you cannot trust is worse than one that says it does not know."""
+    setlist = Setlist(name="Test", songs=["a"])
+    song.bars = 0
+    text = running_order(setlist, [song])
+    assert "| ? | ? | ? |" in text
+    assert "total length unknown" in text
+    assert "0:" not in text.split("**")[1]
+
+
+def test_running_order_reports_a_lower_bound_when_partly_known(song):
+    from rambass.manifest import Song
+
+    known = Song.from_dict({"title": "Known", "bars": 32, "tempo": {"bpm": 120}})
+    song.bars = 0
+    text = running_order(Setlist(name="T", songs=["a", "b"]), [known, song])
+    assert "at least" in text
+    assert "1 song(s) still unmeasured" in text
+
+
+def test_running_order_gives_a_real_total_when_everything_is_known():
+    from rambass.manifest import Song
+
+    songs = [
+        Song.from_dict({"title": "A", "bars": 32, "tempo": {"bpm": 120}}),
+        Song.from_dict({"title": "B", "bars": 32, "tempo": {"bpm": 120}}),
+    ]
+    text = running_order(Setlist(name="T", songs=["a", "b"]), songs, gap_seconds=30)
+    assert "at least" not in text
+    assert "including 0:30 between songs" in text

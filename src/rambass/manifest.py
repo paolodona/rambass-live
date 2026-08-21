@@ -473,8 +473,22 @@ class Song:
     def drum_midi_path(self, variant: str = "quantized") -> Path:
         return self.path("midi", f"drums-{variant}.mid")
 
+    @property
+    def length_known(self) -> bool:
+        """Whether this song's length is a fact rather than a fallback.
+
+        `bars` is set by `rambass analyze --write`, by `rambass reaper import`,
+        or by hand. Until then :meth:`total_bars` is guessing, and anything built
+        on it — a set running time, a click length — is guessing too.
+        """
+        return bool(self.bars)
+
     def total_bars(self) -> int:
-        """Best guess at song length in bars."""
+        """Best guess at song length in bars.
+
+        Check :attr:`length_known` before presenting anything derived from this
+        as a number the user can rely on.
+        """
         if self.bars:
             return self.bars
         if self.sections:

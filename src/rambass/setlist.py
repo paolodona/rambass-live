@@ -83,7 +83,14 @@ def find_setlist(project: Project, reference: str) -> Path:
 
 
 def running_order(setlist: Setlist, songs: list[Song], *, gap_seconds: float = 30.0) -> str:
-    """A printable running order with cumulative timings."""
+    """A printable running order.
+
+    Lengths are shown only for songs whose bar count is actually known. A song
+    that has not been analysed yet shows ``?`` rather than a number derived from
+    a fallback guess — a set running time you cannot trust is worse than one that
+    admits what it does not know, because the whole point of the table is
+    deciding whether the set fits the slot.
+    """
     lines = [f"# {setlist.name}"]
     if setlist.date or setlist.venue:
         lines.append(" · ".join(x for x in (setlist.date, setlist.venue) if x))
@@ -92,22 +99,45 @@ def running_order(setlist: Setlist, songs: list[Song], *, gap_seconds: float = 3
         "| # | song | BPM | sig | bars | length | cumulative |",
         "|--:|:-----|----:|:---:|-----:|-------:|-----------:|",
     ]
+
+    known = [s for s in songs if s.length_known]
     cumulative = 0.0
     for index, song in enumerate(songs, start=1):
-        length = project_length_seconds(song)
-        cumulative += length
+        if song.length_known:
+            length = project_length_seconds(song)
+            cumulative += length
+            shown, running = _mmss(length), _mmss(cumulative)
+            cumulative += gap_seconds
+            bars = str(song.total_bars())
+        else:
+            shown, running, bars = "?", "?", "?"
         lines.append(
             f"| {index} | {song.title} | {song.bpm:g} | "
-            f"{song.time_signature[0]}/{song.time_signature[1]} | {song.total_bars()} | "
-            f"{_mmss(length)} | {_mmss(cumulative)} |"
+            f"{song.time_signature[0]}/{song.time_signature[1]} | {bars} | "
+            f"{shown} | {running} |"
         )
-        cumulative += gap_seconds
-    music = cumulative - gap_seconds if songs else 0.0
-    lines += [
-        "",
-        f"**{len(songs)} songs · {_mmss(music)} including {_mmss(gap_seconds)} "
-        f"between songs**",
-    ]
+
+    lines.append("")
+    if not known:
+        lines.append(
+            f"**{len(songs)} songs · total length unknown** — no song has a bar "
+            "count yet, so there is nothing to add up. `rambass analyze <song> "
+            "--write` or `rambass reaper import` sets it."
+        )
+    elif len(known) < len(songs):
+        music = cumulative - gap_seconds
+        lines.append(
+            f"**{len(songs)} songs · at least {_mmss(music)}** from the "
+            f"{len(known)} with a known length, plus {_mmss(gap_seconds)} between "
+            f"songs. {len(songs) - len(known)} song(s) still unmeasured, so the "
+            "real total is higher."
+        )
+    else:
+        music = cumulative - gap_seconds
+        lines.append(
+            f"**{len(songs)} songs · {_mmss(music)} including {_mmss(gap_seconds)} "
+            f"between songs**"
+        )
     if setlist.notes:
         lines += ["", "## Notes", "", setlist.notes]
     return "\n".join(lines)
