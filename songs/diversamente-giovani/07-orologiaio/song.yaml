@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
+  origin: backing-track
   kit: BFD3 orologiao.bfd3
   map: bfd3
 source:
   audio: 07_Orologiaio_MST1.wav
   url: https://drive.google.com/file/d/1IfECSJFmqtraqGBGGJGPox9iVPaOphsE/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -37,9 +38,9 @@ status:
   source: todo
   analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
   render: todo
   video: todo
   gx100: todo
@@ -47,3 +48,4 @@ status:
 notes: 240 bpm as named — check whether that is really 120 counted double-time
 lyrics_doc: https://docs.google.com/document/d/1lbclHcy94sZRF31G3fS0DKq_6ZMQyIIMKXv8v5KJCKc/edit
 drum_stem_source: tano_drums/
+bfd3_preset: orologiao.bfd3

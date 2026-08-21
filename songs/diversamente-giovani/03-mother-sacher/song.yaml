@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
-  kit: BFD3 MotherSacher.bfd3
-  map: bfd3
+  origin: backing-track
+  kit: ''
+  map: general-midi
 source:
   audio: 03_Mother Sacher_MST1.wav
   url: https://drive.google.com/file/d/1pntd5FCRCgDkmaMcRbXnQozMhW4uWF_u/view
+  backing_track: Mother Sacher_MIX_5_BASE_2.wav
 stems:
 - drums
 - bass
@@ -35,16 +36,18 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
-  render: todo
-  video: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
+  render: wip
+  video: done
   gx100: todo
   rehearsed: todo
-notes: ''
+notes: 'base review: signed off. Rhythm guitar too loud — very noticeable when it
+  comes in.'
 srt_source: https://drive.google.com/file/d/1qYklBlpAROqU5cVKJ1X1SqKUs3hnJpeH/view
 lyrics_doc: https://docs.google.com/document/d/1-J8N2CHvQDWW4Mgg2JCVs838chXL-6SZaEX8Akuf9Zs/edit
 drum_stem_source: Tano_drums/
+backing_track_source: https://drive.google.com/file/d/1ZGjvSA_POkf13huNwmseZtwN0RN7bHjT/view

@@ -40,16 +40,50 @@ def apply(path: Path, *, dry_run: bool = False) -> int:
         notes: list[str] = []
 
         bpm = entry.get("bpm")
-        if bpm and song.bpm != float(bpm):
-            notes.append(f"bpm {song.bpm:g} -> {float(bpm):g}")
-            song.bpm = float(bpm)
-            song.status["analyze"] = "done"
+        if bpm:
+            if song.bpm != float(bpm):
+                notes.append(f"bpm {song.bpm:g} -> {float(bpm):g}")
+                song.bpm = float(bpm)
+            # The tempo is known either way, so the analyze stage is done —
+            # including when the known value happens to match the placeholder.
+            if song.status.get("analyze") != "done":
+                notes.append("analyze = done")
+                song.status["analyze"] = "done"
+
+        # A finished backing track makes the whole drum pipeline moot.
+        origin = str((data.get("drums") or {}).get("origin", ""))
+        if origin and song.drums_origin != origin:
+            notes.append(f"drums.origin {song.drums_origin} -> {origin}")
+            song.drums_origin = origin
+            song.status.update(
+                {k: v for k, v in song.default_status().items() if v == "n/a"}
+            )
+
+        base = entry.get("backing_track")
+        if base and song.backing_track != base:
+            notes.append("backing track recorded")
+            song.backing_track = base
+            song.drum_kit = ""          # nothing is being voiced; the base is mixed
+            song.drum_map = "general-midi"
+        if entry.get("base_id"):
+            song.extra["backing_track_source"] = (
+                f"https://drive.google.com/file/d/{entry['base_id']}/view"
+            )
 
         kit = entry.get("bfd3")
-        if kit and not song.drum_kit:
-            notes.append(f"kit = BFD3 {kit}")
-            song.drum_kit = f"BFD3 {kit}"
-            song.drum_map = "bfd3"
+        if kit and not base:
+            # only meaningful for a song whose drums still have to be voiced
+            song.extra["bfd3_preset"] = str(kit)
+
+        for stage, state in (entry.get("status") or {}).items():
+            if song.status.get(stage) != state:
+                notes.append(f"{stage} = {state}")
+                song.status[stage] = str(state)
+
+        review = str(entry.get("review", ""))
+        if review and review not in song.notes:
+            notes.append("review note added")
+            song.notes = (song.notes + "\n" if song.notes else "") + f"base review: {review}"
 
         extra = str(entry.get("note", ""))
         if extra and extra not in song.notes:

@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
-  kit: BFD3 DG.bfd3
-  map: bfd3
+  origin: backing-track
+  kit: ''
+  map: general-midi
 source:
   audio: 14_Diversamente Giovani_MST1.wav
   url: https://drive.google.com/file/d/1nx0t_LnDTLkUFKt1XIkI0u3OpfmX4WA4/view
+  backing_track: Diversamente Giovani MIX_3 BASE_2.wav
 stems:
 - drums
 - bass
@@ -37,14 +38,15 @@ status:
   source: todo
   analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
-  render: todo
-  video: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
+  render: wip
+  video: done
   gx100: todo
   rehearsed: todo
-notes: ''
+notes: 'base review: signed off. Missing the count-in.'
 srt_source: https://drive.google.com/file/d/1s14BYi2nEloKBs9WpLv8pYWWYoWzZAQh/view
 lyrics_doc: https://docs.google.com/document/d/1kXAYyPxCwoC4nzkbVdKPrH3w4eHua82n6mWIVbv8n7k/edit
 drum_stem_source: dg_drums.mp3
+backing_track_source: https://drive.google.com/file/d/1qAMgrtu4Y25yi6V_UMM675IEFNcSE_CM/view

@@ -86,17 +86,27 @@ memory**; memories are `U01-1`…`U50-4` then `P01-1`…`P25-4` (300 total); CC#
 #33–63, #64–95 are assign sources; MIDI clock is followed when `SYNC CLOCK` ≠
 `INTERNAL`.
 
-**BFD3** is the drum plugin used on Diversamente Giovani (Aerodrums captured the
-performance, BFD3 made the sounds), with a different `.bfd3` preset per song.
-`config/drum-maps/bfd3.yaml` is therefore a **stub with blank note numbers** that
-falls back to General MIDI — the real numbers depend on the preset and must be
-read off the plugin. Don't fill it in with invented values; the same goes for
+**Diversamente Giovani does not use the drum pipeline at all.** The band mixed
+finished live backing tracks ("BASE") straight out of the album sessions with the
+drums already in them. Every song on that album is `drums.origin:
+backing-track`, which marks `stems`/`drums_midi`/`quantize`/`kit` as `n/a`. Do
+not propose separating, transcribing or voicing drums for it — the remaining
+songs need a base *mixed* in the album session, which is not a job for this repo.
+Isolated drum stems, Aerodrums `.aer` files and per-song BFD3 presets are
+recorded in `existing-work.yaml` as **provenance only**, for the case where a
+base has to be rebuilt from scratch.
+
+`config/drum-maps/bfd3.yaml` is a **stub with blank note numbers** that falls
+back to General MIDI — the real numbers depend on the per-song preset and must be
+read off the plugin. Don't fill it in with invented values; same for
 `_custom-template.yaml`.
 
 Tempos for Diversamente Giovani in `songs/diversamente-giovani/existing-work.yaml`
 came off the band's own production folder names and were cross-checked against
 their lyrics docs. They are better than anything `rambass analyze` would produce
-— don't overwrite them with detected values.
+— don't overwrite them with detected values. The same file carries the band's own
+review punch-list per base; `rambass countin` exists because four of the seven
+finished bases are missing their count-in.
 
 ## Testing
 

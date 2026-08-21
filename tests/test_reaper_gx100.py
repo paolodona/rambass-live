@@ -225,3 +225,15 @@ def test_patch_sheet_lists_every_change(song):
 
 def test_patch_sheet_says_so_when_nothing_is_programmed(song):
     assert "no patch changes programmed yet" in patch_sheet([song], ProgramMap())
+
+
+def test_describe_surfaces_the_notes_and_the_backing_track(song):
+    from rambass.reaper import describe
+
+    song.notes = "base review: signed off. Missing the count-in."
+    song.backing_track = "Il Phurgone_Mix_2 BASE.wav"
+    text = describe(song.timeline(), song)
+    assert "notes" in text
+    assert "Missing the count-in" in text
+    assert "Il Phurgone_Mix_2 BASE.wav" in text
+    assert "not on disk yet" in text

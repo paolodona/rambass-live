@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
+  origin: backing-track
   kit: BFD3 ilCellulareOK.bfd3
   map: bfd3
 source:
   audio: 08_Il Cellulare_MST1.wav
   url: https://drive.google.com/file/d/1SirazEstPJdE-oZ5bw_73yUsPPAD2739/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -37,12 +38,13 @@ status:
   source: todo
   analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
   render: todo
   video: todo
   gx100: todo
   rehearsed: todo
 notes: ''
 lyrics_doc: https://docs.google.com/document/d/1u2u7ewsMILx6GxlH-toFmxBg4rK-MLV_nkQ56AuYWqc/edit
+bfd3_preset: ilCellulareOK.bfd3

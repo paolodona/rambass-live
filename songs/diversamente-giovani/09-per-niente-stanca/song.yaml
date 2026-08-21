@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
+  origin: backing-track
   kit: BFD3 xNienteStanca.bfd3
   map: bfd3
 source:
   audio: 09_PerNienteStanca_MST1.wav
   url: https://drive.google.com/file/d/1Xmzp9OEh_6HARWrlY4lQKKcZnrbMnNsT/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -37,9 +38,9 @@ status:
   source: todo
   analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
   render: todo
   video: todo
   gx100: todo
@@ -47,3 +48,4 @@ status:
 notes: ''
 lyrics_doc: https://docs.google.com/document/d/1fe-ds10Fp0h0Ts0Puhwcn6HF-NHdep7_2HZII4vGMiM/edit
 drum_stem_source: drums/
+bfd3_preset: xNienteStanca.bfd3

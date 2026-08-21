@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
+  origin: backing-track
   kit: BFD3 superman.bfd3
   map: bfd3
 source:
   audio: 10_Superman_MST1.wav
   url: https://drive.google.com/file/d/1I1BXgEizv6RxGMm23SIheg3RWJGRHMto/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -37,12 +38,13 @@ status:
   source: todo
   analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
   render: todo
   video: todo
   gx100: todo
   rehearsed: todo
 notes: ''
 lyrics_doc: https://docs.google.com/document/d/1b9a_yH0E6r-Csya6JHRcjU273akD9d9SbYHvLqwaJIk/edit
+bfd3_preset: superman.bfd3

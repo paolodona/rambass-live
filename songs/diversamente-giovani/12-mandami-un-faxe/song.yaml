@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
+  origin: backing-track
   kit: ''
   map: general-midi
 source:
   audio: 12_Mandami un Faxe_MST1.wav
   url: https://drive.google.com/file/d/1ov1brzXp6Wwjp1FWLCbUcjZTGWIKO6Oz/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -37,9 +38,9 @@ status:
   source: todo
   analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
   render: todo
   video: todo
   gx100: todo

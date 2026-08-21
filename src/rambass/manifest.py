@@ -36,7 +36,16 @@ STAGES = (
 STATUS_VALUES = ("todo", "wip", "done", "n/a")
 
 #: How the drums for this song come into existence.
-DRUM_ORIGINS = ("recorded", "extracted", "programmed")
+#:
+#: ``backing-track`` means a finished backing track already exists with the
+#: drums mixed into it — nothing to separate, transcribe or quantise. That is the
+#: case for most of Diversamente Giovani, where the band mixed live bases
+#: straight out of the album sessions, and it makes the whole drum pipeline
+#: ``n/a`` for those songs.
+DRUM_ORIGINS = ("backing-track", "recorded", "extracted", "programmed")
+
+#: Pipeline stages that make no sense once a finished backing track exists.
+BACKING_TRACK_NA = ("stems", "drums_midi", "quantize", "kit")
 
 
 def _as_list(value: Any) -> list:
@@ -118,6 +127,7 @@ class Song:
     drum_map: str = "general-midi"
     source_audio: str = ""
     source_url: str = ""      # where the original came from (Drive link, etc.)
+    backing_track: str = ""   # a finished base, relative to render/
     stems: list[str] = field(default_factory=lambda: ["drums", "bass", "other", "vocals"])
     click: dict = field(default_factory=lambda: {"enabled": True, "accent_downbeat": True})
 
@@ -171,6 +181,7 @@ class Song:
             drum_map=str(drums.get("map", "general-midi")),
             source_audio=str(source.get("audio", "")),
             source_url=str(source.get("url", "")),
+            backing_track=str(source.get("backing_track", "")),
             stems=[str(s) for s in _as_list(data.get("stems"))] or
                   ["drums", "bass", "other", "vocals"],
             click={**{"enabled": True, "accent_downbeat": True}, **(data.get("click") or {})},
@@ -204,7 +215,11 @@ class Song:
                 "kit": self.drum_kit,
                 "map": self.drum_map,
             },
-            "source": {"audio": self.source_audio, "url": self.source_url},
+            "source": {
+                "audio": self.source_audio,
+                "url": self.source_url,
+                "backing_track": self.backing_track,
+            },
             "stems": list(self.stems),
             "sections": [s.to_dict() for s in self.sections],
             "gx100": {
@@ -319,6 +334,33 @@ class Song:
             if path.is_file():
                 return path
         return None
+
+    def backing_track_path(self) -> Path | None:
+        """The finished backing track, if there is one on disk.
+
+        ``source.backing_track`` names it; failing that we look for the
+        conventional render name. Either way it lives in ``render/``, because it
+        is a rendered artefact rather than source material.
+        """
+        if self.backing_track:
+            named = self.path("render", self.backing_track)
+            if named.exists():
+                return named
+        for candidate in (f"{self.slug}.wav", "base.wav"):
+            path = self.path("render", candidate)
+            if path.exists():
+                return path
+        return None
+
+    def default_status(self) -> dict:
+        """The status a freshly-scaffolded song of this kind should start with."""
+        status = dict.fromkeys(STAGES, "todo")
+        if self.drums_origin == "backing-track":
+            for stage in BACKING_TRACK_NA:
+                status[stage] = "n/a"
+        elif self.drums_origin != "extracted":
+            status["stems"] = "n/a"
+        return status
 
     def drum_midi_path(self, variant: str = "quantized") -> Path:
         return self.path("midi", f"drums-{variant}.mid")

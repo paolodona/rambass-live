@@ -1,5 +1,11 @@
 # Drums: transcription and cleanup
 
+**This is a Tutti in Fila document.** Diversamente Giovani skips all of it: the
+band mixed finished live backing tracks out of the album sessions with the drums
+already in them, so there is nothing to separate, transcribe, quantise or voice.
+Those songs are `drums.origin: backing-track` and their drum stages are `n/a`.
+See `songs/diversamente-giovani/README.md`.
+
 ## What the transcriber actually does
 
 `rambass drums transcribe` runs onset detection **independently in three

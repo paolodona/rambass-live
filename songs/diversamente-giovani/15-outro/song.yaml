@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
+  origin: backing-track
   kit: ''
   map: general-midi
 source:
   audio: 15_OUTRO_MST1.wav
   url: https://drive.google.com/file/d/1dyslmGLdNUdpDaQfoxYgJQTjTm_cRIOn/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -35,13 +36,15 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
-  render: todo
-  video: todo
-  gx100: todo
-  rehearsed: todo
-notes: short outro — probably plays as straight album audio
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
+  render: n/a
+  video: n/a
+  gx100: n/a
+  rehearsed: n/a
+notes: 'short outro — probably plays as straight album audio
+
+  short linking piece — plays as straight album audio; no backing track to build'

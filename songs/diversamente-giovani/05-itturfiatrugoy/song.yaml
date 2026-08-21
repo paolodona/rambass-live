@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
-  kit: BFD3 ittu2piatti.bfd3
-  map: bfd3
+  origin: backing-track
+  kit: ''
+  map: general-midi
 source:
   audio: 05_Itturfiatrugoy_MST1.wav
   url: https://drive.google.com/file/d/1PlAzAPOxT_CV70e1CT2szYBgUm8rptk2/view
+  backing_track: Itturfiatrugoy_mix_3 BASE_2.wav
 stems:
 - drums
 - bass
@@ -37,13 +38,15 @@ status:
   source: todo
   analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
-  render: todo
-  video: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
+  render: wip
+  video: done
   gx100: todo
   rehearsed: todo
-notes: ''
+notes: 'base review: signed off. Missing the count-in. Distorted guitars too loud
+  — the drums get lost in places.'
 srt_source: https://drive.google.com/file/d/1PDhrF5BW4KmsUCUQgWrAlxx9-DDmV4au/view
 drum_stem_source: drums/
+backing_track_source: https://drive.google.com/file/d/12qdyQ0LYAewbjfD123LQOrh5WMtiiLde/view

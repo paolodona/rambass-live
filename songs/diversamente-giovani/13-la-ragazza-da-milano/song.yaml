@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
-  kit: BFD3 Ragazza.bfd3
-  map: bfd3
+  origin: backing-track
+  kit: ''
+  map: general-midi
 source:
   audio: 13_La Ragazza da Milano_MST2.wav
   url: https://drive.google.com/file/d/1SWb4jBvJDco1KO5nioYnPYTrhq8vdqnW/view
+  backing_track: LaRagazzaDaMilano_Mix_4 BASE.wav
 stems:
 - drums
 - bass
@@ -35,17 +36,20 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
-  render: todo
-  video: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
+  render: done
+  video: done
   gx100: todo
   rehearsed: todo
-notes: two masters exist — MST2 used here, MST1 is 1jU6amziYflSITijpz3L4m8oumYcAzskl;
+notes: 'two masters exist — MST2 used here, MST1 is 1jU6amziYflSITijpz3L4m8oumYcAzskl;
   check which is the released one
+
+  base review: signed off, no changes requested.'
 srt_source: https://drive.google.com/file/d/1sAeC-FqrjrwFGXtApnzNJAyMY2IbJAAG/view
 lyrics_doc: https://docs.google.com/document/d/1L8PyrXyHMqLIvNL4Xo36D_fd0D4nOtohoC-ReuFc47I/edit
 drum_stem_source: Drums_rag__ch51_Master.wav
+backing_track_source: https://drive.google.com/file/d/1BBKzC8QwF6qUo5t5DYWPsuHLI6Thkdxv/view

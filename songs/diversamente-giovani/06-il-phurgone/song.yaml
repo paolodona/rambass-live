@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
-  kit: BFD3 phurgone.bfd3
-  map: bfd3
+  origin: backing-track
+  kit: ''
+  map: general-midi
 source:
   audio: 06_Il Phurgone_MST1.wav
   url: https://drive.google.com/file/d/1tKtKePir-ruFDZLgmfzHZZfuahOnYqEY/view
+  backing_track: Il Phurgone_Mix_2 BASE.wav
 stems:
 - drums
 - bass
@@ -35,16 +36,19 @@ video:
   lyrics: lyrics.md
 status:
   source: todo
-  analyze: todo
+  analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
-  render: todo
-  video: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
+  render: wip
+  video: done
   gx100: todo
   rehearsed: todo
-notes: ''
+notes: 'base review: signed off. Missing the count-in, and the very first hits are
+  truncated. Hi-hat pedal holding the tempo into the chorus is too quiet — was meant
+  to be raised or replaced with a sidestick. Ride slightly too loud.'
 srt_source: https://drive.google.com/file/d/1AigHJKY_hJ1d8sK_vpEufBzYNlEPsxrR/view
 lyrics_doc: https://docs.google.com/document/d/1lW3o4F3Khy3QIPY8MjwdF-O3dFtojplKqFTLQTyzgjo/edit
 drum_stem_source: drums/
+backing_track_source: https://drive.google.com/file/d/173pnJ-nArWOH23_j3Co47D_HiRpz-mfh/view

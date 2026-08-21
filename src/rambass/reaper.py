@@ -229,6 +229,12 @@ def describe(timeline: Timeline, song: Song) -> str:
         f"  drums        {song.drums_origin}"
         + (f", kit: {song.drum_kit}" if song.drum_kit else ""),
     ]
+    base = song.backing_track_path()
+    if song.backing_track or base:
+        lines.append(
+            f"  backing      {song.backing_track or base.name}"
+            + ("" if base else "   (not on disk yet)")
+        )
     if song.sections:
         lines.append("  sections")
         for section in sorted(song.sections, key=lambda s: s.bar):
@@ -242,6 +248,10 @@ def describe(timeline: Timeline, song: Song) -> str:
             lines.append(
                 f"    bar {change.bar:>4}  {change.memory:<7} {change.name}"
             )
+    if song.notes.strip():
+        lines.append("  notes")
+        for line in song.notes.strip().splitlines():
+            lines.append(f"    {line}")
     return "\n".join(lines)
 
 

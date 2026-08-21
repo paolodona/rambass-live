@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
+  origin: backing-track
   kit: BFD3 BambolinaFace3.bfd3
   map: bfd3
 source:
   audio: 04_Bambolina_MST1.wav
   url: https://drive.google.com/file/d/1gkm7gPJESB94C9lyykCWOVML4AgWei4p/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -37,12 +38,13 @@ status:
   source: todo
   analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
   render: todo
   video: todo
   gx100: todo
   rehearsed: todo
 notes: ''
 drum_stem_source: TanoDrums/
+bfd3_preset: BambolinaFace3.bfd3

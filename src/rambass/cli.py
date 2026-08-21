@@ -165,10 +165,8 @@ def cmd_new(args: argparse.Namespace) -> int:
         drums_origin=args.drums,
         bars=args.bars,
         sections=[Section("intro", 1)],
-        status={stage: "todo" for stage in STAGES},
     )
-    if song.drums_origin != "extracted":
-        song.status["stems"] = "n/a"
+    song.status = song.default_status()
     path = save_song(song, directory)
 
     lyrics = directory / song.lyrics_file
@@ -387,6 +385,43 @@ def cmd_click(args: argparse.Namespace) -> int:
         _say(f"{song.title}: {target}  "
              f"({song.count_in_bars} bar count-in = {timeline.count_in_seconds:.2f}s, "
              f"then {bars} bars at {song.bpm:g} BPM)")
+    return 0
+
+
+def cmd_countin(args: argparse.Namespace) -> int:
+    """Prepend a click count-in to an already-finished backing track."""
+    from .audio import load_audio, write_wav
+    from .click import prepend_count_in
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        source = Path(args.file) if args.file else song.backing_track_path()
+        if not source:
+            _say(f"{song.slug}: no backing track in render/ — name one in "
+                 f"source.backing_track, or pass --file")
+            continue
+
+        bars = args.bars or song.count_in_bars
+        if bars < 1:
+            _say(f"{song.slug}: count_in.bars is {song.count_in_bars}, nothing to add")
+            continue
+
+        base, sample_rate = load_audio(source, args.sample_rate, channels=args.channels)
+        combined = prepend_count_in(
+            base, sample_rate, song.timeline(), bars,
+            click_level_db=args.level,
+            gap_seconds=args.gap,
+        )
+        target = Path(args.out) if args.out else song.path(
+            "render", f"{source.stem}-countin.wav"
+        )
+        write_wav(target, combined, sample_rate, bit_depth=24)
+
+        added = (len(combined) - len(base)) / sample_rate
+        _say(f"{song.title}: {source.name} + {bars} bar count-in "
+             f"({added:.2f}s at {song.bpm:g} BPM) -> {target.name}")
+        if args.mark:
+            _mark(song, "render")
     return 0
 
 
@@ -946,7 +981,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--count-in", type=int, default=2, help="count-in length in bars")
     p.add_argument("--bars", type=int, default=0, help="song length in bars, if known")
     p.add_argument("--drums", default="extracted",
-                   choices=("recorded", "extracted", "programmed"))
+                   choices=("backing-track", "recorded", "extracted", "programmed"))
     p.add_argument("--create-album", action="store_true")
     p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_new)
@@ -1025,6 +1060,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sample-rate", type=int, default=48000)
     p.add_argument("--level", type=float, default=-9.0, help="click level in dBFS")
     p.set_defaults(func=cmd_click)
+
+    p = sub.add_parser(
+        "countin",
+        help="prepend a click count-in to a finished backing track",
+    )
+    _add_song_args(p)
+    p.add_argument("--file", help="use this audio instead of source.backing_track")
+    p.add_argument("--out", help="explicit output path")
+    p.add_argument("--bars", type=int, default=0, help="override count_in.bars")
+    p.add_argument("--level", type=float, default=-6.0, help="click level in dBFS")
+    p.add_argument("--gap", type=float, default=0.0,
+                   help="silence between the last click and the song")
+    p.add_argument("--sample-rate", type=int, default=48000)
+    p.add_argument("--channels", type=int, default=2)
+    p.add_argument("--mark", action="store_true", help="mark the render stage done")
+    p.set_defaults(func=cmd_countin)
 
     reaper = sub.add_parser("reaper", help="generate Reaper build scripts")
     reaper_sub = reaper.add_subparsers(dest="reaper_command", metavar="<subcommand>")

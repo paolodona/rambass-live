@@ -103,3 +103,70 @@ def _tick(frequency: float, click_ms: float, sample_rate: int) -> np.ndarray:
 
 def _db(value: float) -> float:
     return float(10.0 ** (value / 20.0))
+
+
+def count_in_only(
+    timeline: Timeline,
+    bars: int,
+    *,
+    sample_rate: int = 48000,
+    click_ms: float = 28.0,
+    level_db: float = -6.0,
+) -> np.ndarray:
+    """Just the count-in clicks, as a mono array — no song after it."""
+    if bars < 1:
+        raise ValueError("count-in must be at least one bar")
+    length = 0.0
+    for bar in range(1 - bars, 1):
+        length += timeline.bar_length_seconds(max(bar, 1))
+    buffer = np.zeros(int(length * sample_rate) + 1, dtype=np.float32)
+
+    offset = 0.0
+    for bar in range(1 - bars, 1):
+        sig = timeline.time_signature_at(max(bar, 1))
+        beat_seconds = timeline.bar_length_seconds(max(bar, 1)) / sig[0]
+        for beat in range(sig[0]):
+            index = int((offset + beat * beat_seconds) * sample_rate)
+            if index >= len(buffer):
+                continue
+            tone = _tick(COUNT_IN_HZ, click_ms, sample_rate) * _db(level_db)
+            end = min(len(buffer), index + len(tone))
+            buffer[index:end] += tone[: end - index]
+        offset += timeline.bar_length_seconds(max(bar, 1))
+    return buffer
+
+
+def prepend_count_in(
+    base: np.ndarray,
+    sample_rate: int,
+    timeline: Timeline,
+    bars: int,
+    *,
+    click_level_db: float = -6.0,
+    gap_seconds: float = 0.0,
+) -> np.ndarray:
+    """Put a click count-in in front of an already-mixed backing track.
+
+    This exists because the band's own review notes on the finished live bases
+    say "manca il count in" against four of the seven songs. The backing track
+    itself is correct and finished; it just starts cold, and a band cannot come
+    in together on a track that starts cold.
+
+    *base* is ``(frames, channels)``. The click is written to every channel, so
+    it is audible wherever the base is audible — which is what you want for a
+    count-in that happens before the song starts. If the click has to stay out
+    of the PA during the song, that is a separate click track in Reaper, not
+    this.
+    """
+    base = np.asarray(base, dtype=np.float32)
+    if base.ndim == 1:
+        base = base[:, None]
+    channels = base.shape[1]
+
+    clicks = count_in_only(
+        timeline, bars, sample_rate=sample_rate, level_db=click_level_db
+    )
+    gap = np.zeros(int(max(0.0, gap_seconds) * sample_rate), dtype=np.float32)
+    lead = np.concatenate([clicks, gap])
+    lead_stereo = np.repeat(lead[:, None], channels, axis=1)
+    return np.concatenate([lead_stereo, base], axis=0)

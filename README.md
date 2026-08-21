@@ -39,17 +39,18 @@ and rendering video needs `ffmpeg` on PATH. See [docs/setup.md](docs/setup.md).
 
 | | Diversamente Giovani | Tutti in Fila |
 |---|---|---|
-| drums exist as | rendered audio stems (Aerodrums → BFD3) | only inside the stereo mix |
-| route in | transcribe the isolated drum stem | `stems` → `drums transcribe` |
+| drums arrive as | part of a finished backing track | only inside the stereo mix |
+| drum pipeline | **not needed** | the whole job |
 | demucs needed | no | yes |
 | tempos | **known** — off the band's production folders | must be detected |
 | lyric cues | 6 songs hand-timed already | none yet |
 | Reaper projects | 8 songs already built (importable) | none |
 
-The two albums are at very different starting points, and
+The two albums are at very different starting points.
 `songs/diversamente-giovani/existing-work.yaml` records exactly what already
-exists for the newer one — tempos, drum stems, BFD3 presets, lyrics documents,
-SRT files and rendered videos — so none of it gets rebuilt by accident.
+exists for the newer one — finished backing tracks, tempos, lyrics documents,
+SRT files, rendered videos, Reaper projects and the band's own review notes on
+each base — so none of it gets rebuilt by accident.
 
 ## How it fits together
 

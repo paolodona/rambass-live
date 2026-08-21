@@ -205,3 +205,61 @@ def test_next_actions_points_at_the_first_unfinished_stage(song):
     song.status["source"] = "done"
     assert "analyze" in next_actions([song])
     assert next_actions([]) == ""
+
+
+# ── count-in prepended to a finished backing track ───────────────────────
+def test_count_in_only_length_and_clicks():
+    from rambass.click import count_in_only
+
+    timeline = Timeline(bpm=120, time_signature="4/4")
+    buffer = count_in_only(timeline, 2, sample_rate=48000)
+    assert len(buffer) / 48000 == pytest.approx(4.0, abs=0.01)
+    assert len(_click_onsets(buffer, 48000)) == 8
+
+
+def test_count_in_only_respects_the_metre():
+    from rambass.click import count_in_only
+
+    buffer = count_in_only(Timeline(bpm=90, time_signature="7/8"), 1, sample_rate=48000)
+    assert len(_click_onsets(buffer, 48000)) == 7
+
+
+def test_count_in_only_rejects_zero_bars():
+    from rambass.click import count_in_only
+
+    with pytest.raises(ValueError):
+        count_in_only(Timeline(bpm=120), 0)
+
+
+def test_prepend_count_in_keeps_the_base_intact_and_stereo():
+    from rambass.click import prepend_count_in
+
+    timeline = Timeline(bpm=120, time_signature="4/4")
+    base = np.full((48000 * 3, 2), 0.5, dtype=np.float32)
+    out = prepend_count_in(base, 48000, timeline, 2)
+
+    added = len(out) - len(base)
+    assert added / 48000 == pytest.approx(4.0, abs=0.01)
+    assert out.shape[1] == 2
+    # the base is untouched at the end
+    assert np.allclose(out[-len(base):], base)
+
+
+def test_prepend_count_in_writes_the_click_to_every_channel():
+    from rambass.click import prepend_count_in
+
+    base = np.zeros((4800, 2), dtype=np.float32)
+    out = prepend_count_in(base, 48000, Timeline(bpm=120), 1)
+    lead = out[: len(out) - len(base)]
+    assert np.abs(lead[:, 0]).max() > 0.1
+    assert np.allclose(lead[:, 0], lead[:, 1])
+
+
+def test_prepend_count_in_accepts_mono_and_a_gap():
+    from rambass.click import prepend_count_in
+
+    base = np.zeros(4800, dtype=np.float32)
+    out = prepend_count_in(base, 48000, Timeline(bpm=120), 1, gap_seconds=0.5)
+    assert out.shape[1] == 1
+    added = (len(out) - len(base)) / 48000
+    assert added == pytest.approx(2.0 + 0.5, abs=0.01)

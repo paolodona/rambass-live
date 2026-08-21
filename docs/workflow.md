@@ -15,14 +15,21 @@ move together. Anything written in seconds would silently drift out of place.
 
 | | Diversamente Giovani | Tutti in Fila |
 |---|---|---|
-| drums exist as | rendered audio (Aerodrums → BFD3) | only inside the stereo mix |
-| `drums.origin` | `recorded` | `extracted` |
-| demucs needed | no — an isolated drum stem exists | yes |
+| drums arrive as | part of a finished backing track | only inside the stereo mix |
+| `drums.origin` | `backing-track` | `extracted` |
+| drum pipeline | **not needed** — `stems`/`drums_midi`/`quantize`/`kit` are `n/a` | the whole job |
+| demucs needed | no | yes |
 | tempo | **known** from the band's production folders | must be detected |
 | lyric cues | 6 songs hand-timed already | none yet |
 | Reaper projects | 7 already built — import them | none |
-| starting point | `rambass reaper import`, then transcribe the drum stem | `rambass stems` + `drums transcribe` |
+| starting point | `rambass reaper import`, `rambass countin` | `rambass stems` + `drums transcribe` |
 | realistic effort | minutes per song | an hour or two per song |
+
+**Diversamente Giovani does not go through the drum pipeline at all.** The band
+mixed live bases straight out of the album sessions, drums included, for seven
+songs; the other eight need the same mixing treatment, not a reconstruction. So
+for that album the sequence below collapses to: import the Reaper project, fix
+the count-in, do the lyrics. Steps 2, 3 and 4 are for Tutti in Fila.
 
 `songs/diversamente-giovani/existing-work.yaml` is the inventory of what already
 exists for the newer album — tempos, drum stems, BFD3 presets, lyrics documents,

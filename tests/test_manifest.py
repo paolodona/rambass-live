@@ -109,3 +109,48 @@ def test_source_url_round_trips(song):
     song.source_url = "https://drive.google.com/file/d/abc/view"
     save_song(song)
     assert load_song(song.dir).source_url.endswith("/abc/view")
+
+
+def test_backing_track_origin_marks_the_drum_pipeline_not_applicable():
+    item = Song.from_dict({"title": "x", "drums": {"origin": "backing-track"}})
+    status = item.default_status()
+    for stage in ("stems", "drums_midi", "quantize", "kit"):
+        assert status[stage] == "n/a"
+    assert status["render"] == "todo"
+
+
+def test_extracted_origin_keeps_the_whole_pipeline():
+    status = Song.from_dict({"title": "x", "drums": {"origin": "extracted"}}).default_status()
+    assert status["stems"] == "todo" and status["drums_midi"] == "todo"
+
+
+def test_recorded_origin_only_skips_separation():
+    status = Song.from_dict({"title": "x", "drums": {"origin": "recorded"}}).default_status()
+    assert status["stems"] == "n/a"
+    assert status["drums_midi"] == "todo"
+
+
+def test_backing_track_round_trips_and_resolves(song):
+    song.backing_track = "base.wav"
+    save_song(song)
+    reloaded = load_song(song.dir)
+    assert reloaded.backing_track == "base.wav"
+    assert reloaded.backing_track_path() is None      # not on disk yet
+    (song.dir / "render" / "base.wav").write_bytes(b"RIFF")
+    assert load_song(song.dir).backing_track_path().name == "base.wav"
+
+
+def test_backing_track_falls_back_to_the_conventional_name(song):
+    (song.dir / "render" / f"{song.slug}.wav").write_bytes(b"RIFF")
+    assert load_song(song.dir).backing_track_path().name == f"{song.slug}.wav"
+
+
+def test_progress_with_a_backing_track_ignores_the_drum_stages():
+    item = Song.from_dict({
+        "title": "x",
+        "drums": {"origin": "backing-track"},
+        "status": {"analyze": "done", "stems": "n/a", "drums_midi": "n/a",
+                   "quantize": "n/a", "kit": "n/a"},
+    })
+    done, total = item.progress()
+    assert total == 6 and done == 1

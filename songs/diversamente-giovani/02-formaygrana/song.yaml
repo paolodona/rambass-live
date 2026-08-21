@@ -13,12 +13,13 @@ click:
   enabled: true
   accent_downbeat: true
 drums:
-  origin: recorded
-  kit: BFD3 4myGrana2.bfd3
-  map: bfd3
+  origin: backing-track
+  kit: ''
+  map: general-midi
 source:
   audio: 02_ForMayGrana_MST1.wav
   url: https://drive.google.com/file/d/1y8R2McS-AfcOB_qzFM5Sj2DHTINXqoc_/view
+  backing_track: ForMayGrana_Mix_3_BASE_2.wav
 stems:
 - drums
 - bass
@@ -37,14 +38,16 @@ status:
   source: todo
   analyze: done
   stems: n/a
-  drums_midi: todo
-  quantize: todo
-  kit: todo
-  render: todo
-  video: todo
+  drums_midi: n/a
+  quantize: n/a
+  kit: n/a
+  render: wip
+  video: done
   gx100: todo
   rehearsed: todo
-notes: ''
+notes: 'base review: signed off. Missing the count-in. Rhythm guitars maybe slightly
+  too loud. Base clips in Reaper.'
 srt_source: https://drive.google.com/file/d/17XYZAbZ0wavsT6qCMa-gN6IBsmGLT7Ta/view
 lyrics_doc: https://docs.google.com/document/d/1RdJ84DamiA4OygDeADW-jpgSV4VsPWOwkTNNHtujfrI/edit
 drum_stem_source: 4MG_drum_complete.wav
+backing_track_source: https://drive.google.com/file/d/1cDsGCEokJPkkbEDDW-6owjRXfsreBGDQ/view

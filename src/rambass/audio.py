@@ -105,6 +105,38 @@ def load_mono(path: str | Path, sample_rate: int = 22050) -> tuple[np.ndarray, i
     return samples, sample_rate
 
 
+def load_audio(
+    path: str | Path,
+    sample_rate: int = 48000,
+    channels: int = 2,
+) -> tuple[np.ndarray, int]:
+    """Decode audio to a ``(frames, channels)`` float32 array via ffmpeg.
+
+    Unlike :func:`load_mono` this preserves stereo, which matters for anything
+    that is going to be played back rather than analysed.
+    """
+    path = Path(path)
+    if not path.is_file():
+        raise AudioError(f"no such audio file: {path}")
+    result = subprocess.run(
+        [
+            ffmpeg_path(), "-v", "error", "-nostdin",
+            "-i", str(path),
+            "-ac", str(channels), "-ar", str(sample_rate),
+            "-f", "f32le", "-",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        tail = result.stderr.decode("utf-8", "replace").strip().splitlines()[-6:]
+        raise AudioError(f"ffmpeg could not decode {path}:\n" + "\n".join(tail))
+    flat = np.frombuffer(result.stdout, dtype="<f4").astype(np.float32)
+    if flat.size == 0:
+        raise AudioError(f"{path} decoded to zero samples")
+    return flat.reshape(-1, channels), sample_rate
+
+
 def write_wav(
     path: str | Path,
     samples: np.ndarray,
