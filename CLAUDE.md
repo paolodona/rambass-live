@@ -127,6 +127,18 @@ Anything needing those must be skipped, not required.
 
 Run it: `pytest` (or `make test`).
 
+## Git workflow
+
+**Work directly on `main`.** Paolo is the only maintainer, so there is no reason
+for feature branches or pull requests here — commit to `main` and push. Don't
+create a branch unless explicitly asked to.
+
+History note: the repo was created empty and the first push landed on a
+`claude/...` branch, which GitHub then made the default. `main` was created from
+that history, so the two are identical up to commit `0041f9a`. The
+`claude/ramba-backing-track-tools-wx0lam` branch is dead — if it still exists,
+it can be deleted once GitHub's default branch is `main`.
+
 ## Don't
 
 * Don't commit audio or video. `.gitignore` covers it; check before `git add -A`.
