@@ -19,6 +19,7 @@ drums:
 source:
   audio: 06 La Vera Storia Del Vibratore.wav
   url: https://drive.google.com/file/d/1j99ea3n3iGXKDZqWmO4A1PBZYGlFOvsf/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -33,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: rock / ambient, offbeat
+  energy: 3
+  heaviness: 3
+  standing: deep
+  role: ''
+  note: the odd one out; not a crowd favourite
 status:
   source: todo
   analyze: todo
@@ -41,6 +49,7 @@ status:
   quantize: todo
   kit: todo
   render: todo
+  lyrics: todo
   video: todo
   gx100: todo
   rehearsed: todo

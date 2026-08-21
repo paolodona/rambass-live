@@ -34,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: heavy metal, silly
+  energy: 5
+  heaviness: 5
+  standing: known
+  role: ''
+  note: ''
 status:
   source: todo
   analyze: done

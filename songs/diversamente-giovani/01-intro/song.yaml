@@ -34,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: linking
+  energy: 2
+  heaviness: 1
+  standing: deep
+  role: linking
+  note: album intro; walk-on music
 status:
   source: todo
   analyze: done

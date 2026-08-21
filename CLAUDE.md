@@ -49,6 +49,7 @@ Layered so the cheap deterministic parts have no heavy dependencies:
 | `gx100.py` | pedalboard MIDI, program map | mido |
 | `video.py` | lyric cue parsing, ASS, ffmpeg render | — |
 | `setlist.py`, `status.py`, `doctor.py` | running orders, progress, diagnostics | — |
+| `arrange.py` | reviews a running order against set-list practice | — |
 | `audio.py` | ffmpeg decode/encode, WAV write, loudness | numpy |
 | `analyze.py` | tempo/beat/drift detection | **librosa** |
 | `transcribe.py` | drum stem → hits | **librosa** |
@@ -107,6 +108,15 @@ their lyrics docs. They are better than anything `rambass analyze` would produce
 — don't overwrite them with detected values. The same file carries the band's own
 review punch-list per base; `rambass countin` exists because four of the seven
 finished bases are missing their count-in.
+
+`arrange.py` deliberately **does not generate** a running order. Sequencing is a
+musical judgement; what a tool can usefully do is catch what a human misses in
+their own list. Don't add an auto-sequencer — add checks.
+
+Each song's `character` block (genre, energy, heaviness, standing, role) is the
+band's own read of itself, not anything derived from audio. Energy and heaviness
+are separate axes on purpose: Il Phurgone is high energy and not heavy at all.
+Never collapse them.
 
 ## Testing
 

@@ -19,7 +19,7 @@ drums:
 
 tracks:
   - track: 2
-    slug: i-pooh
+    slug: i-puffi
     bpm: 90                   # from its own Reaper project (TEMPO 90 4 4)
     # This one song does NOT need the drum pipeline: the base is finished.
     drums_origin: backing-track

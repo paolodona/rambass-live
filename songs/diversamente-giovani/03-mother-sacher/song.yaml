@@ -34,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: heavy metal, funny
+  energy: 5
+  heaviness: 5
+  standing: known
+  role: ''
+  note: the heaviest song in the set
 status:
   source: todo
   analyze: done

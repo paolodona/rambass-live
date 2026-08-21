@@ -34,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: 60s-70s funky ballroom
+  energy: 4
+  heaviness: 1
+  standing: known
+  role: ''
+  note: upbeat but not heavy — nothing to headbang to
 status:
   source: todo
   analyze: done

@@ -19,6 +19,7 @@ drums:
 source:
   audio: 08 - Skizzo_Sonovabic.wav
   url: https://drive.google.com/file/d/1zEkANlrqUuZSVMxxziIrIihqfc6ZTwNk/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -33,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: jazzy rock, epic
+  energy: 3
+  heaviness: 3
+  standing: deep
+  role: ''
+  note: long
 status:
   source: todo
   analyze: todo
@@ -41,6 +49,7 @@ status:
   quantize: todo
   kit: todo
   render: todo
+  lyrics: todo
   video: todo
   gx100: todo
   rehearsed: todo

@@ -1,0 +1,24 @@
+# The set that could be played this week: only the seven songs that already have
+# a finished backing track AND a rendered lyric video. Same principles, shorter
+# arc. Roughly 35 minutes.
+#
+# Worth keeping as its own file even after the full set is ready — it is the
+# fallback if a rehearsal goes badly, and the answer to a support slot.
+name: Ramba S.S. — playable now (Tier A)
+date: ""
+venue: ""
+notes: |
+  Seven songs, all finished. Opens on a hit, one trough, ends on the heaviest
+  song into the anthem.
+
+  Diversamente Giovani is the least-known song here and takes the trough at 4 —
+  in a set this short there is nowhere better for it, and it is surrounded by
+  material the audience knows.
+songs:
+  - tutti-in-fila/02-i-puffi                            # HIT · opener
+  - diversamente-giovani/02-formaygrana                 # HIT · happy
+  - diversamente-giovani/06-il-phurgone                 # feel change, funky
+  - diversamente-giovani/14-diversamente-giovani        # trough · the new one
+  - diversamente-giovani/05-itturfiatrugoy              # lift · silly metal
+  - diversamente-giovani/03-mother-sacher               # peak · heaviest
+  - diversamente-giovani/13-la-ragazza-da-milano        # CLOSER · the anthem

@@ -20,6 +20,7 @@ rambass click 04-titolo                         # click + count-in
 rambass gx100 midi 04-titolo                    # pedalboard patch changes
 rambass reaper build 04-titolo                  # Reaper project
 rambass video ass 04-titolo                     # lyric timings
+rambass arc gig                                  # the set's energy shape + what it breaks
 rambass status                                  # what is left to do
 ```
 
@@ -94,6 +95,7 @@ work and those are tracked.
 | | |
 |---|---|
 | **[plan.md](docs/plan.md)** | **the phased plan, gates, and what runs in parallel** |
+| **[setlist.md](docs/setlist.md)** | **how the running order is built, and how to check one** |
 | **[live-playback.md](docs/live-playback.md)** | **how the show is driven on stage, and why it never stutters** |
 | [setup.md](docs/setup.md) | installing, and what each dependency tier buys |
 | [workflow.md](docs/workflow.md) | the per-song sequence, and the tempo-drift decision |

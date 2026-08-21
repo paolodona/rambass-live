@@ -1,63 +1,68 @@
-# The running order. Nothing downstream depends on the order, so reorder freely —
-# `rambass setlist gig` re-times it and `rambass reaper setlist gig` rebuilds the
-# whole-show project.
+# The running order, built on the standard shape: a recognisable opener, runs of
+# three or four, two real troughs, two peaks, and the biggest thing last.
+# `rambass arc gig` shows the shape and checks it.
 #
-# 23 songs are in scope. Three were cut and are not listed here; they are also
-# marked `excluded` in their own song.yaml so they drop off `rambass status`:
+# 23 songs. Three were cut (Intro Portamistica Z.Z.I., La Canzone Del Solero,
+# OUTRO) and are marked `excluded` in their own song.yaml.
 #
-#   Tutti in Fila 01  Intro Portamistica Z.Z.I.
-#   Tutti in Fila 10  La Canzone Del Solero
-#   Diversamente Giovani 15  OUTRO
+# Why the order is what it is — the decisions worth arguing with:
 #
-# Two songs are sung unaccompanied and need no backing track, click, count-in or
-# pedal change — they are in the running order but not in the playback project:
-#
-#   Tutti in Fila 07  La Canzone Del Tonno
-#   Diversamente Giovani 11  Se Sei Felice
-#
+#   * The three hits are front-loaded (I Puffi, Tutti In Fila, ForMayGrana).
+#     The front of the set is where you buy the audience's attention for
+#     everything after it.
+#   * The deep cuts are clustered at 12-15 (Intro Vibratore, La Vera Storia,
+#     Skizzo, Mandami un Faxe) — the middle is where unfamiliar material belongs,
+#     carried by the known songs either side. It is also where a long song like
+#     Skizzo costs least.
+#   * Diversamente Giovani, the newest and least-known song, sits at 17 — mid-set
+#     and directly after Bambolina, one of the famous ones.
+#   * Mandami un Faxe is the riskiest song to place, being slow, repetitive and
+#     prolonged. It is the deliberate second trough at 15, deep enough into the
+#     set that it reads as a change of pace rather than a lull.
+#   * The two a cappella numbers (10, 20) are the only points where the laptop
+#     does nothing. They are spread apart on purpose: they are both the
+#     breathers and the natural places to talk, retune, or recover if something
+#     has gone wrong.
+#   * The last three are known, known, hit. Mother Sacher at 22 is the heaviest
+#     thing in the set, and La Ragazza follows it as the anthem — brutal, then
+#     the singalong. La Ragazza is not the highest-energy song by number, but
+#     its repeatable finale is what actually ends a show.
+#   * Orologiaio at 7 is ninety seconds of death metal with a guest, straight
+#     after bluesy rock. It costs almost no time and the contrast is the point.
+#   * Intro Vibratore is attached to La Vera Storia Del Vibratore — they run
+#     together as one backing track and must not be separated.
 name: Ramba S.S. — the set
 date: ""
 venue: ""
 notes: |
-  Order below is a starting point, grouped so the seven songs that are already
-  finished carry the front of the set.
+  Shape: open hard on three hits, first trough at Manlio, peak at Orologiaio and
+  Itturfiatrugoy, breathe on Tonno. Restart, work through the deep cuts, second
+  trough at Mandami un Faxe, climb back on Bambolina. Last breather at Se Sei
+  Felice, then Mother Sacher — the heaviest thing we have — into La Ragazza da
+  Milano, whose finale repeats as long as it keeps working.
 
-  The two a cappella numbers are deliberately placed to break up the backing
-  tracks — they are the only points in the set where the laptop does nothing, so
-  they are also the natural spots to talk, retune, or recover if anything has
-  gone wrong.
-
-  Diversamente Giovani INTRO and Tutti in Fila's Intro Vibratore are short
-  linking pieces that play as straight album audio. Intro Vibratore runs into
-  La Vera Storia Del Vibratore and should be treated as one backing track with it.
+  Two songs need no playback at all: La Canzone Del Tonno and Se Sei Felice.
 songs:
-  # ── opener: the album intro, played as straight audio ─────────────────
-  - diversamente-giovani/01-intro
-  # ── already finished: base and lyric video exist ───────────────────────
-  - tutti-in-fila/02-i-pooh
-  - diversamente-giovani/02-formaygrana
-  - diversamente-giovani/03-mother-sacher
-  - diversamente-giovani/06-il-phurgone
-  - diversamente-giovani/05-itturfiatrugoy
-  # ── a cappella: laptop silent ─────────────────────────────────────────
-  - tutti-in-fila/07-la-canzone-del-tonno
-  # ── Diversamente Giovani: need a base mixed ───────────────────────────
-  - diversamente-giovani/04-bambolina
-  - diversamente-giovani/08-il-cellulare
+  - diversamente-giovani/01-intro                       # walk-on
+  - tutti-in-fila/02-i-puffi                            # HIT · opener
+  - tutti-in-fila/03-tutti-in-fila                      # HIT · metal
+  - diversamente-giovani/02-formaygrana                 # HIT · happy
+  - diversamente-giovani/06-il-phurgone                 # feel change, funky
+  - tutti-in-fila/09-manlio                             # trough 1
+  - diversamente-giovani/10-superman                    # lift
+  - diversamente-giovani/07-orologiaio                  # 90s of brutality
+  - diversamente-giovani/05-itturfiatrugoy              # peak 1
+  - tutti-in-fila/07-la-canzone-del-tonno               # a cappella breather
+  - tutti-in-fila/04-ampiamente-contestabile            # restart
+  - tutti-in-fila/05-intro-vibratore                    # attached to the next
+  - tutti-in-fila/06-la-vera-storia-del-vibratore       # deep cuts, mid-set
+  - tutti-in-fila/08-skizzo-sonovabic                   # the long epic
+  - diversamente-giovani/12-mandami-un-faxe             # trough 2
+  - diversamente-giovani/04-bambolina                   # lift on a famous one
+  - diversamente-giovani/14-diversamente-giovani        # the new one, carried
   - diversamente-giovani/09-per-niente-stanca
-  - diversamente-giovani/10-superman
-  - diversamente-giovani/12-mandami-un-faxe
-  - diversamente-giovani/07-orologiaio
-  # ── Tutti in Fila: full pipeline ──────────────────────────────────────
-  - tutti-in-fila/03-tutti-in-fila
-  - tutti-in-fila/04-ampiamente-contestabile
-  - tutti-in-fila/05-intro-vibratore
-  - tutti-in-fila/06-la-vera-storia-del-vibratore
-  - tutti-in-fila/08-skizzo-sonovabic
-  - tutti-in-fila/09-manlio
+  - diversamente-giovani/08-il-cellulare
+  - diversamente-giovani/11-se-sei-felice               # last breather
   - tutti-in-fila/11-l-esercito-del-surf
-  # ── a cappella: laptop silent ─────────────────────────────────────────
-  - diversamente-giovani/11-se-sei-felice
-  # ── closers: already finished ─────────────────────────────────────────
-  - diversamente-giovani/13-la-ragazza-da-milano
-  - diversamente-giovani/14-diversamente-giovani
+  - diversamente-giovani/03-mother-sacher               # peak · heaviest
+  - diversamente-giovani/13-la-ragazza-da-milano        # CLOSER · the anthem

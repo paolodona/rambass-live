@@ -34,6 +34,14 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: rock
+  energy: 4
+  heaviness: 3
+  standing: hit
+  role: closer
+  note: 'the ending song: long finale with a big chorus that can repeat as long as
+    it is working. The MIDI has two fake stops before the chorus comes back'
 status:
   source: todo
   analyze: done

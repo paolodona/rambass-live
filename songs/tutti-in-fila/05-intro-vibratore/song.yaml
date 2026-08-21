@@ -19,6 +19,7 @@ drums:
 source:
   audio: 05 Intro Vibratore.wav
   url: https://drive.google.com/file/d/1yj8kxnT9TrULu5x2XbbJ-KLC7p2HLfF5/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -33,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: linking
+  energy: 2
+  heaviness: 1
+  standing: deep
+  role: linking
+  note: runs straight into La Vera Storia — one backing track
 status:
   source: todo
   analyze: todo
@@ -41,6 +49,7 @@ status:
   quantize: todo
   kit: todo
   render: todo
+  lyrics: todo
   video: todo
   gx100: todo
   rehearsed: todo

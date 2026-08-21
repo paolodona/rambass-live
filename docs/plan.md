@@ -96,7 +96,12 @@ in the songs themselves, so the board and the plan cannot drift from the decisio
 ```
 rambass scope <song> out --reason "..."      # cut a song
 rambass accompaniment <song> a-cappella      # in the set, nothing to build
+rambass arc gig                              # check the running order
 ```
+
+The running order itself is settled and passes clean — see
+[setlist.md](setlist.md) for the principles it was built on and why each
+decision was made. `setlists/tier-a.yaml` is the seven-song set playable now.
 
 Still open, and worth settling before Lane B starts on the Tier C songs:
 

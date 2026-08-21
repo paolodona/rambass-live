@@ -1,5 +1,5 @@
-slug: i-pooh
-title: I Pooh
+slug: i-puffi
+title: I Puffi
 album: tutti-in-fila
 track: 2
 key: ''
@@ -34,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: rock, upbeat
+  energy: 4
+  heaviness: 3
+  standing: hit
+  role: ''
+  note: one of the big ones. Master file is the pun spelling 'I PoohFFI'
 status:
   source: todo
   analyze: done

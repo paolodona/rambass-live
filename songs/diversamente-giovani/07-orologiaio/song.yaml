@@ -34,6 +34,14 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: death metal
+  energy: 5
+  heaviness: 5
+  standing: deep
+  role: detour
+  note: very fast, very brutal, very short. Features a guest from a death metal band
+    — a fun detour
 status:
   source: todo
   analyze: done

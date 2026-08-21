@@ -24,7 +24,7 @@ notes: |
   of minutes before the music starts — so when importing, the musical zero is
   the first audio item, not time zero. `rambass reaper import` defaults to that.
 songs:
-  - tutti-in-fila/02-i-pooh                       # "Phooffi", 90 BPM per its project
+  - tutti-in-fila/02-i-puffi                       # "Phooffi", 90 BPM per its project
   - diversamente-giovani/02-formaygrana
   - diversamente-giovani/03-mother-sacher
   - diversamente-giovani/06-il-phurgone

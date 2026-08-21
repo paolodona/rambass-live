@@ -34,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: acoustic ballad
+  energy: 1
+  heaviness: 1
+  standing: deep
+  role: ''
+  note: slow, repetitive and prolonged — the riskiest song to place badly
 status:
   source: todo
   analyze: done

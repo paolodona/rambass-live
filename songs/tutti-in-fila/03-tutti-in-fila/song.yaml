@@ -19,6 +19,7 @@ drums:
 source:
   audio: 03 Tutti In Fila.wav
   url: https://drive.google.com/file/d/1BfM_6UEy5hCaWfU53XR3SwMUJXNhzvDj/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -33,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: metal
+  energy: 5
+  heaviness: 5
+  standing: hit
+  role: ''
+  note: one of the biggest
 status:
   source: todo
   analyze: todo
@@ -41,6 +49,7 @@ status:
   quantize: todo
   kit: todo
   render: todo
+  lyrics: todo
   video: todo
   gx100: todo
   rehearsed: todo

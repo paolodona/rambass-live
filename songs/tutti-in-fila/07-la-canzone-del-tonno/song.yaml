@@ -34,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: a cappella, comic
+  energy: 2
+  heaviness: 1
+  standing: known
+  role: interlude
+  note: funny unaccompanied interlude
 status:
   source: todo
   analyze: n/a

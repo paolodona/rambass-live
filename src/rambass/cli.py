@@ -920,6 +920,38 @@ def cmd_setlist_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_setlist_arc(args: argparse.Namespace) -> int:
+    """Show a running order's shape and what it gets wrong."""
+    from .arrange import review, table
+    from .setlist import Setlist, find_setlist
+
+    project = _project()
+    setlist = Setlist.load(find_setlist(project, args.setlist))
+    songs = setlist.resolve(project)
+
+    _say(f"{setlist.name} — {len(songs)} songs")
+    _say()
+    _say(table(songs))
+    _say()
+
+    findings = review(songs)
+    problems = [f for f in findings if f.severity == "problem"]
+    watch = [f for f in findings if f.severity == "watch"]
+
+    if not findings:
+        _say("no issues — this order holds up against the usual principles")
+        return 0
+    for finding in problems:
+        _say(f"  !  {finding.where}")
+        _say(f"     {finding.what}")
+    for finding in watch:
+        _say(f"  ?  {finding.where}")
+        _say(f"     {finding.what}")
+    _say()
+    _say(f"{len(problems)} problem(s), {len(watch)} to look at")
+    return 1 if problems else 0
+
+
 def cmd_set_status(args: argparse.Namespace) -> int:
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
@@ -1281,6 +1313,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--gap", type=float, default=30.0, help="seconds of talking between songs")
     p.add_argument("--out")
     p.set_defaults(func=cmd_setlist_show)
+
+    p = sub.add_parser(
+        "arc",
+        help="show a setlist's energy shape and check the order against how set "
+             "lists are actually built",
+    )
+    p.add_argument("setlist")
+    p.set_defaults(func=cmd_setlist_arc)
 
     p = sub.add_parser("mark", help="set a pipeline stage's status")
     _add_song_args(p)

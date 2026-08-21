@@ -56,6 +56,19 @@ BACKING_TRACK_NA = ("stems", "drums_midi", "quantize", "kit")
 #: An unaccompanied song needs none of the production pipeline at all.
 A_CAPPELLA_APPLICABLE = ("source", "rehearsed")
 
+#: How well the audience knows a song. Drives where it can safely sit in a set:
+#: crowd-pleasers belong at the front and the tail, unfamiliar material in the
+#: middle where familiar songs either side carry it.
+STANDINGS = ("hit", "known", "deep", "new")
+
+#: What a song is *for* in a set, where that is fixed rather than a choice.
+ROLES = ("", "opener", "closer", "interlude", "detour", "linking")
+
+#: 1 = ballad, 5 = flat out. Deliberately separate from heaviness: Il Phurgone is
+#: high energy and not remotely heavy; Mandami un Faxe is neither.
+ENERGY_RANGE = (1, 5)
+HEAVINESS_RANGE = (1, 5)
+
 
 def _as_list(value: Any) -> list:
     if value is None:
@@ -112,6 +125,61 @@ class PatchChange:
 
 
 @dataclass
+class Character:
+    """What a song *is*, musically — the input to ordering a set.
+
+    This is the band's own read of each song, not anything derived from the
+    audio. It exists so a running order can be argued about with numbers instead
+    of adjectives, and so `rambass setlist arc` can flag a stretch of the set
+    that will sag.
+    """
+
+    genre: str = ""
+    energy: int = 3
+    heaviness: int = 3
+    standing: str = "known"
+    role: str = ""
+    note: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> Character:
+        data = data or {}
+        return cls(
+            genre=str(data.get("genre", "")),
+            energy=int(data.get("energy", 3)),
+            heaviness=int(data.get("heaviness", 3)),
+            standing=str(data.get("standing", "known")),
+            role=str(data.get("role", "")),
+            note=str(data.get("note", "")),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "genre": self.genre,
+            "energy": self.energy,
+            "heaviness": self.heaviness,
+            "standing": self.standing,
+            "role": self.role,
+            "note": self.note,
+        }
+
+    def problems(self) -> list[str]:
+        out: list[str] = []
+        if not ENERGY_RANGE[0] <= self.energy <= ENERGY_RANGE[1]:
+            out.append(f"character.energy must be {ENERGY_RANGE[0]}-{ENERGY_RANGE[1]}")
+        if not HEAVINESS_RANGE[0] <= self.heaviness <= HEAVINESS_RANGE[1]:
+            out.append(
+                f"character.heaviness must be {HEAVINESS_RANGE[0]}-{HEAVINESS_RANGE[1]}"
+            )
+        if self.standing not in STANDINGS:
+            out.append(f"character.standing must be one of {', '.join(STANDINGS)}")
+        if self.role not in ROLES:
+            named = ", ".join(role for role in ROLES if role)
+            out.append(f"character.role must be empty or one of {named}")
+        return out
+
+
+@dataclass
 class Song:
     """A parsed ``song.yaml`` plus the directory it came from."""
 
@@ -145,6 +213,7 @@ class Song:
     patch_changes: list[PatchChange] = field(default_factory=list)
     video_style: str = "lyrics"
     lyrics_file: str = "lyrics.md"
+    character: Character = field(default_factory=Character)
 
     status: dict = field(default_factory=dict)
     notes: str = ""
@@ -164,7 +233,7 @@ class Song:
         known = {
             "slug", "title", "album", "track", "tempo", "count_in", "bars", "key",
             "sections", "drums", "source", "stems", "click", "gx100", "video",
-            "status", "notes", "excluded", "reason",
+            "status", "notes", "excluded", "reason", "character",
         }
         tempo = data.get("tempo") or {}
         drums = data.get("drums") or {}
@@ -206,6 +275,7 @@ class Song:
             patch_changes=[PatchChange.from_dict(p) for p in _as_list(gx100.get("changes"))],
             video_style=str(video.get("style", "lyrics")),
             lyrics_file=str(video.get("lyrics", "lyrics.md")),
+            character=Character.from_dict(data.get("character")),
             status={k: str(v) for k, v in (data.get("status") or {}).items()},
             notes=str(data.get("notes", "")),
             excluded=bool((data.get("excluded") or {}).get("from_set", False)
@@ -249,6 +319,7 @@ class Song:
                 "changes": [p.to_dict() for p in self.patch_changes],
             },
             "video": {"style": self.video_style, "lyrics": self.lyrics_file},
+            "character": self.character.to_dict(),
             "status": {stage: self.status.get(stage, "todo") for stage in STAGES},
             "notes": self.notes,
         }
@@ -292,6 +363,7 @@ class Song:
                     f"gx100 memory {change.memory!r} is not a GX-100 memory name "
                     "(expected U01-1 .. U50-4 or P01-1 .. P25-4)"
                 )
+        out.extend(self.character.problems())
         for stage, value in self.status.items():
             if stage not in STAGES:
                 out.append(f"unknown status stage {stage!r}")

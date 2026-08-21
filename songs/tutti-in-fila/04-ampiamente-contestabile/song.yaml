@@ -19,6 +19,7 @@ drums:
 source:
   audio: 04 Ampiamente Contestabile.wav
   url: https://drive.google.com/file/d/1unOVxfwmB5-GWHuM34lN83ROf4pUghJf/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -33,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: rock, fun
+  energy: 4
+  heaviness: 2
+  standing: known
+  role: ''
+  note: less heavy
 status:
   source: todo
   analyze: todo
@@ -41,6 +49,7 @@ status:
   quantize: todo
   kit: todo
   render: todo
+  lyrics: todo
   video: todo
   gx100: todo
   rehearsed: todo

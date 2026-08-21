@@ -34,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: Italian pop with a rock chorus
+  energy: 3
+  heaviness: 2
+  standing: known
+  role: ''
+  note: ''
 status:
   source: todo
   analyze: done

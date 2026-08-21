@@ -19,6 +19,7 @@ drums:
 source:
   audio: 11 L'Esercito Del Surf.wav
   url: https://drive.google.com/file/d/1qDI8VqlExf8k18BGqF7WT-HE2GEAVxUG/view
+  backing_track: ''
 stems:
 - drums
 - bass
@@ -33,6 +34,13 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: pop / light rock
+  energy: 3
+  heaviness: 1
+  standing: known
+  role: ''
+  note: lightweight
 status:
   source: todo
   analyze: todo
@@ -41,6 +49,7 @@ status:
   quantize: todo
   kit: todo
   render: todo
+  lyrics: todo
   video: todo
   gx100: todo
   rehearsed: todo
