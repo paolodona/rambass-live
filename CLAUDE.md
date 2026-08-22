@@ -88,6 +88,27 @@ an ImportError traceback.
 
 ## Facts that were verified, don't re-guess them
 
+**The programmed drums are metronomically correct, at one fixed tempo per song.
+This is settled — don't reopen it.** Paolo's reasoning: the drum track *is* the
+live backing track, the band plays to it, and the album mix is only the source of
+the pattern — it is never mixed into anything and is never heard after the
+transcription. So an original take that breathes is not a problem to be followed
+with a tempo map, and `tempo.changes` is not the answer to a wandering take. Do
+not offer the "tempo map or fixed click?" choice again; `docs/workflow.md` step 1
+records why it is closed.
+
+The consequence is that **the tempo value has to be precise**, because every hit
+is placed against it and 1% is three seconds of slip over five minutes. Verified
+the hard way on Tutti in Fila: `librosa` reports tempo from tempogram bins at
+`60 * sr / (hop * k)`, so near 117 BPM the only values it can *return* are about
+112.4, 117.5 and 123.1 — a bin centre, not a measurement, and it moves when you
+change `hop`. The real tempo of that song is 116.03. `analyze.refine_tempo`
+sharpens the coarse estimate with a comb/DFT fit against the recording, and
+`analyze.pulse_wander` reports how far the band sat from the fixed grid in
+milliseconds. Both are pure numpy so they are tested without librosa. The old
+per-chunk `drift_bpm` metric was removed: its resolution near 117 BPM was 5 BPM,
+so it could never have answered the question the docs asked of it.
+
 The GX-100 numbers in `gx100.py` and `docs/gx100.md` come from the official
 *GX-100 MIDI Implementation* ver 1.10 (2022-03-03): bank select is CC#0 with
 values **0–2 only** followed by CC#32 = 0; program change is resolved through

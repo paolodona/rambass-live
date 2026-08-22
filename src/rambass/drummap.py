@@ -21,7 +21,8 @@ CANONICAL = (
     "snare", "snare_electric", "sidestick", "clap",
     "hihat_closed", "hihat_pedal", "hihat_open",
     "tom_low", "tom_low_mid", "tom_mid", "tom_high_mid", "tom_high", "tom_highest",
-    "crash", "crash_2", "ride", "ride_2", "ride_bell", "china", "splash",
+    "crash", "crash_2", "crash_choke", "ride", "ride_2", "ride_bell",
+    "china", "china_choke", "splash",
     "tambourine", "cowbell",
 )
 
@@ -34,6 +35,20 @@ GM_NOTES: dict[str, int] = {
     "tom_high_mid": 47, "tom_high": 48, "tom_highest": 50,
     "crash": 49, "crash_2": 57, "ride": 51, "ride_2": 59, "ride_bell": 53,
     "china": 52, "splash": 55, "tambourine": 54, "cowbell": 56,
+}
+
+#: Canonical names General MIDI cannot express, and what they degrade to.
+#:
+#: A choked cymbal is a stab; a ringing one is a wash, and in a metal
+#: arrangement that is the difference the listener actually hears. Toontrack
+#: gives chokes their own note numbers, so the names have to exist for a real kit
+#: map to point at (docs/drums-rebuild.md) — but GM has no choke articulation at
+#: all. Rather than duplicate a GM note (which would break the reverse lookup) or
+#: invent one (which the repo does not do), a choke played through a GM kit
+#: degrades to its ringing sibling, and says so here rather than silently.
+GM_DEGRADES_TO: dict[str, str] = {
+    "crash_choke": "crash",
+    "china_choke": "china",
 }
 
 
@@ -56,6 +71,9 @@ class DrumMap:
             return self.notes[instrument]
         if instrument in GM_NOTES:
             return GM_NOTES[instrument]
+        fallback = GM_DEGRADES_TO.get(instrument)
+        if fallback:
+            return self.notes.get(fallback, GM_NOTES[fallback])
         raise ProjectError(
             f"unknown drum instrument {instrument!r}; "
             f"expected one of {', '.join(CANONICAL)}"

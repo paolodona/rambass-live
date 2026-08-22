@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from rambass.drummap import CANONICAL, GENERAL_MIDI, GM_NOTES, load_drum_map
+from rambass.drummap import CANONICAL, GENERAL_MIDI, GM_DEGRADES_TO, GM_NOTES, load_drum_map
 from rambass.project import ProjectError
 
 
@@ -18,10 +18,30 @@ def test_general_midi_matches_the_spec():
     assert GENERAL_MIDI.midi_channel_index == 9
 
 
-def test_every_canonical_name_has_a_general_midi_note():
-    assert set(CANONICAL) == set(GM_NOTES)
+def test_every_canonical_name_renders_to_a_general_midi_note():
+    """Every name must produce a note — directly, or via a stated degradation.
+
+    General MIDI has no choke articulation, so `crash_choke` is not in GM_NOTES
+    and must not be: duplicating a note number would break `instrument_for`.
+    It still has to *play* something, and that something is documented rather
+    than accidental.
+    """
+    assert set(CANONICAL) == set(GM_NOTES) | set(GM_DEGRADES_TO)
     for instrument in CANONICAL:
         assert 0 <= GENERAL_MIDI.note_for(instrument) <= 127
+
+
+def test_a_choke_degrades_to_its_ringing_sibling_on_a_gm_kit():
+    assert GENERAL_MIDI.note_for("crash_choke") == GENERAL_MIDI.note_for("crash")
+    assert GENERAL_MIDI.note_for("china_choke") == GENERAL_MIDI.note_for("china")
+
+
+def test_a_kit_that_has_a_real_choke_note_uses_it():
+    """The point of the name: a real kit map can target the choke directly."""
+    from rambass.drummap import DrumMap
+
+    kit = DrumMap(name="toontrack-ish", notes={"crash": 49, "crash_choke": 92})
+    assert kit.note_for("crash_choke") == 92
 
 
 def test_note_numbers_are_unique_in_general_midi():

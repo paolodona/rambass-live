@@ -233,6 +233,147 @@ def shape_velocities(
     return DrumPerformance(out, timeline, performance.name)
 
 
+@dataclass(frozen=True)
+class ConsolidateSettings:
+    """Knobs for :func:`consolidate`."""
+
+    subdivision: int = 4
+    #: Keep a hit only where it appears in at least this share of the
+    #: repetitions. docs/drums-rebuild.md Stage 6 argues for 0.5-0.6: what falls
+    #: below it is unintended variation from the drummer and transcription
+    #: error, neither of which repeats reliably.
+    threshold: float = 0.55
+    #: 0 = work out whether the section repeats every bar or every two.
+    unit_bars: int = 0
+    #: Prefer the one-bar unit unless two bars explain the section this much
+    #: better. Any one-bar pattern is also a valid two-bar pattern, so without a
+    #: margin the longer unit always ties and half the sections come out wrong.
+    unit_margin: float = 0.05
+
+
+def consolidate(
+    performance: DrumPerformance,
+    sections: list[tuple[str, int, int]],
+    *,
+    settings: ConsolidateSettings | None = None,
+) -> tuple[DrumPerformance, dict]:
+    """Replace each section with the pattern its bars agree on.
+
+    This is Stage 6 of docs/drums-rebuild.md, and it is what decides whether the
+    result sounds programmed or transcribed. Quantising fixes *when* a hit
+    happens but not *whether* it should be there, so without this every
+    unintended inconsistency in the take survives, and every transcription error
+    is independent per bar: bar 11 of the verse loses a hat, bar 13 gains a
+    phantom tom. On the grid, and incoherent.
+
+    So: overlay every repetition of the section's repeating unit, keep a hit only
+    where enough repetitions agree, at the modal slot and the median velocity of
+    its group, and stamp that across the section.
+
+    *sections* is ``(name, first_bar, last_bar)`` with *last_bar* exclusive.
+    Hits outside every section are passed through untouched — as are sections
+    too short to vote on, which are reported rather than silently mangled.
+
+    **This deliberately removes the fills**, which is why Stage 7 says to put
+    them back by hand rather than repair them: a fill is by definition the bar
+    that does not repeat, so no threshold can keep it and be doing its job.
+    """
+    settings = settings or ConsolidateSettings()
+    timeline = performance.timeline
+    report: dict = {"sections": [], "hits_before": len(performance.hits), "untouched": 0}
+
+    claimed: list[tuple[float, float]] = []
+    produced: list[Hit] = []
+
+    for name, first_bar, last_bar in sections:
+        start = timeline.bar_beat_to_seconds(first_bar, 1.0)
+        end = timeline.bar_beat_to_seconds(last_bar, 1.0)
+        inside = [h for h in performance.hits if start - 1e-9 <= h.time < end - 1e-9]
+        entry = {"name": name, "bars": (first_bar, last_bar), "hits_before": len(inside)}
+
+        best = None
+        for unit in ((settings.unit_bars,) if settings.unit_bars else (1, 2)):
+            repeats = (last_bar - first_bar) // unit
+            if repeats < 2:
+                continue
+            hits, coverage = _vote_section(
+                timeline, inside, first_bar, unit, repeats, settings
+            )
+            score = coverage - (settings.unit_margin if unit > 1 else 0.0)
+            if best is None or score > best[0]:
+                best = (score, unit, repeats, hits, coverage)
+
+        if best is None:
+            entry["skipped"] = "too short to vote on"
+            report["sections"].append(entry)
+            report["untouched"] += len(inside)
+            continue
+
+        _, unit, repeats, hits, coverage = best
+        claimed.append((start, timeline.bar_beat_to_seconds(first_bar + unit * repeats, 1.0)))
+        produced.extend(hits)
+        entry.update(unit_bars=unit, repeats=repeats, hits_after=len(hits),
+                     coverage=round(coverage, 3))
+        report["sections"].append(entry)
+
+    kept = [h for h in performance.hits
+            if not any(lo - 1e-9 <= h.time < hi - 1e-9 for lo, hi in claimed)]
+    report["untouched"] += len(kept)
+    hits = sorted(kept + produced, key=lambda h: (h.time, h.instrument))
+    report["hits_after"] = len(hits)
+    return DrumPerformance(hits, timeline, performance.name), report
+
+
+def _vote_section(
+    timeline: Timeline,
+    hits: list[Hit],
+    first_bar: int,
+    unit: int,
+    repeats: int,
+    settings: ConsolidateSettings,
+) -> tuple[list[Hit], float]:
+    """Overlay the repetitions of one unit and keep what they agree on."""
+    grids = [
+        timeline.grid_seconds(
+            settings.subdivision, first_bar + r * unit, first_bar + (r + 1) * unit
+        )
+        for r in range(repeats)
+    ]
+    slots = min(len(g) for g in grids)
+    # Each repetition owns the span from its own first grid line to the next
+    # repetition's — stated rather than derived, because an off-by-one here
+    # silently votes a hit into the neighbouring bar.
+    bounds = [
+        timeline.bar_beat_to_seconds(first_bar + r * unit, 1.0)
+        for r in range(repeats + 1)
+    ]
+    votes: dict[tuple[str, int], list[Hit]] = {}
+    placed = 0
+    for r, grid in enumerate(grids):
+        lo, hi = bounds[r], bounds[r + 1]
+        for hit in hits:
+            if not (lo - 1e-9 <= hit.time < hi - 1e-9):
+                continue
+            slot = min(range(slots), key=lambda i: abs(grid[i] - hit.time))
+            votes.setdefault((hit.instrument, slot), []).append(hit)
+            placed += 1
+
+    out: list[Hit] = []
+    agreed = 0
+    for (instrument, slot), group in sorted(votes.items()):
+        # One repetition can hit the same slot twice (a flam the de-flam missed);
+        # agreement is about how many *repetitions* played it, not how many hits.
+        share = len(group) / repeats
+        if share < settings.threshold:
+            continue
+        agreed += len(group)
+        velocity = sorted(h.velocity for h in group)[len(group) // 2]
+        for grid in grids:
+            out.append(Hit(instrument, grid[slot], velocity))
+    coverage = agreed / placed if placed else 0.0
+    return out, coverage
+
+
 def trim_to_bars(
     performance: DrumPerformance,
     first_bar: int = 1,

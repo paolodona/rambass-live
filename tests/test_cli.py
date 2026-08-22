@@ -260,7 +260,7 @@ SRT = (
 def test_lyrics_import_stores_and_points_the_manifest_at_it(cwd, capsys, tmp_path):
     run("new", "ForMayGrana", "--album", "dg", "--create-album", "--bpm", "112")
     source = tmp_path / "02 ForMayGrana.srt"
-    source.write_text(SRT, encoding="utf-8")
+    source.write_text(SRT, encoding="utf-8", newline="")
     capsys.readouterr()
 
     assert run("lyrics", "import", "01-formaygrana", str(source)) == 0
@@ -276,7 +276,7 @@ def test_lyrics_import_stores_and_points_the_manifest_at_it(cwd, capsys, tmp_pat
 def test_lyrics_import_can_shift_on_the_way_in(cwd, capsys, tmp_path):
     run("new", "X", "--album", "dg", "--create-album")
     source = tmp_path / "x.srt"
-    source.write_text(SRT, encoding="utf-8")
+    source.write_text(SRT, encoding="utf-8", newline="")
     capsys.readouterr()
     run("lyrics", "import", "01-x", str(source), "--shift", "4")
 
@@ -289,7 +289,7 @@ def test_lyrics_import_can_shift_on_the_way_in(cwd, capsys, tmp_path):
 def test_lyrics_export_writes_several_formats(cwd, capsys, tmp_path):
     run("new", "X", "--album", "dg", "--create-album", "--bars", "32")
     directory = cwd.songs_dir / "dg" / "01-x"
-    (directory / "lyrics.srt").write_text(SRT, encoding="utf-8")
+    (directory / "lyrics.srt").write_text(SRT, encoding="utf-8", newline="")
     capsys.readouterr()
 
     assert run("lyrics", "export", "01-x", "--format", "srt", "vtt", "lrc", "ass",
@@ -303,7 +303,7 @@ def test_lyrics_export_count_in_shifts_by_the_count_in(cwd, capsys):
     run("new", "X", "--album", "dg", "--create-album", "--bpm", "120",
         "--count-in", "2")
     directory = cwd.songs_dir / "dg" / "01-x"
-    (directory / "lyrics.srt").write_text(SRT, encoding="utf-8")
+    (directory / "lyrics.srt").write_text(SRT, encoding="utf-8", newline="")
     capsys.readouterr()
 
     run("lyrics", "export", "01-x", "--format", "srt", "--count-in",
@@ -328,7 +328,7 @@ def test_lyrics_check_reports_problems_and_exit_code(cwd, capsys):
 
 def test_lyrics_check_is_clean_on_a_good_file(cwd, capsys):
     run("new", "X", "--album", "dg", "--create-album", "--bars", "64")
-    (cwd.songs_dir / "dg" / "01-x" / "lyrics.srt").write_text(SRT, encoding="utf-8")
+    (cwd.songs_dir / "dg" / "01-x" / "lyrics.srt").write_text(SRT, encoding="utf-8", newline="")
     capsys.readouterr()
     assert run("lyrics", "check", "01-x") == 0
     assert "look sane" in capsys.readouterr().out
@@ -343,7 +343,7 @@ def test_lyrics_check_skips_songs_without_lyrics_when_quiet(cwd, capsys):
 def test_srt_wins_over_the_bar_cue_markdown(cwd, capsys):
     run("new", "X", "--album", "dg", "--create-album", "--bpm", "120", "--bars", "32")
     directory = cwd.songs_dir / "dg" / "01-x"
-    (directory / "lyrics.srt").write_text(SRT, encoding="utf-8")
+    (directory / "lyrics.srt").write_text(SRT, encoding="utf-8", newline="")
     (directory / "lyrics.md").write_text("[bar 9]\nda markdown\n", encoding="utf-8")
     capsys.readouterr()
 

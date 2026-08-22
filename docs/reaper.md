@@ -71,10 +71,16 @@ Load your kit on **DRUMS MIDI**. Whatever it is, check that:
 
 ## Rendering the backing track
 
-Render the CLICK + DRUMS MIDI tracks (and nothing else) to
+Render the **DRUMS MIDI track alone** — not the click, not the count-in — to
 `songs/<album>/<slug>/render/<slug>.wav`. That filename is what `rambass reaper
 setlist` looks for when assembling the whole-show project, and what `rambass
 video render --with-audio` muxes in.
+
+Render **from the `BAR 1` marker, not from 0:00**: `reaper.py` places the base at
+`timeline.count_in_seconds`, so a rendered file that already contains the
+count-in is offset by the count-in twice. If the drum part has a pickup before
+bar 1, it falls inside the count-in and gets cut — decide that deliberately
+rather than discovering it at a rehearsal.
 
 The count-in and the click are two separate stems and are never mixed into the
 base — see [live-playback.md](live-playback.md#count-in-and-click-two-stems-never-in-the-base).

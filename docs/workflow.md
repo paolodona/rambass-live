@@ -53,23 +53,39 @@ Then drop the original mix into `songs/tutti-in-fila/04-titolo/source/`.
 rambass analyze 04-titolo --write
 ```
 
-Read the output before moving on. It prints the detected tempo *and the drift*,
-and the drift is the decision point:
+**There is no decision to make here, and that is deliberate.** Every song is
+re-programmed to **one fixed tempo**, always. The reason is what the drum track
+*is*: it goes to the gig as the backing track and the band plays to it. The album
+mix is only the source of the pattern — it is not mixed into anything, and after
+the transcription it is never heard again. So a take that breathes is not
+something to follow with a tempo map; the drums are metronomically correct and
+the band follows them.
 
-* **drift under ~1 BPM** — the band played tight. Take the rounded tempo, and
-  the original recording will still line up with the new fixed grid. Quantise
-  hard and enjoy it.
-* **drift of several BPM** — the take breathes. You now choose:
-  * *follow the performance*: add `tempo.changes` entries so the grid bends with
-    the recording. Keeps the original feel, but the click will bend too, which
-    is harder to play to.
-  * *re-programme to a fixed click*: keep one tempo, accept that the original
-    audio will slide out of sync as a reference, and treat the transcription as
-    raw material. Usually the right answer for a gig — it is why we are doing
-    this at all.
+That closes the old "tempo map or fixed click?" fork, but it makes one number
+critical, which is why `analyze` works the way it does:
 
-`--write` marks the stage `wip` rather than `done` when the tempo drifts, so
-`rambass status` keeps reminding you that a decision is outstanding.
+* **the tempo has to be precise, not rounded.** Every hit is placed against it,
+  so 1% out is three seconds of slip across a five-minute song and the
+  transcription is scrap. `librosa` on its own cannot give you this: it reports
+  tempo from tempogram bins at `60 * sr / (hop * k)`, so near 117 BPM the only
+  values it can return are about 112.4, 117.5 and 123.1. A bin centre is not a
+  measurement. `rambass analyze` refines it against the recording to about a
+  hundredth of a BPM, and that refined value is what `--write` stores.
+* **the wander is reported in milliseconds, and is only a warning.** It says how
+  far the band sat from that fixed grid, window by window. Nothing needs doing
+  about it — but once it passes half a sixteenth (`budget` in the output) the
+  transcription will snap the occasional hit to the wrong subdivision, and you
+  should read the `drums clean` report with that in mind.
+
+```
+tempo           116.03 BPM  (rounded: 116.03)
+bars (4/4)          147
+wander              110 ms peak-to-peak, 33 ms rms  (budget 65 ms)
+verdict         wanders past half a sixteenth — expect a few hits snapped to the wrong subdivision
+```
+
+Round the tempo to something tidy at the end if you like — everything downstream
+is anchored to bars, so re-rendering moves with it.
 
 ### 2. Separate the drums (extracted songs only)
 

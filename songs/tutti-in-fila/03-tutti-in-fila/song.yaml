@@ -3,9 +3,9 @@ title: Tutti In Fila
 album: tutti-in-fila
 track: 3
 key: ''
-bars: 0
+bars: 147
 tempo:
-  bpm: 120.0
+  bpm: 116.03
   time_signature: 4/4
 count_in:
   bars: 2
@@ -43,10 +43,10 @@ character:
   note: one of the biggest
 status:
   source: todo
-  analyze: todo
-  stems: todo
-  drums_midi: todo
-  quantize: todo
+  analyze: done
+  stems: done
+  drums_midi: wip
+  quantize: done
   kit: todo
   render: todo
   lyrics: todo

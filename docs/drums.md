@@ -44,6 +44,75 @@ the hit counts in `--report` before you go anywhere near the DAW: 704 hats in a
 three-minute song is plausible, 4000 is a broken detection and no amount of
 quantising will save it.
 
+### Measured on a real one: Tutti in Fila
+
+The first transcription of Tutti in Fila (5:03, 116.03 BPM) came out wrong in
+three separate ways, and all three are worth knowing because they are not
+specific to that song. The test used throughout: **what fraction of hits land
+within 25 ms of a sixteenth**, against the 39% you would get from hits scattered
+at random.
+
+| | hits on a sixteenth |
+|---|---|
+| chance | 39% |
+| first run, fixed grid | 30% — *worse than random* |
+| following the take (`dewander`) | 62% |
+| plus the anchor nudge (`best_anchor_shift`) | 62%, with no hand-set `--offset` |
+
+1. **The crash test does not survive a real cymbal player.** 598 crashes against
+   126 kicks. `_classify_high_band` asks whether the high band is still ringing
+   0.35 s after the attack; on dense material it never falls quiet, so 67% of
+   high-band hits read as crashes. Measuring decay against the local floor rather
+   than zero only got it to 54% — it is the wrong question, not a bad threshold.
+   **Use `--no-cymbals` and place the crashes by hand.**
+2. **The kick's `dominance` was throwing away 85% of the kicks** — 686 of 812
+   peaks — because in a bright mix the 25-120 Hz band never holds 30% of the
+   total energy. Now 0.18, which gives a kick line with roughly the density the
+   snare implies (68/min against the snare's 59/min backbeat).
+3. **A take that breathes cannot be read against a fixed grid.** This is the big
+   one, and it is *not* a reason to put a tempo map in the manifest — the output
+   stays metronomic, per the settled decision in [workflow.md](workflow.md).
+   The band wandered up to ~250 ms from the fixed grid, which is nearly a whole
+   beat and far more than the half-sixteenth budget, so hits were being read onto
+   the wrong subdivision. `transcribe.dewander` corrects each detected time by
+   the local wander *before* placing it, and alignment doubles.
+
+The residue after all three: `drums clean` moved hits a mean of 18 ms, against
+the ~40 ms that means "the tempo is wrong, not the drummer".
+
+### The failure that hides from every timing check: whole-subdivision parity
+
+Found on **09 Manlio** while shaking down the
+[drums-rebuild.md](drums-rebuild.md) process, and it is the nastiest one here
+because every measurement above reports it as *fine*.
+
+`best_anchor_shift` is bounded to half a subdivision so it can never move a hit
+onto a different note. That bound leaves a hole: if the anchor is out by a
+**whole** subdivision, every hit is still exactly on the grid — just on the wrong
+sixteenth — so hits-on-a-sixteenth, the quantise report and the mean move all
+look healthy while the kick plays the "e" of every beat.
+
+What exposes it is asking a *coarser* question. Alignment to the **eighth-note**
+grid, which a whole-sixteenth shift does change:
+
+| Manlio | on an 8th | vs chance |
+|---|---|---|
+| as transcribed | 1.9% | **0.19x** — actively avoiding the beat |
+| anchor moved one sixteenth | 31.0% | **3.10x** |
+
+`transcribe.beat_parity_shift` now tests every whole-subdivision shift and scores
+it on kick and snare only, since those are the parts with a real prior: they land
+on beats more often than between them. It applies a shift only when it wins by
+3x, and otherwise reports the near miss rather than acting —
+because a genuinely syncopated part would be *given* this fault by a shift, not
+cured of it. Tutti in Fila lands in exactly that grey zone (2.3x) and is left
+alone with a note, which is the honest answer: metal kicks do live on 16th
+offbeats, and only ears can settle it.
+
+The general lesson, worth keeping: **a timing check on the same grid you
+quantised to cannot see an error that is a whole grid step.** Check one level
+coarser.
+
 ## Cleanup, in the order it happens
 
 ### De-flam

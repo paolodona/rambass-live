@@ -223,10 +223,17 @@ def cmd_analyze(args: argparse.Namespace) -> int:
             song.bpm = analysis.bpm_rounded
             if not song.bars and analysis.estimated_bars:
                 song.bars = analysis.estimated_bars
-            song.status["analyze"] = "done" if analysis.steady else "wip"
+            # The tempo question is not a decision any more — the drums are
+            # always re-programmed to a fixed grid — so analysis is done as soon
+            # as the tempo is known. Wander only predicts how much hand-checking
+            # the transcription will want; it does not hold the stage open.
+            song.status["analyze"] = "done"
             save_song(song)
-            _say(f"→ wrote bpm {song.bpm:g} to song.yaml"
-                 + ("" if analysis.steady else " (marked wip: tempo drifts)"))
+            _say(f"→ wrote bpm {song.bpm:g} to song.yaml")
+            if not analysis.steady:
+                _say(f"   the take wanders {analysis.wander_pp:.0f} ms against that grid "
+                     f"(budget {analysis.subdivision_budget_ms:.0f} ms) — check the "
+                     f"`drums clean` report for hits snapped to the wrong subdivision")
         _say()
     return 0
 
@@ -258,13 +265,44 @@ def cmd_stems(args: argparse.Namespace) -> int:
 
 
 # ── commands: drums ──────────────────────────────────────────────────────
+def _part_stems(song) -> dict[str, Path]:
+    """The five isolated part stems, if the Stage 2 split has been run.
+
+    docs/drums-rebuild.md Stage 2: the split itself is an external tool, so what
+    the repo can do is notice its output and use it.
+    """
+    found = {}
+    for part in ("kick", "snare", "toms", "hihat", "cymbals"):
+        candidate = song.path("stems", "parts", f"{part}.wav")
+        if candidate.exists():
+            found[part] = candidate
+    return found
+
+
 def cmd_drums_transcribe(args: argparse.Namespace) -> int:
     from .analyze import analyze_tempo
     from .midiio import write_drum_midi
-    from .transcribe import transcribe_drums
+    from .transcribe import transcribe_drums, transcribe_parts
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
+        parts = {} if args.no_parts else _part_stems(song)
+        if parts and not args.file:
+            kit = song.stem_path("drums")
+            offset = args.offset
+            if offset is None:
+                offset = analyze_tempo(kit).downbeat_time if kit else 0.0
+            _say(f"── {song.title}: {len(parts)} part stems "
+                 f"({', '.join(sorted(parts))}), offset {offset:.3f}s")
+            performance, reports = transcribe_parts(
+                parts, timeline=song.timeline(), offset=offset, kit_mix=kit,
+            )
+            _say(reports["kit"].summary())
+            target = song.drum_midi_path("raw")
+            write_drum_midi(target, performance, load_drum_map(song.drum_map, project))
+            _say(f"→ {target}  ({len(performance.hits)} hits)")
+            _mark(song, "drums_midi", "wip")
+            continue
         stem = Path(args.file) if args.file else song.stem_path("drums")
         if not stem:
             _say(f"{song.slug}: no stems/drums.* — run `rambass stems` first")
@@ -282,6 +320,7 @@ def cmd_drums_transcribe(args: argparse.Namespace) -> int:
         performance, report = transcribe_drums(
             stem, timeline=song.timeline(), offset=offset,
             detect_cymbals=not args.no_cymbals,
+            follow=not args.no_follow,
         )
         _say(report.summary())
         target = song.drum_midi_path("raw")
@@ -1201,7 +1240,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_song_args(p)
     p.add_argument("--file", help="analyse this audio file instead of source/")
     p.add_argument("--write", action="store_true", help="write the tempo into song.yaml")
-    p.add_argument("--round-to", type=float, default=0.5, help="BPM rounding (default 0.5)")
+    # Rounding to the nearest half-BPM used to be harmless, because the tempo was
+    # only ever a starting point. It is not any more: transcription places every
+    # hit against this number, and 0.25 BPM out is a second of slip across a
+    # five-minute song. Keep the measured value; round it at the end if you want
+    # a tidy click, because everything downstream is anchored to bars.
+    p.add_argument("--round-to", type=float, default=0.01,
+                   help="BPM rounding (default 0.01; 0 keeps the measured value)")
     p.set_defaults(func=cmd_analyze)
 
     p = sub.add_parser("stems", help="separate a mix into stems with demucs")
@@ -1224,6 +1269,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="seconds to bar 1 beat 1 (default: detect)")
     p.add_argument("--no-cymbals", action="store_true",
                    help="treat every high-band hit as a closed hat")
+    p.add_argument("--no-parts", action="store_true",
+                   help="ignore stems/parts/ and read the whole drum mix")
+    p.add_argument("--no-follow", action="store_true",
+                   help="do not correct for how far the take drifted from the "
+                        "grid before placing hits (the output is metronomic "
+                        "either way — see transcribe.dewander)")
     p.set_defaults(func=cmd_drums_transcribe)
 
     p = drums_sub.add_parser("import", help="import an existing drum MIDI performance")

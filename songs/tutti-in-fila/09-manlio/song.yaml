@@ -3,9 +3,9 @@ title: Manlio
 album: tutti-in-fila
 track: 9
 key: ''
-bars: 0
+bars: 80
 tempo:
-  bpm: 120.0
+  bpm: 60.0
   time_signature: 4/4
 count_in:
   bars: 2
@@ -43,14 +43,18 @@ character:
   note: ''
 status:
   source: todo
-  analyze: todo
-  stems: todo
-  drums_midi: todo
-  quantize: todo
+  analyze: done
+  stems: done
+  drums_midi: wip
+  quantize: done
   kit: todo
   render: todo
   lyrics: todo
   video: todo
   gx100: todo
   rehearsed: todo
-notes: ''
+notes: '60 BPM, not 120: the detected pulse was 60.02 and the octave was settled deliberately
+  rather than left to the beat tracker, which cannot cross an octave (analyze.refine_tempo
+  searches +-4%). Rounded from 60.02 to a flat 60 — the 0.02 is 107 ms across the
+  song, which is why the transcription was re-run against 60 rather than re-quantised
+  from MIDI placed at 60.02.'
