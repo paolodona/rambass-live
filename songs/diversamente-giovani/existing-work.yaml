@@ -40,6 +40,62 @@ drums:
     below). They are only worth touching if a base ever has to be rebuilt from
     scratch — the finished bases make them unnecessary.
 
+# ── drum sources for the six unmixed songs ──────────────────────────────
+#
+# Bambolina, Orologiaio, Il Cellulare, Per Niente Stanca, Superman and Mandami
+# un Faxe have no base from the previous gig. Their remaining job is still a
+# mixing session in the album project — but the drums going into it are mostly
+# already solved, and NOT by extracting them from the master.
+#
+# The album was recorded with electronic drums (Aerodrums -> BFD3), which is
+# what makes this easy: the drums were never bleeding into other microphones,
+# so they exist both as isolated audio and as a re-renderable performance.
+#
+# Try the sources in this order. Each one is strictly better than the one below.
+#
+#   1. RE-RENDER from the performance. A BFD3 preset plus the .aer capture
+#      regenerates the drums at full quality, click-locked, fully re-mixable,
+#      with no separation artefact of any kind. Nothing beats this and it is
+#      available for 5 of the 6.
+#   2. USE THE ISOLATED STEM already on disk. 3 of the 6 have one, and the
+#      trailing slash on the drum_stem entries means a folder — likely
+#      per-instrument stems, which is better than a stereo bounce.
+#   3. EXTRACT from the master with demucs. The genuine fallback. Only needed
+#      where 1 and 2 both fail, which on the inventory below is Mandami un Faxe
+#      and possibly Il Cellulare and Superman.
+#
+# per song, from `tracks:` below:
+#
+#   song                bfd3 preset   isolated stem      falls back to demucs?
+#   ------------------  ------------  -----------------  ---------------------
+#   bambolina           yes           TanoDrums/         no
+#   orologiaio          yes           tano_drums/        no
+#   per-niente-stanca   yes           drums/             no
+#   il-cellulare        yes           —                  only if no .aer
+#   superman            yes           —                  only if no .aer
+#   mandami-un-faxe     —             —                  yes
+#
+# WHAT THIS IS NOT: a reason to run the Tutti in Fila drum pipeline on this
+# album. Nothing here needs separating into part stems, transcribing to MIDI,
+# quantising or re-voicing. These are drum sources for a mixing session, not
+# inputs to a reconstruction — the distinction the top of this file exists to
+# protect.
+#
+# TWO THINGS TO CHECK, both cheap and both worth doing before any demucs run:
+#
+#   * WHICH .aer FILES ACTUALLY EXIST. Only ForMayGrana has one catalogued
+#     below, though the backup folder is believed to hold them per song. That
+#     single unknown decides whether option 1 covers five songs or one, so it
+#     is the highest-value thing to look up in this whole file.
+#   * WHETHER THE MASTERS ARE CLICK-LOCKED. Electronic drums played into a DAW
+#     usually mean a fixed grid, which is why the production folders carry
+#     BPMs at all. `rambass analyze <song>` against the catalogued BPM settles
+#     it in a minute per song: near-zero drift means the whole album sits on a
+#     fixed grid, the generated click will line up with the existing bases, and
+#     nothing on this album ever needs time-warping.
+#     It also settles the Orologiaio 240-vs-120 question below by measurement
+#     rather than by reading a folder name.
+
 # ── the finished live backing tracks ────────────────────────────────────
 #
 # Two copies of the same files exist: in each song's live project folder, and

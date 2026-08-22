@@ -67,10 +67,11 @@ early and everything after it is expansion rather than prerequisite.
 Il Phurgone, La Ragazza da Milano, Diversamente Giovani
 
 **B** — Bambolina, Orologiaio, Il Cellulare, Per Niente Stanca, Superman,
-Mandami un Faxe — but see the question raised in
-[practice-tracks.md](practice-tracks.md#diversamente-giovani--separate-two-stems-warp-nothing):
-if the previous gig had usable backing tracks for *these* songs too, some of
-Tier B may already be done.
+Mandami un Faxe. These six have **no backing track from the previous gig** —
+confirmed, not assumed. What several of them do have is a usable drum source
+already on disk, which de-risks the mixing session without removing it: see
+"drum sources for the six unmixed songs" in
+`songs/diversamente-giovani/existing-work.yaml`.
 
 **C** — Tutti In Fila, Ampiamente Contestabile, La Vera Storia Del Vibratore,
 Skizzo Sonovabic, Manlio, L'Esercito Del Surf
@@ -142,7 +143,7 @@ song ───┼─ Lane B: lyrics ─────────┼──> song r
 | tier | what to do |
 |---|---|
 | A | `rambass countin <song>` for the four missing a count-in, plus `rambass click`; remix the rest of the punch-list in the album session |
-| B | mix a BASE in the album session — album mix minus what the band plays live — then `rambass countin` and `rambass click` |
+| B | mix a BASE in the album session — album mix minus what the band plays live — then `rambass countin` and `rambass click`. **Check the drum source first** (`existing-work.yaml`): three of the six have an isolated drum stem and five have a BFD3 preset, so the drums going into that mix are mostly a solved problem |
 | C | `rambass analyze --write` → `rambass stems --drums-only` → `rambass drums transcribe` → `rambass drums clean` → voice the kit → render |
 | D | none; use the album audio as-is |
 

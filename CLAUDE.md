@@ -111,8 +111,15 @@ backing-track`, which marks `stems`/`drums_midi`/`quantize`/`kit` as `n/a`. Do
 not propose separating, transcribing or voicing drums for it — the remaining
 songs need a base *mixed* in the album session, which is not a job for this repo.
 Isolated drum stems, Aerodrums `.aer` files and per-song BFD3 presets are
-recorded in `existing-work.yaml` as **provenance only**, for the case where a
-base has to be rebuilt from scratch.
+recorded in `existing-work.yaml`. For the seven finished bases they are
+provenance only. For the **six songs still needing a base** (Bambolina,
+Orologiaio, Il Cellulare, Per Niente Stanca, Superman, Mandami un Faxe) they are
+the drum source for that mixing session, and the album's electronic drums
+(Aerodrums → BFD3) mean the best source is a **re-render from the BFD3 preset
+plus the `.aer` capture** — five of the six have a preset — then the isolated
+stem, then demucs extraction as a distant fallback. See "drum sources for the six
+unmixed songs" in that file. This is still not a reconstruction job: nothing on
+this album gets separated into part stems, transcribed, quantised or re-voiced.
 
 `config/drum-maps/bfd3.yaml` is a **stub with blank note numbers** that falls
 back to General MIDI — the real numbers depend on the per-song preset and must be

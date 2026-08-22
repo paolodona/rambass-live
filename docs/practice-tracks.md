@@ -274,11 +274,11 @@ previous gig** already exist. That is enough on its own:
 where they are, and no file is time-warped. One demucs pass over the masters and
 this album is done — an afternoon, not a phase.
 
-> **Worth checking against the gig plan:** `existing-work.yaml` records finished
-> bases for **seven** DG songs, and `plan.md` has six more as Tier B needing a
-> mixing session. If usable backing tracks really exist for *all* of them from
-> the previous gig, that is news for the **show**, not just for practice — it
-> could take a mixing session off the critical path. Which songs have one?
+> **Scope note:** this covers the **seven** DG songs that have a base from the
+> previous gig. The six Tier B songs do not have one, so Vikingo has nothing to
+> practise against there until their base is mixed — `-full` off the master mix
+> is the interim. Meco's and Maf's tracks work on all thirteen either way, since
+> they come from the master mix and not from the base.
 
 ### Tutti in Fila — two stages
 
