@@ -18,11 +18,24 @@ writes `reaper/build/<album>-<slug>.rbs`. Then, in Reaper:
 
 1. **File > New Project**
 2. **Actions > Show action list…**
-3. **ReaScript: Load…** → `reaper/scripts/rambass_build_song.lua`
-4. **Run**, and pick the `.rbs` file
+3. Filter for `reascript` and pick
+   **ReaScript: Run ReaScript (EEL2 or Lua)…** — there is no "Load" action in
+   Reaper 7; that was the Reaper 6 name
+4. **Run**, choose `reaper/scripts/rambass_build_song.lua`, and then pick the
+   `.rbs` file when the script asks for it
 
-It only ever *adds* to the current project, so running it on a fresh project is
-safe; running it twice gives you everything twice.
+**Re-run it whenever the `.rbs` changes** — a re-transcribed drum part, a
+corrected anchor, a new tempo. Running it again on a project it built replaces
+what it generated and *keeps what you set up*: the drum VST on DRUMS MIDI, your
+levels, mutes and routing all survive, while items, the tempo map and the markers
+are rebuilt. Tracks you added yourself are never touched, because it only clears
+tracks it owns (tagged `P_EXT:rambass`).
+
+Verified from outside rather than assumed: building twice in one session gives 10
+tracks with one item each, not 20.
+
+Mute state is yours after the first build — if you unmute CLICK to work against
+it, a rebuild leaves it unmuted.
 
 You get:
 

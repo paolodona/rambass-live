@@ -279,25 +279,64 @@ def _part_stems(song) -> dict[str, Path]:
     return found
 
 
+def _write_align(song, anchor: float, report: dict) -> None:
+    """Record a measured anchor so it is never silently re-derived.
+
+    Only the source side is in seconds — the target is the musical grid, so a
+    BPM edit keeps working (CLAUDE.md, docs/practice-tracks.md).
+    """
+    path = song.path("practice", "align.yaml")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    source = song.source_path()
+    lines = [
+        "# Where this song's musical grid sits inside the original recording.",
+        "# Measured by analyze.find_grid_anchor. Correct it by ear if it is wrong:",
+        "# `rambass drums transcribe` reads this file before measuring anything.",
+        f'source: "{source.name if source else ""}"',
+        f"detected_bpm: {song.bpm:g}",
+        "mode: offset",
+        "anchors:",
+        f"  - {{bar: 1, at: {anchor:.3f}}}",
+        f"evidence: {{on_beat: {report.get('on_beat', 0)}, "
+        f"runner_up: {report.get('runner_up_on_beat', 0)}, "
+        f"on_subdivision: {report.get('on_subdivision', 0)}}}",
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def cmd_drums_transcribe(args: argparse.Namespace) -> int:
     from .analyze import analyze_tempo
     from .midiio import write_drum_midi
-    from .transcribe import transcribe_drums, transcribe_parts
+    from .transcribe import detect_anchor, transcribe_drums, transcribe_parts
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
         parts = {} if args.no_parts else _part_stems(song)
         if parts and not args.file:
             kit = song.stem_path("drums")
-            offset = args.offset
+            offset, anchor_report = args.offset, {}
             if offset is None:
-                offset = analyze_tempo(kit).downbeat_time if kit else 0.0
+                # Measured, not guessed — see analyze.find_grid_anchor for what
+                # guessing cost. An anchor read off a stored align.yaml wins,
+                # because a human may have corrected it by ear.
+                offset = song.align_anchor()
+                if offset is None and kit:
+                    offset, anchor_report = detect_anchor(kit, song.bpm)
+                offset = offset or 0.0
             _say(f"── {song.title}: {len(parts)} part stems "
                  f"({', '.join(sorted(parts))}), offset {offset:.3f}s")
             performance, reports = transcribe_parts(
                 parts, timeline=song.timeline(), offset=offset, kit_mix=kit,
             )
+            reports["kit"].anchor_seconds = offset
+            reports["kit"].anchor_report = anchor_report
             _say(reports["kit"].summary())
+            if anchor_report and reports["kit"].confidence.get("ratio", 0) >= 1.8:
+                _write_align(song, offset, anchor_report)
+                _say(f"   recorded the anchor in {song.path('practice', 'align.yaml')}")
+            if reports["kit"].confidence.get("ratio", 0) < 1.8:
+                _say("   ^ this part does not sit on beats. Do not build on it — "
+                     "re-measure the anchor (docs/drums.md) before going further.")
             target = song.drum_midi_path("raw")
             write_drum_midi(target, performance, load_drum_map(song.drum_map, project))
             _say(f"→ {target}  ({len(performance.hits)} hits)")

@@ -133,7 +133,7 @@ rambass reaper build 04-titolo
 ```
 
 Then in Reaper: **File > New Project**, **Actions > Show action list >
-ReaScript: Load…** → `reaper/scripts/rambass_build_song.lua` → Run, and pick
+ReaScript: Run ReaScript (EEL2 or Lua)…** → `reaper/scripts/rambass_build_song.lua` → Run, and pick
 the `.rbs` file. See docs/reaper.md.
 
 ### 6. Video

@@ -1,0 +1,19 @@
+# Where this song's musical grid sits inside the original recording.
+#
+# The second deliberate exception to "positions are in bars, never seconds"
+# (CLAUDE.md, docs/practice-tracks.md): these seconds describe an immutable
+# audio file, not a position in the musical grid. Only the SOURCE side is
+# stored — the target side is computed from Timeline at build time, so a BPM
+# edit re-warps everything correctly.
+source: "09 Manlio.wav"
+detected_bpm: 60.0
+mode: offset             # offset | linear | piecewise
+anchors:                 # bar -> seconds into the ORIGINAL file
+  - {bar: 1, at: 0.692}
+# Honest limits. 'offset' is not good enough for deliverable 1: measured
+# against the drum stem, the band's pulse drifts -88..258 ms across the
+# song, so a single offset leaves a residual far over the 50 ms that
+# practice-tracks.md sets as the limit. Piecewise anchors from detected beat
+# times are what this file needs next; the measurement exists already in
+# analyze.pulse_wander.
+residual_ms: {max: null, mean: null, note: "offset only — piecewise not yet fitted"}

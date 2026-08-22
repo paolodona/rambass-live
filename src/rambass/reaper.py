@@ -163,13 +163,23 @@ def build_song_script(
         script.add("MIDI", "GX-100 MIDI", as_path(gx100_midi), timeline.count_in_seconds)
 
     if include_reference:
+        # The reference audio starts wherever the recording starts, which is not
+        # bar 1: the band counted themselves in, or the engineer left a moment of
+        # air. Placing these at count_in_seconds puts the *file's* start on bar 1
+        # and every reference plays late by the anchor — which reads as "the click
+        # does not line up with the mix" and makes the whole project untrustworthy
+        # exactly when you are trying to check timing. So shift by the measured
+        # anchor from practice/align.yaml when there is one.
+        anchor = song.align_anchor() or 0.0
         for stem in ("drums", "bass", "other", "vocals"):
             path = song.stem_path(stem)
             if path:
-                script.add("ITEM", f"REF {stem}", as_path(path), timeline.count_in_seconds)
+                script.add("ITEM", f"REF {stem}", as_path(path),
+                           timeline.count_in_seconds - anchor)
         source = song.source_path()
         if source:
-            script.add("ITEM", "REF mix", as_path(source), timeline.count_in_seconds)
+            script.add("ITEM", "REF mix", as_path(source),
+                       timeline.count_in_seconds - anchor)
 
     # Section markers, and a region per section so the arrangement is navigable
     # with the region playlist during rehearsal.

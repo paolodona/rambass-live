@@ -211,6 +211,114 @@ def pulse_wander(
     return [(float(m), float(ms)) for m, ms in zip(mids, offsets, strict=True)]
 
 
+def find_grid_anchor(
+    onsets,
+    bpm: float,
+    *,
+    subdivision: int = 4,
+    tolerance: float = 0.025,
+    beat_tolerance: float = 0.030,
+    step: float = 0.002,
+    tie_band: float = 0.02,
+) -> tuple[float, dict]:
+    """Where bar 1 beat 1 sits, measured rather than guessed.
+
+    This exists because guessing it went wrong in the worst possible way. The
+    old route was ``analyze_tempo().downbeat_time``, which picks the strongest
+    low-frequency onset among the *first eight detected beats* — meaningless on
+    a drum stem whose drums enter at 0:14, and noise on a full mix. On Tutti in
+    Fila it produced an anchor three quarters of a beat out; on Manlio, 153 ms.
+    Neither showed up in any timing report, because a wrong anchor does not make
+    hits land off the grid — it lands them on the **wrong** grid line.
+
+    The measurement has two stages, and the second is the one that matters:
+
+    1. Sweep the anchor across a whole beat and score how many onsets land on a
+       subdivision. This alone is *not enough*: every one of the `subdivision`
+       positions within the beat scores nearly identically, because a pattern
+       shifted by a sixteenth is still perfectly on sixteenths. On a real song
+       the four candidates came out 61.1 / 61.1 / 60.9 / 60.9%.
+    2. Break that tie on how many onsets land on a **beat**, which is the
+       question a coarser grid can answer and a finer one cannot. The same four
+       candidates: 38.1 / 13.0 / 11.4 / 6.2%. No ambiguity left.
+
+    Returns ``(anchor, report)``, the anchor in ``[0, beat)``. Which *beat* is
+    beat 1 remains a musical question — see the drum-entry check in
+    docs/drums.md — but the phase within the beat is now a measurement.
+    """
+    onsets = np.asarray(onsets, dtype=float)
+    beat = 60.0 / bpm if bpm > 0 else 0.0
+    if beat <= 0 or len(onsets) < 12:
+        return 0.0, {"anchors": 0}
+    grid_step = beat / subdivision
+    candidates = np.arange(0.0, beat, step)
+    grid = np.empty(len(candidates))
+    on_beat = np.empty(len(candidates))
+    for i, anchor in enumerate(candidates):
+        off = np.abs(((onsets - anchor + grid_step / 2) % grid_step) - grid_step / 2)
+        grid[i] = float((off < tolerance).mean())
+        offb = np.abs(((onsets - anchor + beat / 2) % beat) - beat / 2)
+        on_beat[i] = float((offb < beat_tolerance).mean())
+
+    best = grid.max()
+    tied = grid >= best - tie_band
+    scored = np.where(tied, on_beat, -1.0)
+    winner = int(np.argmax(scored))
+    # Every anchor within *tolerance* of the right one scores identically, so the
+    # winner is a plateau and taking its first element biases the anchor early by
+    # up to the tolerance — 25 ms, which is a fifth of a sixteenth. Take the
+    # middle, on the circle, since the plateau can straddle the end of the beat.
+    plateau = scored >= scored[winner] - 1e-9
+    angles = 2 * np.pi * candidates[plateau] / beat
+    centre = float(np.angle(np.exp(1j * angles).mean()) / (2 * np.pi) * beat) % beat
+    report = {
+        "anchor": round(centre, 4),
+        "on_subdivision": round(float(grid[winner]), 3),
+        "on_beat": round(float(on_beat[winner]), 3),
+        "chance_subdivision": round(min(1.0, 2 * tolerance / grid_step), 3),
+        "chance_beat": round(min(1.0, 2 * beat_tolerance / beat), 3),
+        "tied_candidates": int(tied.sum()),
+        "runner_up_on_beat": round(float(_runner_up(candidates, scored, centre, beat)), 3),
+    }
+    return centre, report
+
+
+def _runner_up(candidates: np.ndarray, scored: np.ndarray, winner: float, beat: float) -> float:
+    """Best on-beat score among tied anchors that are a *different* grid line.
+
+    "Runner-up" has to mean a genuinely different answer. The anchors either side
+    of the winner score the same and are the same answer; the number worth
+    printing is how well the next *subdivision* over would have done, because
+    that is the mistake being guarded against.
+    """
+    apart = np.abs(((candidates - winner + beat / 2) % beat) - beat / 2) > 0.03
+    others = scored[apart]
+    return float(others.max()) if others.size else 0.0
+
+
+def grid_confidence(times, bpm: float, *, tolerance: float = 0.030) -> dict:
+    """How well a finished part sits on beats, against what chance would give.
+
+    The check that would have caught both anchor failures, and the reason it is
+    stated at the **beat** level: a part displaced by a whole subdivision scores
+    perfectly on subdivisions and terribly here. Always check one level coarser
+    than you quantised to.
+    """
+    times = np.asarray(times, dtype=float)
+    beat = 60.0 / bpm if bpm > 0 else 0.0
+    if beat <= 0 or len(times) < 12:
+        return {"hits": int(len(times)), "ratio": 0.0}
+    off = np.abs(((times + beat / 2) % beat) - beat / 2)
+    share = float((off < tolerance).mean())
+    chance = min(1.0, 2 * tolerance / beat)
+    return {
+        "hits": int(len(times)),
+        "on_beat": round(share, 3),
+        "chance": round(chance, 3),
+        "ratio": round(share / chance, 2) if chance else 0.0,
+    }
+
+
 def _circular_mean(angles: np.ndarray) -> float:
     """Mean of angles, done on the circle so it survives the +-pi seam."""
     return float(np.angle(np.exp(1j * np.asarray(angles, dtype=float)).mean()))

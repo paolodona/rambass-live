@@ -251,3 +251,67 @@ def test_parity_advice_is_silent_when_it_acts():
     shift, note = parity_advice(_grid_hits(1.0, shift=-0.25), 1.0)
     assert shift == pytest.approx(0.25)
     assert note == ""
+
+
+# ── the anchor, measured rather than guessed ─────────────────────────────
+def _song_onsets(bpm, bars=40, anchor=0.0, pattern=(0, 3, 4, 8, 12)):
+    """A bar's worth of onsets, offset by a known anchor.
+
+    The pattern is deliberately **asymmetric**: hits on all four beats plus one
+    on a sixteenth. A pattern on every eighth would be identical to itself
+    shifted by an eighth, so its anchor is genuinely ambiguous and no method
+    could recover it — which is a property of that music, not a bug.
+    """
+    beat = 60.0 / bpm
+    six = beat / 4
+    out = []
+    for b in range(bars):
+        for s in pattern:
+            out.append(anchor + b * 4 * beat + s * six)
+    return np.array(out)
+
+
+def test_find_grid_anchor_recovers_a_known_anchor():
+    from rambass.analyze import find_grid_anchor
+
+    bpm = 116.03
+    anchor, report = find_grid_anchor(_song_onsets(bpm, anchor=0.352), bpm)
+    assert anchor == pytest.approx(0.352, abs=0.01)
+    assert report["on_beat"] > report["runner_up_on_beat"]
+
+
+def test_find_grid_anchor_breaks_the_sixteenth_tie_on_beats():
+    """The failure this exists for: four candidates tie on the 16th grid.
+
+    A pattern shifted by a sixteenth is still perfectly on sixteenths, so the
+    subdivision score cannot tell them apart — only the beat can. Measured on
+    the real song: 61.1/61.1/60.9/60.9% on sixteenths, 38.1/13.0/11.4/6.2% on
+    beats.
+    """
+    from rambass.analyze import find_grid_anchor
+
+    bpm = 120.0
+    beat, truth = 0.5, 0.25
+    onsets = _song_onsets(bpm, anchor=truth)  # asymmetric, so it IS recoverable
+    anchor, report = find_grid_anchor(onsets, bpm)
+    assert report["tied_candidates"] > 1, "expected the tie this test is about"
+    # any whole-sixteenth error would still be 'on the grid' — reject them
+    assert min(abs(anchor - truth), abs(anchor - truth + beat)) < 0.02
+
+
+def test_find_grid_anchor_refuses_without_enough_onsets():
+    from rambass.analyze import find_grid_anchor
+
+    anchor, report = find_grid_anchor([0.1, 0.6, 1.1], 120.0)
+    assert anchor == 0.0 and report["anchors"] == 0
+
+
+def test_grid_confidence_sees_a_whole_subdivision_displacement():
+    """The coarse-grid check. A part on the wrong sixteenth scores at chance."""
+    from rambass.analyze import grid_confidence
+
+    bpm, beat = 120.0, 0.5
+    right = _song_onsets(bpm, pattern=(0, 4, 8, 12))       # on every beat
+    wrong = right + beat / 4                                # one sixteenth late
+    assert grid_confidence(right, bpm)["ratio"] > 3.0
+    assert grid_confidence(wrong, bpm)["ratio"] < 1.0

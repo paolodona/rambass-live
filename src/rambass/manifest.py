@@ -405,6 +405,24 @@ class Song:
         )
         return candidates[0] if candidates else None
 
+    def align_anchor(self) -> float | None:
+        """Bar 1's position in the original recording, from practice/align.yaml.
+
+        The source side of the alignment map (docs/practice-tracks.md), and the
+        one number the whole drum rebuild hangs off: get it wrong and every hit
+        lands on the wrong grid line while every timing report still reads fine.
+        Stored so it is measured once, inspectable, correctable by ear, and used
+        by everything after — rather than re-derived differently by each caller.
+        """
+        path = self.path("practice", "align.yaml")
+        if not path.exists():
+            return None
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for entry in data.get("anchors") or []:
+            if int(entry.get("bar", 0)) == 1:
+                return float(entry["at"])
+        return None
+
     def stem_path(self, stem: str) -> Path | None:
         for ext in (".wav", ".flac", ".mp3"):
             candidate = self.path("stems", f"{stem}{ext}")

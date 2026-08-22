@@ -96,6 +96,11 @@ class TranscriptionReport:
     parity_shift_ms: float = 0.0
     #: Set when a parity shift looked likely but was not certain enough to apply.
     parity_note: str = ""
+    #: Where bar 1 was measured to be, and how convincingly.
+    anchor_seconds: float = 0.0
+    anchor_report: dict = field(default_factory=dict)
+    #: analyze.grid_confidence on the finished part — the coarse-grid check.
+    confidence: dict = field(default_factory=dict)
 
     def summary(self) -> str:
         lines = [f"duration {self.duration:.2f} s"]
@@ -110,6 +115,20 @@ class TranscriptionReport:
                          f"most hits on a subdivision")
         if self.parity_note:
             lines.append(self.parity_note)
+        if self.anchor_report:
+            r = self.anchor_report
+            lines.append(
+                f"anchor          bar 1 at {self.anchor_seconds:.3f} s in the recording  "
+                f"({100 * r.get('on_beat', 0):.0f}% of onsets on a beat, "
+                f"runner-up {100 * r.get('runner_up_on_beat', 0):.0f}%)")
+        if self.confidence:
+            c = self.confidence
+            verdict = "good" if c.get("ratio", 0) >= 1.8 else (
+                "WEAK — the anchor is probably wrong, see docs/drums.md" )
+            lines.append(
+                f"placement       {100 * c.get('on_beat', 0):.0f}% of hits on a beat "
+                f"vs {100 * c.get('chance', 0):.0f}% by chance "
+                f"({c.get('ratio', 0):.2f}x) — {verdict}")
         lines.append("hits per instrument:")
         for instrument, count in sorted(self.per_instrument.items(), key=lambda kv: -kv[1]):
             per_minute = count / max(self.duration / 60.0, 1e-9)
@@ -234,6 +253,9 @@ def transcribe_drums(
             hits = [replace(hit, time=hit.time + parity) for hit in hits]
             report.parity_shift_ms = parity * 1000.0
         report.parity_note = advice
+    from .analyze import grid_confidence
+    report.confidence = grid_confidence(
+        [h.time for h in hits if h.instrument in ("kick", "snare")], timeline.bpm)
     performance = DrumPerformance(hits=hits, timeline=timeline, name="Drums (transcribed)")
     return performance, report
 
@@ -334,9 +356,38 @@ def transcribe_parts(
             hits = [replace(hit, time=hit.time + parity) for hit in hits]
             merged.parity_shift_ms = parity * 1000.0
         merged.parity_note = advice
+    from .analyze import grid_confidence
+    merged.confidence = grid_confidence(
+        [h.time for h in hits if h.instrument in ("kick", "snare")], timeline.bpm)
     reports["kit"] = merged
     hits.sort(key=lambda h: (h.time, h.instrument))
     return DrumPerformance(hits, timeline, "Drums (transcribed from parts)"), reports
+
+
+def detect_anchor(path, bpm: float, *, sample_rate: int = 22050) -> tuple[float, dict]:
+    """Measure where the grid sits in a recording. The default for --offset.
+
+    Onsets from the whole file, then :func:`analyze.find_grid_anchor`. Use the
+    *kit* stem rather than a part stem: the anchor is a property of the
+    recording, and the mixture always has the most onsets to fit.
+    """
+    from .analyze import find_grid_anchor
+
+    librosa = require_module("librosa", "audio")
+    samples, sr = load_mono(path, sample_rate)
+    env = librosa.onset.onset_strength(y=samples, sr=sr, hop_length=256)
+    onsets = librosa.onset.onset_detect(
+        onset_envelope=env, sr=sr, hop_length=256, units="time", delta=0.2
+    )
+    wander = None
+    if len(onsets) > 12:
+        from .analyze import pulse_wander
+
+        wander = pulse_wander(env, librosa.times_like(env, sr=sr, hop_length=256),
+                              bpm, window=10.0)
+        if wander:
+            onsets = dewander(onsets, wander)
+    return find_grid_anchor(onsets, bpm)
 
 
 def beat_parity_shift(

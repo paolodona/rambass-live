@@ -5,7 +5,8 @@
   -----
   1. Generate a build script:      rambass reaper build <song>
   2. In Reaper: File > New Project
-  3. Actions > Show action list > ReaScript: Load... > pick this file, then Run
+  3. Actions > Show action list > ReaScript: Run ReaScript (EEL2 or Lua)... >
+     pick this file. (Reaper 6 called this action "ReaScript: Load...")
   4. Choose the .rbs file from reaper/build/
 
   It creates the tracks, imports the count-in / click / backing / drum MIDI /
@@ -18,8 +19,16 @@
             Muted on build, and it must stay out of front of house.
   Neither is ever mixed into the backing track.
 
-  Nothing here is destructive: it only adds to the current project. Run it on a
-  fresh project, or on a copy.
+  Re-runnable. Running it again on a project it built **replaces what it
+  generated and keeps what you set up**: tracks it made are reused, so the drum
+  VST on DRUMS MIDI, your volumes, mutes and routing all survive, while items,
+  the tempo map and the markers are rebuilt from the .rbs. That matters because
+  the .rbs changes often — a re-transcribed drum part, a corrected anchor — and
+  re-doing the kit every time is how people stop rebuilding and start editing by
+  hand instead.
+
+  It only clears things on tracks it owns (tagged P_EXT:rambass), so a track you
+  added yourself is left alone entirely.
 
   Tested against the Reaper 7 API.
 --]]
@@ -64,12 +73,39 @@ end
 ----------------------------------------------------------------------------
 
 local tracks_by_name = {}
+local TAG = "P_EXT:rambass"
 
-local function add_track(name, volume_db, pan, color)
+local function is_ours(track)
+  local _, value = reaper.GetSetMediaTrackInfo_String(track, TAG, "", false)
+  return value == "1"
+end
+
+local function clear_items(track)
+  for i = reaper.CountTrackMediaItems(track) - 1, 0, -1 do
+    reaper.DeleteTrackMediaItem(track, reaper.GetTrackMediaItem(track, i))
+  end
+end
+
+-- Reuse a track of this name if it is already here, so a rebuild keeps the drum
+-- VST, the routing and any levels you have set. Volume, pan and colour are only
+-- applied when the track is created: after that they are yours, not the build
+-- script's.
+local function ensure_track(name, volume_db, pan, color)
+  for i = 0, reaper.CountTracks(0) - 1 do
+    local track = reaper.GetTrack(0, i)
+    local _, existing = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
+    if existing == name and is_ours(track) then
+      tracks_by_name[name] = track
+      clear_items(track)
+      return track, false
+    end
+  end
+
   local index = reaper.CountTracks(0)
   reaper.InsertTrackAtIndex(index, true)
   local track = reaper.GetTrack(0, index)
   reaper.GetSetMediaTrackInfo_String(track, "P_NAME", name, true)
+  reaper.GetSetMediaTrackInfo_String(track, TAG, "1", true)
   if volume_db then
     reaper.SetMediaTrackInfo_Value(track, "D_VOL", 10 ^ (volume_db / 20))
   end
@@ -81,7 +117,31 @@ local function add_track(name, volume_db, pan, color)
     reaper.SetTrackColor(track, native)
   end
   tracks_by_name[name] = track
-  return track
+  return track, true
+end
+
+-- Markers, regions and the tempo map are wholly described by the .rbs, so a
+-- rebuild starts from a clean slate — but only when this project was built by
+-- rambass before. On a project that was not, we add and touch nothing else.
+local function clear_generated(previously_built)
+  for i = reaper.CountTempoTimeSigMarkers(0) - 1, 0, -1 do
+    reaper.DeleteTempoTimeSigMarker(0, i)
+  end
+  if not previously_built then return end
+  local total = reaper.CountProjectMarkers(0)
+  for i = total - 1, 0, -1 do
+    local ok, isrgn, _, _, _, index = reaper.EnumProjectMarkers(i)
+    if ok and ok ~= 0 then
+      reaper.DeleteProjectMarker(0, index, isrgn)
+    end
+  end
+end
+
+local function project_was_built_by_us()
+  for i = 0, reaper.CountTracks(0) - 1 do
+    if is_ours(reaper.GetTrack(0, i)) then return true end
+  end
+  return false
 end
 
 local function find_track(name)
@@ -145,8 +205,16 @@ local function build(path)
   reaper.ClearConsole()
   log("rambass build: %s", path)
 
-  local counts = { TRACK = 0, ITEM = 0, MIDI = 0, MARKER = 0, REGION = 0, TEMPO = 0 }
+  local counts = { TRACK = 0, ITEM = 0, MIDI = 0, MARKER = 0, REGION = 0, TEMPO = 0,
+                   CREATED = 0, REUSED = 0 }
   local marker_index = 1
+  local fresh_tracks = {}
+
+  local rebuilding = project_was_built_by_us()
+  clear_generated(rebuilding)
+  if rebuilding then
+    log("rebuilding in place — keeping existing tracks, their FX and levels")
+  end
 
   for raw in handle:lines() do
     local line = trim(raw)
@@ -172,16 +240,24 @@ local function build(path)
         counts.TEMPO = counts.TEMPO + 1
 
       elseif kind == "TRACK" then
-        add_track(f[2], tonum(f[3], 0), tonum(f[4], 0), f[5])
+        local _, created = ensure_track(f[2], tonum(f[3], 0), tonum(f[4], 0), f[5])
         counts.TRACK = counts.TRACK + 1
+        if created then
+          counts.CREATED = counts.CREATED + 1
+          fresh_tracks[f[2]] = true
+        else
+          counts.REUSED = counts.REUSED + 1
+        end
 
       elseif kind == "MUTE" then
         local track = find_track(f[2])
-        if track then
-          reaper.SetMediaTrackInfo_Value(track, "B_MUTE", tonum(f[3], 1))
-        else
+        if not track then
           log("  ! no track named '%s' to mute", tostring(f[2]))
+        elseif fresh_tracks[f[2]] then
+          reaper.SetMediaTrackInfo_Value(track, "B_MUTE", tonum(f[3], 1))
         end
+        -- On a rebuild the mute state is yours: if you unmuted CLICK to work
+        -- against it, re-running the build should not silently re-mute it.
 
       elseif kind == "ITEM" or kind == "MIDI" then
         if insert_media(f[2], f[3], tonum(f[4], 0), tonum(f[5], 0)) then
@@ -214,16 +290,44 @@ local function build(path)
   reaper.UpdateArrange()
   reaper.Undo_EndBlock("rambass: build song", -1)
 
-  log("done — %d tracks, %d audio items, %d MIDI items, %d tempo points, "
-      .. "%d markers, %d regions",
-      counts.TRACK, counts.ITEM, counts.MIDI, counts.TEMPO, counts.MARKER, counts.REGION)
+  log("done — %d tracks (%d new, %d reused), %d audio items, %d MIDI items, "
+      .. "%d tempo points, %d markers, %d regions",
+      counts.TRACK, counts.CREATED, counts.REUSED, counts.ITEM, counts.MIDI,
+      counts.TEMPO, counts.MARKER, counts.REGION)
 end
 
 local function main()
-  -- Default to reaper/build/ next to this script, two directories up.
+  -- Default to reaper/build/, which sits beside reaper/scripts/.
+  --
+  -- Resolve it properly rather than handing the dialog a path with ".." in the
+  -- middle: Windows does not resolve that, and silently opens whatever folder
+  -- you were last in — which looks exactly like the .rbs not existing.
   local script_path = ({ reaper.get_action_context() })[2]
   local script_dir = script_path:match("^(.*)[/\\][^/\\]*$") or ""
-  local default = script_dir .. "/../build/"
+  local sep = package.config:sub(1, 1)
+  local root = script_dir:gsub("[/\\][sS]cripts$", "")
+  local build_dir = root .. sep .. "build" .. sep
+
+  -- Pre-select a build script if one is there, so the dialog opens *on* it.
+  local default = build_dir
+  local i = 0
+  while true do
+    local name = reaper.EnumerateFiles(build_dir, i)
+    if not name then break end
+    if name:lower():match("%.rbs$") then
+      default = build_dir .. name
+      break
+    end
+    i = i + 1
+  end
+
+  -- RAMBASS_RBS skips the dialog, so a rebuild can be driven from a script or a
+  -- test harness rather than by hand.
+  local preset = os.getenv("RAMBASS_RBS")
+  if preset and preset ~= "" then
+    build(preset)
+    return
+  end
 
   local ok, chosen = reaper.GetUserFileNameForRead(default, "Pick a rambass build script", "rbs")
   if not ok then return end

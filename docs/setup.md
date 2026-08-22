@@ -42,8 +42,9 @@ Apple Silicon, `--device mps` is a large speedup; on an NVIDIA card,
 ## Reaper
 
 Not installed by this repo — install it yourself. The scripts under `reaper/`
-are ReaScripts, loaded from inside Reaper (**Actions > Show action list >
-ReaScript: Load…**), and were written against the Reaper 7 API.
+are ReaScripts, run from inside Reaper (**Actions > Show action list >
+ReaScript: Run ReaScript (EEL2 or Lua)…**), and were written against the
+Reaper 7 API. Verified against Reaper 7.78.
 
 ## Drum VST
 
