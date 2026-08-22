@@ -268,10 +268,37 @@ where the part opens up, put the ride where the ride is, add the pedal hat.
 ## Stage 8 — the kit, and the mix
 
 **Check the kit against the song's `character` block.** Tutti in Fila is tagged
-`genre: metal, energy: 5, heaviness: 5`. EZdrummer 3's core library is a
-pop/rock kit and will vanish under distorted guitars. Budget for a heavy EZX —
-Metal Machine, Number of the Beast, Rock Solid. The sample library matters more
-to "sounds legit at the gig" than any of the MIDI work above.
+`genre: metal, energy: 5, heaviness: 5`. EZdrummer's core library is a pop/rock
+kit and will vanish under distorted guitars. Budget for a heavy EZX. The sample
+library matters more to "sounds legit at the gig" than any of the MIDI work
+above.
+
+### Kit shortlist — decision still open
+
+An EZX loads in EZdrummer 2 and 3 and in Superior Drummer, so this purchase is
+safe whichever way the plugin question goes. Browse the heavy end of the
+catalogue at
+<https://www.toontrack.com/product-category/ezdrummerline/ezx/>. Candidates
+worth auditioning, with what each is:
+
+| EZX | who / where | shape |
+|---|---|---|
+| [Rock Solid](https://www.toontrack.com/product/rock-solid-ezx/) | Randy Staub, Warehouse Studio Vancouver; 3 kits | classic rock through modern metal — the widest range, so the best single-purchase bet across an album that spans metal to pop |
+| [Metal Machine](https://www.toontrack.com/product/metal-machine-ezx/) | John Tempesta, Andy Sneap, Henson; Tama Starclassic Bubinga ×2, Ludwig Stainless Steel | the classic Sneap metal sound; the safe choice for track 03 alone |
+| [Metal Mania](https://www.toontrack.com/product/metal-mania-ezx/) | Dirk Verbeuren, Chris Rakestraw, One On One LA; 3 kits, 30+ cymbals | cymbal-rich, useful when the part is busy |
+| [Metal!](https://www.toontrack.com/product/metal-ezx/) | Audio Hammer / Daniel Bergstrand; 9 kits, DW Collector + Ludwig Quadra Plus | most kits per euro, so most range within one pack |
+| [Modern Metal](https://www.toontrack.com/product/modern-metal-ezx/) | MIDI by Kyle Brownlee | heavy rock through hardcore and death metal |
+| [Heavy Rock](https://www.toontrack.com/product/heavy-rock-ezx/) | Jay Ruston, Jeff Friedl; 4 kits plus snares | the least extreme of the group |
+| [Post-Metal](https://www.toontrack.com/product/post-metal-ezx/) | Thomas Hedlund, Cult of Luna; 4 kits | atmospheric and slow — wrong for 03, possibly right for 06 |
+
+The thing to weigh: **only one of these six songs is actually metal.** A
+single-genre metal EZX nails track 03 and is useless on Manlio. Rock Solid is
+the one that claims the whole span, and Metal! buys nine kits inside one pack —
+either is a better first purchase than a specialist, unless you are happy buying
+two.
+
+Decide it by ear, not by description, and decide it on **Tutti in Fila and
+Manlio together** — the two extremes. A kit that handles both handles the album.
 
 **Build a real drum map.** There is no EZdrummer entry in `config/drum-maps/`.
 Toontrack's GM Extended map shares its *core* notes with GM, but the extended
