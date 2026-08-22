@@ -108,6 +108,7 @@ work and those are tracked.
 | [lyrics.md](docs/lyrics.md) | the SRT cue format, house style, drafting the missing songs |
 | [video.md](docs/video.md) | image cues, rendering, what reads from the back of the room |
 | [live-runbook.md](docs/live-runbook.md) | gig-day checklist, and what to do when the laptop dies |
+| [practice-tracks.md](docs/practice-tracks.md) | the side goal: per-member practice tracks, and the alignment problem |
 
 ## Honest limits
 

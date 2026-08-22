@@ -32,6 +32,14 @@ moving them onto bars; `lyrics.shift`/`scale` exist for when the timing base
 moves. Bar-anchored `lyrics.md` still exists for songs written from scratch, and
 `lyrics.from_bar_cues`/`to_bar_cues` bridge the two.
 
+A **second** such exception is planned but not yet built: `practice/align.yaml`,
+which maps bars to seconds *in the original album recording* so a practice track
+can be time-warped onto the fixed grid. Same justification as `lyrics.srt` — the
+seconds describe an immutable audio file, not a position in the musical grid. If
+you implement it, store **only the source side** in seconds; the target side is
+computed from `Timeline` at build time, or a BPM edit silently stops re-warping.
+See `docs/practice-tracks.md`.
+
 `Timeline` distinguishes two clocks and so must you:
 
 * `bar_beat_to_seconds()` — from the **musical** zero (bar 1 beat 1); the
@@ -103,8 +111,15 @@ backing-track`, which marks `stems`/`drums_midi`/`quantize`/`kit` as `n/a`. Do
 not propose separating, transcribing or voicing drums for it — the remaining
 songs need a base *mixed* in the album session, which is not a job for this repo.
 Isolated drum stems, Aerodrums `.aer` files and per-song BFD3 presets are
-recorded in `existing-work.yaml` as **provenance only**, for the case where a
-base has to be rebuilt from scratch.
+recorded in `existing-work.yaml`. For the seven finished bases they are
+provenance only. For the **six songs still needing a base** (Bambolina,
+Orologiaio, Il Cellulare, Per Niente Stanca, Superman, Mandami un Faxe) they are
+the drum source for that mixing session, and the album's electronic drums
+(Aerodrums → BFD3) mean the best source is a **re-render from the BFD3 preset
+plus the `.aer` capture** — five of the six have a preset — then the isolated
+stem, then demucs extraction as a distant fallback. See "drum sources for the six
+unmixed songs" in that file. This is still not a reconstruction job: nothing on
+this album gets separated into part stems, transcribed, quantised or re-voiced.
 
 `config/drum-maps/bfd3.yaml` is a **stub with blank note numbers** that falls
 back to General MIDI — the real numbers depend on the per-song preset and must be
@@ -131,6 +146,23 @@ question about Reaper's compositing order that nothing here needs to answer.
 not an unfinished state: `reaper.required_artifacts` returns `("screen",)` for
 them, so they count as complete once the card exists. Don't add backing track,
 count-in or patch-change requirements back for them.
+
+**Practice tracks are a side goal and must never gate the gig.** Per-member
+minus-one MP3s and "the original mix with the new drums in it" are scoped in
+`docs/practice-tracks.md` and not yet implemented. Two facts there are decisions,
+not guesses: **Diversamente Giovani needs only `vocals` and `bass` separated from
+the master mixes** — Vikingo practises against the previous gig's backing tracks,
+so no guitar reconstruction and no time-warping happen on that album at all; and
+**Tutti in Fila may have all its album guitars removed**, because the gig base
+for those songs will be new drums plus guitar layers Paolo re-records. Don't
+reintroduce guitar-layer preservation as a problem to solve.
+
+The rules that scope carries:
+no practice command writes to `render/` or edits a musical field in `song.yaml`;
+practice stages are **not** added to `manifest.STAGES`, because the board's
+denominators measure the show; and a practice track is allowed to be imperfect
+where a base is not. The gig session and the rebuilt drums are the deliverable
+that has to be right.
 
 `arrange.py` deliberately **does not generate** a running order. Sequencing is a
 musical judgement; what a tool can usefully do is catch what a human misses in
