@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Who plays what — the input to per-member practice tracks.
+#
+# Nothing reads this file yet. It is Phase 0 of docs/practice-tracks.md.
+#
+# It has nothing to do with the show: the gig session does not care who plays
+# what. This drives only `rambass practice`.
+# ─────────────────────────────────────────────────────────────────────────
+
+# Three people. Drums are the backing track, so there is no drums part here and
+# no minus-drums track: the nearest thing to a drummer's practice track is the
+# gig base itself.
+members:
+  - name: Domenico
+    nickname: Meco
+    part: vocals
+    track: minus-vocals
+    note: |
+      Master mix minus the `vocals` stem. The stem does not tell lead from
+      backing, so backing vocals go too — minor, and the only thing to know
+      about it.
+
+  - name: Marzio
+    nickname: Maf
+    part: bass
+    track: minus-bass
+    note: |
+      The clean case. Bass is the stem demucs separates best, the part appears
+      once in the recording and is played entirely live, so the minus-one track
+      is correct rather than merely useful.
+
+  - name: Paolo
+    nickname: Vikingo
+    part: guitar
+    track: base
+    note: |
+      Nothing to build. On Diversamente Giovani he practises against the
+      backing track from the previous gig. On Tutti in Fila he will record the
+      guitar layers himself once the new drums exist, and that base becomes the
+      practice track — so `-minus-guitar` off the album mix is fine as an
+      interim there, and is never needed on DG.
+
+# How a part maps onto demucs 4-stem output, for the tracks that are built by
+# separation. `full` and `base` need no entry: they subtract nothing.
+parts:
+  vocals: {stems: [vocals]}
+  bass:   {stems: [bass]}
+  guitar:
+    stems: [other]
+    note: |
+      `other` is everything that is not drums, bass or voice — guitars, keys,
+      whatever else. Tutti in Fila only, as the interim track described above.

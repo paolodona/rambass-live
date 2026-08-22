@@ -67,7 +67,11 @@ early and everything after it is expansion rather than prerequisite.
 Il Phurgone, La Ragazza da Milano, Diversamente Giovani
 
 **B** — Bambolina, Orologiaio, Il Cellulare, Per Niente Stanca, Superman,
-Mandami un Faxe
+Mandami un Faxe. These six have **no backing track from the previous gig** —
+confirmed, not assumed. What several of them do have is a usable drum source
+already on disk, which de-risks the mixing session without removing it: see
+"drum sources for the six unmixed songs" in
+`songs/diversamente-giovani/existing-work.yaml`.
 
 **C** — Tutti In Fila, Ampiamente Contestabile, La Vera Storia Del Vibratore,
 Skizzo Sonovabic, Manlio, L'Esercito Del Surf
@@ -139,7 +143,7 @@ song ───┼─ Lane B: lyrics ─────────┼──> song r
 | tier | what to do |
 |---|---|
 | A | `rambass countin <song>` for the four missing a count-in, plus `rambass click`; remix the rest of the punch-list in the album session |
-| B | mix a BASE in the album session — album mix minus what the band plays live — then `rambass countin` and `rambass click` |
+| B | mix a BASE in the album session — album mix minus what the band plays live — then `rambass countin` and `rambass click`. **Check the drum source first** (`existing-work.yaml`): three of the six have an isolated drum stem and five have a BFD3 preset, so the drums going into that mix are mostly a solved problem |
 | C | `rambass analyze --write` → `rambass stems --drums-only` → `rambass drums transcribe` → `rambass drums clean` → voice the kit → render |
 | D | none; use the album audio as-is |
 
@@ -243,6 +247,30 @@ printed patch sheet, the WAVs on a second device, and no updates installed that
 week.
 
 ---
+
+---
+
+## Side goal — practice tracks · never blocks anything
+
+Per-member practice MP3s (drums + everything but your own part), plus the
+original mix with the rebuilt drums swapped in. Scoped in full in
+[practice-tracks.md](practice-tracks.md).
+
+It is deliberately outside the gates above: practice stages are **not** on the
+status board, no practice command writes to `render/` or edits a musical field in
+`song.yaml`, and a practice track is allowed to be imperfect where a base is not.
+
+Two things about it are worth knowing while planning Phase 1:
+
+* **Minus-one tracks need nothing from Lane A**, and nothing from the alignment
+  problem either: built with each album's own drums they are a plain re-sum of
+  separated stems. Diversamente Giovani needs only `vocals` and `bass`
+  separated from the masters — Vikingo practises against the previous gig's
+  backing tracks — so that album is an afternoon's work, not a phase.
+* **The drums-in-the-mix track is a Lane A QA instrument**, not just a rehearsal
+  aid — it is drums-rebuild.md Stage 10 done properly. Run it on a Tier C song
+  *before* Gate A freezes that song's base filename, because that is when the
+  drum problems it finds are still cheap.
 
 ## Progress at a glance
 
