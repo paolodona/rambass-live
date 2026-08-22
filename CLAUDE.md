@@ -32,6 +32,14 @@ moving them onto bars; `lyrics.shift`/`scale` exist for when the timing base
 moves. Bar-anchored `lyrics.md` still exists for songs written from scratch, and
 `lyrics.from_bar_cues`/`to_bar_cues` bridge the two.
 
+A **second** such exception is planned but not yet built: `practice/align.yaml`,
+which maps bars to seconds *in the original album recording* so a practice track
+can be time-warped onto the fixed grid. Same justification as `lyrics.srt` — the
+seconds describe an immutable audio file, not a position in the musical grid. If
+you implement it, store **only the source side** in seconds; the target side is
+computed from `Timeline` at build time, or a BPM edit silently stops re-warping.
+See `docs/practice-tracks.md`.
+
 `Timeline` distinguishes two clocks and so must you:
 
 * `bar_beat_to_seconds()` — from the **musical** zero (bar 1 beat 1); the
@@ -131,6 +139,15 @@ question about Reaper's compositing order that nothing here needs to answer.
 not an unfinished state: `reaper.required_artifacts` returns `("screen",)` for
 them, so they count as complete once the card exists. Don't add backing track,
 count-in or patch-change requirements back for them.
+
+**Practice tracks are a side goal and must never gate the gig.** Per-member
+minus-one MP3s and "the original mix with the new drums in it" are scoped in
+`docs/practice-tracks.md` and not yet implemented. The rules that scope carries:
+no practice command writes to `render/` or edits a musical field in `song.yaml`;
+practice stages are **not** added to `manifest.STAGES`, because the board's
+denominators measure the show; and a practice track is allowed to be imperfect
+where a base is not. The gig session and the rebuilt drums are the deliverable
+that has to be right.
 
 `arrange.py` deliberately **does not generate** a running order. Sequencing is a
 musical judgement; what a tool can usefully do is catch what a human misses in

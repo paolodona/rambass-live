@@ -244,6 +244,28 @@ week.
 
 ---
 
+---
+
+## Side goal — practice tracks · never blocks anything
+
+Per-member practice MP3s (drums + everything but your own part), plus the
+original mix with the rebuilt drums swapped in. Scoped in full in
+[practice-tracks.md](practice-tracks.md).
+
+It is deliberately outside the gates above: practice stages are **not** on the
+status board, no practice command writes to `render/` or edits a musical field in
+`song.yaml`, and a practice track is allowed to be imperfect where a base is not.
+
+Two things about it are worth knowing while planning Phase 1:
+
+* **Minus-one tracks need nothing from Lane A.** Built with the original drum
+  stem they can cover all 23 songs now, and get re-rendered per song as the
+  rebuilt drums land. The band can start learning parts before any drum work.
+* **The drums-in-the-mix track is a Lane A QA instrument**, not just a rehearsal
+  aid — it is drums-rebuild.md Stage 10 done properly. Run it on a Tier C song
+  *before* Gate A freezes that song's base filename, because that is when the
+  drum problems it finds are still cheap.
+
 ## Progress at a glance
 
 | | Phase 0 | Lane A | Lane B | Lane C | Phase 2 | Phase 3 |

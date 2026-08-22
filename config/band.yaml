@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────────────────
+# Who plays what — the input to per-member practice tracks.
+#
+# Nothing reads this file yet. It is Phase 0 of docs/practice-tracks.md and
+# exists so filling in the lineup is a two-minute job rather than a design
+# decision made later under pressure.
+#
+# It has nothing to do with the show: the gig session does not care who plays
+# what. This drives only `rambass practice`.
+# ─────────────────────────────────────────────────────────────────────────
+
+# A "part" is something a person practises, expressed as the demucs stems that
+# carry it. A minus-one track is every stem EXCEPT these, with the rebuilt
+# drums swapped in for the original ones.
+#
+# Stem names are demucs 4-stem output: drums, bass, other, vocals.
+parts:
+  guitar:
+    stems: [other]
+    note: |
+      `other` is everything that is not drums, bass or voice — so this also
+      removes keys, and two guitars cannot be told apart. See
+      docs/practice-tracks.md. htdemucs_6s can split a real `guitar` stem out
+      per song when it matters; it leaks more.
+  bass:
+    stems: [bass]
+  vocals:
+    stems: [vocals]
+  drums:
+    stems: [drums]
+
+# One folder of MP3s per member, in setlist order. Fill this in with the real
+# lineup — including whether there are two guitarists, who sings lead and who
+# sings backing, and anyone who plays two parts and wants both minus tracks.
+#
+# members:
+#   - {name: "Paolo", parts: [guitar]}
+#   - {name: "...",   parts: [bass]}
+#   - {name: "...",   parts: [vocals]}
+members: []

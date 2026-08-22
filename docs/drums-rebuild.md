@@ -363,6 +363,13 @@ that changed one bar early are all inaudible in solo and glaring against the
 rest of the band. Do it before every commit of the MIDI, and once more at final
 tempo after Stage 3's flatten.
 
+Better still, put the new part inside the **real** song rather than the bed:
+[practice-tracks.md](practice-tracks.md) deliverable 1 is this step automated —
+the album mix with its drums replaced by yours, which needs the mix time-warped
+onto the fixed grid first. Same purpose, with the original vocal and guitars on
+top, which is where the remaining problems actually show themselves. Do it
+before Gate A freezes the base filename, while fixes are still cheap.
+
 ## The faster alternative: map it, don't transcribe it
 
 Worth considering seriously, because it may be both quicker and better.
