@@ -28,6 +28,8 @@ stems:
 sections:
 - name: intro
   bar: 1
+- name: verse-1
+  bar: 17
 gx100:
   channel: 1
   changes: []

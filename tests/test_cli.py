@@ -517,3 +517,19 @@ def test_a_cappella_check_does_not_demand_source_audio(cwd, capsys):
     run("accompaniment", "01-x", "a-cappella")
     capsys.readouterr()
     assert run("check") == 0
+
+
+def test_section_from_a_reaper_bar_subtracts_the_count_in(cwd, capsys):
+    """Reaper's ruler starts at the count-in, so its bar 19 is musical bar 17."""
+    run("new", "X", "--album", "dg", "--create-album", "--bars", "64", "--count-in", "2")
+    capsys.readouterr()
+    assert run("section", "01-x", "19", "verse-1", "--reaper-bar") == 0
+    song = load_song(cwd.songs_dir / "dg" / "01-x")
+    assert [(s.bar, s.name) for s in song.sections if s.name == "verse-1"] == [(17, "verse-1")]
+
+
+def test_a_reaper_bar_inside_the_count_in_is_refused(cwd, capsys):
+    run("new", "X", "--album", "dg", "--create-album", "--count-in", "2")
+    capsys.readouterr()
+    assert run("section", "01-x", "2", "intro", "--reaper-bar") == 2
+    assert "count-in" in capsys.readouterr().err

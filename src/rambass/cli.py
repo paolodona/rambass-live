@@ -1202,12 +1202,30 @@ def cmd_patch_add(args: argparse.Namespace) -> int:
 def cmd_section_add(args: argparse.Namespace) -> int:
     project = _project()
     song = load_song(project.find_song_dir(args.song))
-    song.sections = [s for s in song.sections if s.bar != args.bar]
-    song.sections.append(Section(name=args.name, bar=args.bar))
+
+    # Reaper's bar 1 is the first count-in bar, so its ruler runs count_in bars
+    # ahead of the musical one — reading a section boundary off the screen and
+    # typing it straight in puts every section two bars late. --reaper-bar does
+    # the subtraction, because doing it in your head every time is the kind of
+    # arithmetic that is right nine times and wrong once.
+    bar = args.bar
+    if args.reaper_bar:
+        bar = args.bar - song.count_in_bars
+        if bar < 1:
+            raise ProjectError(
+                f"Reaper bar {args.bar} is inside the {song.count_in_bars}-bar "
+                f"count-in, so it is before the music starts"
+            )
+
+    song.sections = [s for s in song.sections if s.bar != bar]
+    song.sections.append(Section(name=args.name, bar=bar))
     song.sections.sort(key=lambda s: s.bar)
     song.validate()
     save_song(song)
-    _say(f"{song.title}: bar {args.bar} -> {args.name}")
+    where = f" (Reaper bar {args.bar})" if args.reaper_bar else ""
+    timeline = song.timeline()
+    _say(f"{song.title}: bar {bar}{where} at {timeline.audio_time(bar, 1.0):.2f}s "
+         f"-> {args.name}")
     return 0
 
 
@@ -1571,6 +1589,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("song")
     p.add_argument("bar", type=int)
     p.add_argument("name")
+    p.add_argument("--reaper-bar", action="store_true",
+                   help="the bar number as Reaper shows it, which counts the "
+                        "count-in bars; this subtracts them")
     p.set_defaults(func=cmd_section_add)
 
     return parser

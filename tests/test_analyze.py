@@ -315,3 +315,193 @@ def test_grid_confidence_sees_a_whole_subdivision_displacement():
     wrong = right + beat / 4                                # one sixteenth late
     assert grid_confidence(right, bpm)["ratio"] > 3.0
     assert grid_confidence(wrong, bpm)["ratio"] < 1.0
+
+
+# ── velocity comes from the attack, per instrument ───────────────────────
+def test_velocities_are_scaled_per_instrument():
+    """A quiet hat stem and a loud snare stem must not share one scale."""
+    from rambass.midiio import Hit
+    from rambass.transcribe import scale_velocities
+
+    hits = [Hit("snare", 0.0), Hit("snare", 1.0), Hit("hihat_closed", 0.5),
+            Hit("hihat_closed", 1.5)]
+    levels = [0.9, 0.3, 0.09, 0.03]          # hats 20 dB below the snare
+    out = scale_velocities(hits, levels, floor=40, ceiling=120)
+    snare = [h.velocity for h in out if h.instrument == "snare"]
+    hats = [h.velocity for h in out if h.instrument == "hihat_closed"]
+    # same ratio within each part, so each is scaled against itself
+    assert snare == hats
+    assert snare[0] > snare[1]
+
+
+def test_an_evenly_played_part_reads_even():
+    """The bug behind 'the snare velocity is very inconsistent'.
+
+    Scaling to fit whatever spread is present amplifies measurement noise into
+    the full velocity range. Fixed sensitivity does not.
+    """
+    from rambass.midiio import Hit
+    from rambass.transcribe import scale_velocities
+
+    rng = np.random.default_rng(1)
+    hits = [Hit("snare", float(i)) for i in range(60)]
+    levels = list(0.5 * (1 + 0.03 * rng.standard_normal(60)))   # +-0.3 dB of noise
+    out = [h.velocity for h in scale_velocities(hits, levels, floor=40, ceiling=120)]
+    assert max(out) - min(out) <= 6, f"even playing came out as {min(out)}..{max(out)}"
+
+
+def test_phantom_hits_are_gated_out():
+    """Detections with no attack behind them: -54 dB against a -15 dB median."""
+    from rambass.midiio import Hit
+    from rambass.transcribe import gate_quiet_hits
+
+    hits = [Hit("snare", float(i)) for i in range(12)]
+    levels = [0.2] * 10 + [0.0004, 0.0002]     # two are ~54 dB down
+    kept, levels_out, dropped = gate_quiet_hits(hits, levels)
+    assert dropped == 2 and len(kept) == 10 and len(levels_out) == 10
+
+
+def test_the_gate_is_per_instrument_not_absolute():
+    """A quietly recorded hat stem must not be wiped out by a loud snare."""
+    from rambass.midiio import Hit
+    from rambass.transcribe import gate_quiet_hits
+
+    hits = [Hit("snare", 0.0), Hit("snare", 1.0)]
+    hits += [Hit("hihat_closed", float(i)) for i in range(6)]
+    levels = [0.9, 0.8] + [0.01] * 6           # hats 39 dB below the snare
+    kept, _, dropped = gate_quiet_hits(hits, levels)
+    assert dropped == 0 and len(kept) == 8
+
+
+def test_the_contour_survives():
+    """Scaling must not flatten dynamics — Stage 5 is explicit about this."""
+    from rambass.midiio import Hit
+    from rambass.transcribe import scale_velocities
+
+    hits = [Hit("snare", float(i)) for i in range(5)]
+    levels = [0.1, 0.2, 0.4, 0.7, 1.0]
+    out = [h.velocity for h in scale_velocities(hits, levels, floor=40, ceiling=120)]
+    assert out == sorted(out) and out[-1] > out[0] + 30
+
+
+def test_velocity_scaling_survives_a_silent_hit():
+    from rambass.midiio import Hit
+    from rambass.transcribe import scale_velocities
+
+    out = scale_velocities([Hit("kick", 0.0), Hit("kick", 1.0)], [0.0, 0.5])
+    assert all(1 <= h.velocity <= 127 for h in out)
+
+
+# ── crash bleed into the other stems ─────────────────────────────────────
+def _kit(velocities_and_times, crash_times=()):
+    from rambass.midiio import Hit
+
+    hits = [Hit("snare", t, v) for t, v in velocities_and_times]
+    hits += [Hit("crash", t, 110) for t in crash_times]
+    return hits
+
+
+def test_a_quiet_snare_on_a_crash_is_dropped_as_bleed():
+    """Paolo's 'phantom snare on the one'."""
+    from rambass.transcribe import suppress_crash_bleed
+
+    hits = _kit([(float(i), 100) for i in range(12)] + [(20.0, 60)], crash_times=[20.005])
+    kept, dropped = suppress_crash_bleed(hits)
+    assert dropped == 1
+    assert not [h for h in kept if h.instrument == "snare" and h.time == 20.0]
+
+
+def test_a_loud_snare_on_a_crash_is_kept():
+    """Snare-with-crash is an accent — the normal case, and it must survive."""
+    from rambass.transcribe import suppress_crash_bleed
+
+    hits = _kit([(float(i), 100) for i in range(12)] + [(20.0, 118)], crash_times=[20.005])
+    kept, dropped = suppress_crash_bleed(hits)
+    assert dropped == 0 and len(kept) == len(hits)
+
+
+def test_a_quiet_snare_away_from_a_crash_is_kept():
+    """A ghost note is quiet on purpose. Only coincidence makes it suspicious."""
+    from rambass.transcribe import suppress_crash_bleed
+
+    hits = _kit([(float(i), 100) for i in range(12)] + [(20.0, 60)], crash_times=[5.0])
+    _, dropped = suppress_crash_bleed(hits)
+    assert dropped == 0
+
+
+def test_hats_are_never_treated_as_bleed():
+    """Hats play under crashes constantly and are quiet by nature."""
+    from rambass.midiio import Hit
+    from rambass.transcribe import suppress_crash_bleed
+
+    hits = [Hit("hihat_closed", float(i) * 0.25, 100) for i in range(40)]
+    hits += [Hit("hihat_closed", 20.0, 50), Hit("crash", 20.004, 110)]
+    _, dropped = suppress_crash_bleed(hits)
+    assert dropped == 0
+
+
+# ── open hi-hats arriving in the cymbal stem ─────────────────────────────
+def test_a_run_of_cymbal_hits_is_an_open_hat_part():
+    """Bars 78-79: a 'crash' on every beat is a hi-hat, not an accent."""
+    from rambass.midiio import Hit
+    from rambass.transcribe import split_cymbal_runs
+
+    beat = 0.5171
+    hits = [Hit("crash", i * beat, 100) for i in range(8)]
+    out, relabelled = split_cymbal_runs(hits, beat)
+    assert relabelled == 8
+    assert all(h.instrument == "hihat_open" for h in out)
+
+
+def test_an_isolated_crash_stays_a_crash():
+    from rambass.midiio import Hit
+    from rambass.transcribe import split_cymbal_runs
+
+    beat = 0.5171
+    hits = [Hit("crash", 0.0, 110), Hit("crash", 8 * beat, 110), Hit("crash", 20 * beat, 110)]
+    out, relabelled = split_cymbal_runs(hits, beat)
+    assert relabelled == 0
+    assert all(h.instrument == "crash" for h in out)
+
+
+def test_two_crashes_close_together_are_not_a_run():
+    """A crash and its answer are two, not a part. min_run is 3 for a reason."""
+    from rambass.midiio import Hit
+    from rambass.transcribe import split_cymbal_runs
+
+    beat = 0.5171
+    hits = [Hit("crash", 0.0, 110), Hit("crash", beat, 110), Hit("crash", 30 * beat, 110)]
+    _, relabelled = split_cymbal_runs(hits, beat)
+    assert relabelled == 0
+
+
+def test_the_rest_of_the_kit_is_untouched():
+    from rambass.midiio import Hit
+    from rambass.transcribe import split_cymbal_runs
+
+    beat = 0.5171
+    hits = [Hit("crash", i * beat, 100) for i in range(4)]
+    hits += [Hit("kick", i * beat, 100) for i in range(4)]
+    out, _ = split_cymbal_runs(hits, beat)
+    assert sum(1 for h in out if h.instrument == "kick") == 4
+
+
+def test_a_doubled_hat_stroke_becomes_one_open_hat():
+    """The strike lands in the hat stem, the wash in the cymbal stem."""
+    from rambass.midiio import Hit
+    from rambass.transcribe import merge_hat_pairs
+
+    hits = [Hit("hihat_closed", 1.000, 90), Hit("hihat_open", 1.004, 100),
+            Hit("hihat_closed", 2.000, 90)]
+    out, merged = merge_hat_pairs(hits)
+    assert merged == 1
+    assert [h.instrument for h in out] == ["hihat_open", "hihat_closed"]
+
+
+def test_a_closed_hat_on_its_own_survives():
+    from rambass.midiio import Hit
+    from rambass.transcribe import merge_hat_pairs
+
+    hits = [Hit("hihat_closed", float(i) * 0.25, 90) for i in range(8)]
+    out, merged = merge_hat_pairs(hits)
+    assert merged == 0 and len(out) == 8
