@@ -9,7 +9,7 @@ Two deliverables, and they are independent of each other:
 | | what it is | who it is for | needs the rebuilt drums? |
 |---|---|---|---|
 | **1. drums-in-the-mix** | the original album mix with its drums replaced by the new programmed ones | everyone, once per song | **yes** |
-| **2. minus-one** | drums + everything except your own part | one per part, per song | no — works today |
+| **2. minus-one** | drums + everything except your own part | one per member — three of them | no — works today |
 
 Deliverable 1 is a **QA instrument first and a practice track second.** A
 programmed part soloed against `stems/no_drums.wav` (drums-rebuild.md Stage 10)
@@ -72,12 +72,30 @@ milliseconds at each anchor after warping.
 * 30–50 ms — playable, sounds slightly loose
 * over **50 ms** — do not ship it; go up a tier, or fix the anchors
 
+**Why piecewise does not accumulate.** This is the whole point of T2 and it is
+worth stating as a property rather than a hope: each span is pinned at *both*
+ends, so the error is **reset to zero at every anchor**. It is bounded by one
+span's worth of wobble, not by the song's length. A T1 linear fit lets a small
+rate error integrate over three minutes into most of an eighth note; T2 cannot
+do that, because bar 97 is nailed to a measured time in the original file no
+matter what happened in bars 1–96. Drift stops being a function of duration.
+
 Anchor spacing for T2 follows from the same arithmetic. Anchors pin both ends of
 each span, so the worst error is in the middle of a span and is a fraction of
 what the span accumulates: at 124 BPM, 1 BPM of local wobble costs ~60 ms over
 eight bars and ~30 ms over four. **Four bars for a drifting song, eight for a
 steady one.** Per-bar anchoring is not more accurate in any way that matters and
 it multiplies the number of seams.
+
+**Put an anchor on every section boundary**, on top of the regular spacing. A
+band without a click pushes or drops time exactly where the arrangement changes —
+into the chorus, out of the bridge — so a boundary is both the most likely place
+for a step change in tempo and the place a fixed 4-bar grid is most likely to
+straddle one. The sections are already in `song.yaml`, in bars, so this costs
+nothing: it is a set union with the regular anchors, and a duplicate collapses.
+It also gives the detector a free sanity check — a section boundary whose
+detected time is wildly off the interpolated one usually means a miscounted beat
+upstream, which is the failure mode worth catching.
 
 ### The alignment map, and why it is in seconds
 
@@ -147,35 +165,74 @@ more honest practice track anyway.
 
 ## Deliverable 2 — minus-one tracks
 
-Demucs 4-stem gives `drums`, `bass`, `other`, `vocals`. A minus-one track is a
-sum of those (warped, with the drums swapped) minus the part being practised:
+Demucs 4-stem gives `drums`, `bass`, `other`, `vocals`. Because every stem is
+warped with the **same** map they stay phase-coherent, so a mix is a plain sum:
+one demucs run per song, and then the mixes are cheap.
 
-| track | drums | bass | other | vocals |
-|---|:--:|:--:|:--:|:--:|
-| `-minus-guitar` | new | ✅ | ❌ | ✅ |
-| `-minus-bass` | new | ❌ | ✅ | ✅ |
-| `-minus-vocals` | new | ✅ | ✅ | ❌ |
-| `-minus-drums` | ❌ | ✅ | ✅ | ✅ |
-| `-full` | new | ✅ | ✅ | ✅ |
+### The band is three people, and that decides the track list
 
-Because every stem is warped with the **same** map, they stay phase-coherent and
-a mix is a plain sum. One demucs run per song, then the mixes are cheap.
+| member | plays | default track | built from |
+|---|---|---|---|
+| Domenico "Meco" | vocals | `-minus-vocals` | drums(new) + bass + other |
+| Marzio "Maf" | bass guitar | `-minus-bass` | drums(new) + other + vocals |
+| Paolo "Vikingo" | guitars | **`-full`** — see below | drums(new) + bass + other + vocals |
 
-### `other` is not "guitar"
+Three mixes per song, not five. **Nobody needs `-minus-drums`**: the drums *are*
+the backing track, so the nearest thing to a drummer's practice track is the gig
+base, which already exists as a deliverable.
 
-The honest caveat, stated up front because it will otherwise be discovered by a
-confused guitarist: `other` is *everything that is not drums, bass or voice* —
-guitars, keys, brass, whatever else. So `-minus-guitar` also removes the keys,
-and the track can sound hollow.
+`-minus-bass` is the cleanest of the three. Bass is the stem demucs separates
+best, and Maf's part appears exactly once in the recording and is played entirely
+live — that combination is what makes a separation-based minus-one track
+*correct*, not merely useful.
 
-* `htdemucs_6s` splits `guitar` and `piano` out of `other`, which fixes this for
-  the guitar-minus track specifically. It leaks noticeably more. Worth trying
-  per song; not worth making the default.
-* **Two guitars cannot be separated from each other.** No model does this. If
-  the band has two guitarists, they share one minus-guitar track and each hears
-  the other's part missing too.
-* Separation always leaves a ghost of the removed part. For practice this is
-  mildly *useful* — a faint reference for where you are supposed to be.
+### Vikingo does not want a minus-guitar track
+
+The guitars are layered on the recordings, and the extra layers will be **in the
+gig backing track**. So dropping the `other` stem removes both the part he plays
+live *and* the layers he will hear through the PA. That is wrong in the one way
+that matters: it teaches an arrangement the gig will not have.
+
+Separation cannot fix it. No model splits guitar layer one from guitar layer two
+— same instrument, recorded twice.
+
+What he actually wants is **the gig base plus the other two members' parts**, and
+for any song that has a base that is not an approximation at all. The base *is*
+"album mix minus what the band plays live", so `base + click` is literally what
+he will hear on stage: perfectly aligned, no warping, no separation artefact
+anywhere in it. It is **free for the seven Tier A songs whose base already
+exists**, and it arrives with every later base for nothing.
+
+Until a song has a base, `-full` is the right default — every layer present, his
+own part audible as the reference, which is what a guitarist learning a layered
+arrangement wants anyway. `-minus-other` stays available (`--parts guitar`) for
+learning a part cold, labelled as what it really is: everything melodic gone,
+keys included.
+
+### The rule this is an instance of
+
+A separation-based minus-one track is exactly right only for a part that appears
+**once** in the recording and is played **entirely live**.
+
+* **Bass** passes.
+* **Guitar** fails, on the layers.
+* **Lead vocal** passes only if nobody else sings. The `vocals` stem takes
+  backing vocals with it, so if the base carries backing vocals live, then
+  `-minus-vocals` has removed something Meco will hear on stage — the same
+  mistake as Vikingo's, one layer thinner. **Open question: who sings backing
+  vocals live?**
+
+Where a part fails the test the answer is the same every time, and it is the
+cheaper one: **use the base, not a separation.** Separation is the fallback for
+songs that do not have a base yet.
+
+### Remaining caveats on the separated stems
+
+* `htdemucs_6s` splits `guitar` and `piano` out of `other`. It leaks noticeably
+  more, and given the layering it does not rescue the guitar-minus track — worth
+  a try per song if a hollow `-minus-other` is wanted, not worth defaulting to.
+* Separation always leaves a ghost of the removed part. For practice that is
+  mildly *useful*: a faint reference for where you are supposed to be.
 
 ### Run demucs once, in 4-stem mode
 
@@ -194,18 +251,16 @@ rather than something to hard-code:
 
 ```yaml
 # config/band.yaml
-parts:
-  guitar:  {stems: [other],  note: "also removes keys — see docs/practice-tracks.md"}
-  bass:    {stems: [bass]}
-  vocals:  {stems: [vocals]}
-  drums:   {stems: [drums]}
 members:
-  - {name: "...", parts: [guitar]}
+  - {name: "Domenico",  nickname: "Meco",    part: vocals, track: minus-vocals}
+  - {name: "Marzio",    nickname: "Maf",     part: bass,   track: minus-bass}
+  - {name: "Paolo",     nickname: "Vikingo", part: guitar, track: full}
 ```
 
-`members` is what `rambass practice pack` uses to build one folder per person.
-**Open question: the actual lineup, and whether there are two guitars** — the
-file above is a template, not the roster.
+`members` is what `rambass practice pack` uses to build one folder per person,
+and `track` is the default for that member rather than a fixed rule — Vikingo
+gets `full` for the reason above, and switches to `base` per song as each base
+lands.
 
 ## What each album needs
 
@@ -270,8 +325,9 @@ splice, and crossfade them.
 ```
 rambass practice align <song>                     # detect anchors -> practice/align.yaml + residual report
 rambass practice align <song> --anchor 1=0.482 --anchor 33=61.9 --spacing 4
-rambass practice build <song> [--parts guitar,bass] [--drums original|rebuilt] [--click]
-rambass practice pack gig --for bass              # numbered MP3s across a setlist, one folder per member
+rambass practice build <song> [--for meco,maf,vikingo] [--drums original|rebuilt] [--click]
+rambass practice build <song> --from base       # base + click: no separation, no warping
+rambass practice pack gig --for maf                # numbered MP3s across a setlist, one folder per member
 rambass practice status
 ```
 
@@ -313,12 +369,13 @@ The ffmpeg render itself gets skipped, like every other audio test here.
 
 ## Plan
 
-Four phases. Only Phase 1 has a hard dependency, and it is on config, not code.
+Four phases. Phase 0 is answered, so Phase 1 can start now, and Phase 3
+(alignment) runs in parallel with Phase 2 rather than gating it.
 
 | phase | what | blocked by | cost |
 |---|---|---|---|
-| **0** | `config/band.yaml` — the real lineup and part list | a five-minute band question | minutes |
-| **1** | `practice.py` + CLI + tests: minus-one mixing, packs, **no alignment** | Phase 0 | ~half a day |
+| **0** | ~~`config/band.yaml`~~ **done** — Meco/vocals, Maf/bass, Vikingo/guitars | — | — |
+| **1** | `practice.py` + CLI + tests: minus-one mixing, packs, **no alignment** | — | ~half a day |
 | **2** | pass 1 across the whole set — DG bases and TIF album mixes, original drums | Phase 1 + demucs runs | ~10 min/song attended |
 | **3** | alignment: `practice align`, the three tiers, the residual report, warping | — (parallel with 2) | ~half a day |
 | **4** | deliverable 1 per Tier C song, as its drums land | Phase 3 + that song's drums | ~30 min/song |
@@ -327,8 +384,10 @@ Four phases. Only Phase 1 has a hard dependency, and it is on config, not code.
 song that starts at the same offset as its Reaper region, and `practice pack`
 lays out a member folder in setlist order.
 
-**Gate P2 ✅** — every song in the set has a minus-one track per part, in a
-per-member folder on Drive, built with whatever drums exist today.
+**Gate P2 ✅** — every song in the set has its three tracks (`-minus-vocals`,
+`-minus-bass`, `-full`) in a per-member folder on Drive, built with whatever
+drums exist today. Vikingo's folder prefers `base + click` for every song that
+has a base.
 
 **Gate P3 ✅** — `practice align` on one Tier C song reports max residual under
 30 ms and the warped bed sits convincingly against the click by ear, end to end.
@@ -351,8 +410,11 @@ freezes a song's base filename, not after.
   wrong.
 * **Piecewise stretching leaves seams.** On downbeats, crossfaded, at these
   ratios they are hard to hear. On a sparse intro they will not be.
-* `-minus-guitar` is really `-minus-other`. See above.
-* Two guitarists share one track.
+* **`-minus-guitar` is the wrong deliverable, not just an imperfect one** — the
+  layered guitars belong to the backing track. Vikingo gets `-full`, and `base +
+  click` wherever a base exists. See above.
+* `-minus-vocals` takes the backing vocals with it. Whether that matters depends
+  on who sings them live — still open.
 * Separation bleed means no removal is complete. Fine here.
 * **Demucs is the wall-clock cost of the whole side goal**, not the code:
   `htdemucs_ft` 4-stem is roughly four times slower than plain `htdemucs`, on
