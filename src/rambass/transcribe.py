@@ -229,7 +229,12 @@ def transcribe_drums(
         )
 
         seen_frames: set[int] = set()
-        look_ahead = max(2, int(0.05 * sr / hop))
+        # How far forward the attack may be. Tied to the band's own minimum gap
+        # rather than a constant: the picker can fire well before the stroke it
+        # found (78 ms on one measured snare), and a window sized for one example
+        # silently drops hits whose rise is slower. 1.8x the minimum gap is as
+        # far as we can look without stepping onto the next stroke.
+        look_ahead = max(2, int(max(0.05, band.min_gap * 1.8) * sr / hop))
         for frame in np.atleast_1d(peaks):
             frame = int(frame)
             if frame >= len(times):
@@ -271,8 +276,8 @@ def transcribe_drums(
             # Centred on the attack, not starting at it: a window that begins
             # at the detected frame can end before the stroke it is supposed to
             # be measuring.
-            start = max(0, int(times[frame] * sr) - int(0.010 * sr))
-            window = samples[start:start + int(0.060 * sr)]
+            start = max(0, int(times[frame] * sr) - int(0.015 * sr))
+            window = samples[start:start + int(0.075 * sr)]
             level = float(np.abs(window).max()) if window.size else 0.0
             hits.append(Hit(instrument, float(placement[frame]) - offset, 100))
             levels.append(level)
