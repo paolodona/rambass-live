@@ -8,9 +8,9 @@ tempo:
   bpm: 120.0
   time_signature: 4/4
 count_in:
-  bars: 2
+  bars: 0
 click:
-  enabled: true
+  enabled: false
   accent_downbeat: true
 drums:
   origin: a-cappella
@@ -32,8 +32,8 @@ gx100:
   channel: 1
   changes: []
 video:
-  style: lyrics
-  lyrics: lyrics.md
+  style: card
+  lyrics: ''
 character:
   genre: a cappella
   energy: 2
@@ -55,4 +55,9 @@ status:
   rehearsed: todo
 notes: 'listed as ''Bonus'' in the production folders
 
-  a cappella: sung unaccompanied — no backing track, click or count-in'
+  a cappella: sung unaccompanied — no backing track, click, count-in or starting
+  pitch. The band just starts.
+
+  screen: one still title card and nothing else — no lyric video. How long the
+  card holds is decided after rehearsal, once we know how quickly the transport
+  can be paused and unpaused between songs.'
