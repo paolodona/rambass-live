@@ -142,7 +142,15 @@ count-in or patch-change requirements back for them.
 
 **Practice tracks are a side goal and must never gate the gig.** Per-member
 minus-one MP3s and "the original mix with the new drums in it" are scoped in
-`docs/practice-tracks.md` and not yet implemented. The rules that scope carries:
+`docs/practice-tracks.md` and not yet implemented. Two facts there are decisions,
+not guesses: **Diversamente Giovani needs only `vocals` and `bass` separated from
+the master mixes** — Vikingo practises against the previous gig's backing tracks,
+so no guitar reconstruction and no time-warping happen on that album at all; and
+**Tutti in Fila may have all its album guitars removed**, because the gig base
+for those songs will be new drums plus guitar layers Paolo re-records. Don't
+reintroduce guitar-layer preservation as a problem to solve.
+
+The rules that scope carries:
 no practice command writes to `render/` or edits a musical field in `song.yaml`;
 practice stages are **not** added to `manifest.STAGES`, because the board's
 denominators measure the show; and a practice track is allowed to be imperfect

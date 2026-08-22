@@ -9,7 +9,7 @@ Two deliverables, and they are independent of each other:
 | | what it is | who it is for | needs the rebuilt drums? |
 |---|---|---|---|
 | **1. drums-in-the-mix** | the original album mix with its drums replaced by the new programmed ones | everyone, once per song | **yes** |
-| **2. minus-one** | drums + everything except your own part | one per member — three of them | no — works today |
+| **2. minus-one** | drums + everything except your own part | one per member; two on DG, three on TIF | no — works today |
 
 Deliverable 1 is a **QA instrument first and a practice track second.** A
 programmed part soloed against `stems/no_drums.wav` (drums-rebuild.md Stage 10)
@@ -186,45 +186,22 @@ best, and Maf's part appears exactly once in the recording and is played entirel
 live — that combination is what makes a separation-based minus-one track
 *correct*, not merely useful.
 
-### Vikingo does not want a minus-guitar track
+### Vikingo's track is the backing track, and that is the end of it
 
-The guitars are layered on the recordings, and the extra layers will be **in the
-gig backing track**. So dropping the `other` stem removes both the part he plays
-live *and* the layers he will hear through the PA. That is wrong in the one way
-that matters: it teaches an arrangement the gig will not have.
+The album's guitars never have to be preserved for practice — for a different
+reason on each album, and neither reason needs any cleverness:
 
-Separation cannot fix it. No model splits guitar layer one from guitar layer two
-— same instrument, recorded twice.
+* **Diversamente Giovani** — the backing tracks from the previous gig already
+  exist. He practises against one directly. Nothing to separate, nothing to
+  reconstruct.
+* **Tutti in Fila** — the gig backing track will be **new drums plus guitar
+  layers he re-records himself**. The album's guitars are raw material being
+  replaced, not something to protect, so removing all of them is fine. Once he
+  has recorded the layers, that base is the practice track for everyone.
 
-What he actually wants is **the gig base plus the other two members' parts**, and
-for any song that has a base that is not an approximation at all. The base *is*
-"album mix minus what the band plays live", so `base + click` is literally what
-he will hear on stage: perfectly aligned, no warping, no separation artefact
-anywhere in it. It is **free for the seven Tier A songs whose base already
-exists**, and it arrives with every later base for nothing.
-
-Until a song has a base, `-full` is the right default — every layer present, his
-own part audible as the reference, which is what a guitarist learning a layered
-arrangement wants anyway. `-minus-other` stays available (`--parts guitar`) for
-learning a part cold, labelled as what it really is: everything melodic gone,
-keys included.
-
-### The rule this is an instance of
-
-A separation-based minus-one track is exactly right only for a part that appears
-**once** in the recording and is played **entirely live**.
-
-* **Bass** passes.
-* **Guitar** fails, on the layers.
-* **Lead vocal** passes only if nobody else sings. The `vocals` stem takes
-  backing vocals with it, so if the base carries backing vocals live, then
-  `-minus-vocals` has removed something Meco will hear on stage — the same
-  mistake as Vikingo's, one layer thinner. **Open question: who sings backing
-  vocals live?**
-
-Where a part fails the test the answer is the same every time, and it is the
-cheaper one: **use the base, not a separation.** Separation is the fallback for
-songs that do not have a base yet.
+So `-minus-guitar` (drop the `other` stem) is a perfectly good interim track for
+a Tutti in Fila song, and Diversamente Giovani never needs one. There is nothing
+to solve here.
 
 ### Remaining caveats on the separated stems
 
@@ -233,6 +210,22 @@ songs that do not have a base yet.
   a try per song if a hollow `-minus-other` is wanted, not worth defaulting to.
 * Separation always leaves a ghost of the removed part. For practice that is
   mildly *useful*: a faint reference for where you are supposed to be.
+
+### Alignment is only needed when the drums are swapped
+
+Worth stating loudly, because it takes the hard part off most of the work: a
+minus-one track built with the album's **own** drums is a plain re-sum of stems
+in their native timing. No grid, no anchors, no warping, nothing from the
+alignment machinery above.
+
+Everything in "the two clocks disagree" applies to exactly two things:
+
+1. deliverable 1, the album mix with the rebuilt drums swapped in; and
+2. later, a Tutti in Fila practice track that puts the album's **vocal or bass**
+   against the new fixed-grid base — those two stems still come from the old
+   recording, so they still have to be warped onto the grid.
+
+Nothing else. Diversamente Giovani never needs it at all.
 
 ### Run demucs once, in 4-stem mode
 
@@ -264,41 +257,75 @@ lands.
 
 ## What each album needs
 
-The two albums differ here even more than they do for the gig.
+The two albums are barely the same job.
 
-| | Tutti in Fila | Diversamente Giovani |
+### Diversamente Giovani — separate two stems, warp nothing
+
+Both the **master mixes** (all instruments) and the **backing tracks from the
+previous gig** already exist. That is enough on its own:
+
+| member | track | how it is built |
 |---|---|---|
-| deliverable 1 | the whole job — separate, align, warp, sum | **not applicable** — the base *is* the drums; there are no rebuilt drums to swap in |
-| deliverable 2 | separate the album mix, warp, sum | separate the **finished base** and re-sum |
-| alignment needed | yes | **none** — the base is already the gig track, so the stems are aligned by construction |
-| cost per song | ~30 min attended, plus an unattended demucs run | ~10 min |
+| Meco | `-minus-vocals` | master mix − `vocals` stem |
+| Maf | `-minus-bass` | master mix − `bass` stem |
+| Vikingo | the previous gig's backing track | nothing to build |
 
-Diversamente Giovani is therefore the cheap half and can go first: no alignment
-code is needed for it at all.
+**Only `vocals` and `bass` ever need separating**, the album's own drums stay
+where they are, and no file is time-warped. One demucs pass over the masters and
+this album is done — an afternoon, not a phase.
 
-One useful side effect for that album — a DG base gets a `click.wav` generated
-from its fixed `song.yaml` BPM, and building the practice track is the moment you
-find out whether the base is actually click-locked. That is a gig question the
-practice pipeline surfaces early and for free.
+> **Worth checking against the gig plan:** `existing-work.yaml` records finished
+> bases for **seven** DG songs, and `plan.md` has six more as Tier B needing a
+> mixing session. If usable backing tracks really exist for *all* of them from
+> the previous gig, that is news for the **show**, not just for practice — it
+> could take a mixing session off the critical path. Which songs have one?
+
+### Tutti in Fila — two stages
+
+**Stage 1, available as soon as the stems exist.** The drum pipeline runs a
+4-stem separation anyway, so all three tracks come free, built with the album's
+own drums and therefore needing no alignment: `-minus-vocals`, `-minus-bass`,
+`-minus-guitar`. Good enough to learn parts from on day one.
+
+**Stage 2, once the drums are rebuilt and the guitar layers re-recorded.** The
+gig base now exists, so Vikingo practises against it like on the other album.
+Meco and Maf are the only remaining warp: their parts still come from the album
+recording and have to be pulled onto the fixed grid.
+
+### The two files a Diversamente Giovani song has to keep apart
+
+Two different mixes now live under one song, and `song.yaml` already has a slot
+for each: `source.audio` is the full master mix in `source/`, `source.backing_track`
+is the base. Fill in **both**, explicitly.
+
+That last word matters. `Song.source_path()` falls back to globbing `source/` and
+taking the first audio file alphabetically when `source.audio` is empty — which
+is harmless with one file in there and silently wrong with two. Separate the gig
+base when you meant the master and you get a minus-vocals track with no guitars
+in it, and nothing anywhere will complain.
+
+Cheap fix, worth doing as part of Phase 1: have `rambass check` fail a song that
+has more than one audio file in `source/` and no explicit `source.audio`. That is
+a check, not a schema change — the manifest already models both files.
 
 **A cappella songs** (La Canzone Del Tonno, Se Sei Felice) get nothing but a
 reference recording if one exists; there is no track to minus. **Excluded songs**
 get nothing.
 
-## Two passes, and why deliverable 2 can start now
+## Why deliverable 2 can start now
 
-Deliverable 2 does not need the rebuilt drums. Run it with the **original** drum
-stem and the band can practise every song in the set before any drum work lands
-— no alignment, no warping, no dependency on Lane A.
+Nothing in deliverable 2 waits on the drum work. Built with the album's own
+drums it is a plain re-sum of stems, so the band can be practising every song in
+the set before a single drum part is rebuilt.
 
 ```
-rambass practice build <song> --drums original   # pass 1: available today
-rambass practice build <song>                    # pass 2: rebuilt drums, default when they exist
+rambass practice build <song> --drums original   # available today, no alignment
+rambass practice build <song>                    # rebuilt drums, when they exist
 ```
 
-Pass 1 is the schedule win: 23 songs of minus-one tracks, this week, from the
-MP3s that already exist. Pass 2 re-renders each song as its drums land. Nobody
-waits for anybody.
+Diversamente Giovani never needs the second line — its drums are not being
+rebuilt, so the first pass *is* the finished track. Tutti in Fila gets re-rendered
+per song as its drums and re-recorded guitars land.
 
 ## Where it goes in the code
 
@@ -369,35 +396,39 @@ The ffmpeg render itself gets skipped, like every other audio test here.
 
 ## Plan
 
-Four phases. Phase 0 is answered, so Phase 1 can start now, and Phase 3
-(alignment) runs in parallel with Phase 2 rather than gating it.
+The roster question is answered and alignment is no longer on the critical path,
+so the only ordering that matters is Phase 1 first.
 
 | phase | what | blocked by | cost |
 |---|---|---|---|
-| **0** | ~~`config/band.yaml`~~ **done** — Meco/vocals, Maf/bass, Vikingo/guitars | — | — |
-| **1** | `practice.py` + CLI + tests: minus-one mixing, packs, **no alignment** | — | ~half a day |
-| **2** | pass 1 across the whole set — DG bases and TIF album mixes, original drums | Phase 1 + demucs runs | ~10 min/song attended |
-| **3** | alignment: `practice align`, the three tiers, the residual report, warping | — (parallel with 2) | ~half a day |
-| **4** | deliverable 1 per Tier C song, as its drums land | Phase 3 + that song's drums | ~30 min/song |
+| **0** | ~~roster~~ **done** — Meco/vocals, Maf/bass, Vikingo/guitars | — | — |
+| **1** | `practice.py` + CLI + tests: stem mixing, packs, the `source/` check. **No alignment.** | — | ~half a day |
+| **2** | **Diversamente Giovani, all of it** — separate `vocals` + `bass` from the masters, build two tracks per song, point Vikingo at the existing bases | Phase 1 | an afternoon |
+| **3** | **Tutti in Fila stage 1** — three tracks per song off the 4-stem run the drum pipeline needs anyway, album drums, no warping | Phase 1 + demucs | ~10 min/song |
+| **4** | alignment: `practice align`, the three tiers, the residual report, warping | — (parallel with 2 and 3) | ~half a day |
+| **5** | deliverable 1 per Tier C song as its drums land; then TIF stage 2 once the guitar layers are recorded | Phase 4 + that song's drums | ~30 min/song |
 
 **Gate P1 ✅** — `rambass practice build` produces a minus-one MP3 for one DG
-song that starts at the same offset as its Reaper region, and `practice pack`
-lays out a member folder in setlist order.
+song that starts at the same offset as its Reaper region, `practice pack` lays
+out a member folder in setlist order, and `rambass check` catches a song with two
+audio files in `source/` and no explicit `source.audio`.
 
-**Gate P2 ✅** — every song in the set has its three tracks (`-minus-vocals`,
-`-minus-bass`, `-full`) in a per-member folder on Drive, built with whatever
-drums exist today. Vikingo's folder prefers `base + click` for every song that
-has a base.
+**Gate P2 ✅** — every Diversamente Giovani song in the set has Meco's and Maf's
+tracks, and Vikingo has a folder of the existing bases. This album is finished.
 
-**Gate P3 ✅** — `practice align` on one Tier C song reports max residual under
+**Gate P3 ✅** — every Tutti in Fila song in the set has all three tracks, built
+with album drums. The band can now rehearse the whole set.
+
+**Gate P4 ✅** — `practice align` on one Tier C song reports max residual under
 30 ms and the warped bed sits convincingly against the click by ear, end to end.
 
-**Gate P4 ✅** — for each Tier C song whose drums are done: the drums-in-the-mix
+**Gate P5 ✅** — for each Tier C song whose drums are done: the drums-in-the-mix
 track has been listened to end to end, and the drum problems it found are either
 fixed or written into that song's `notes:`.
 
-Phase 4 is the one that feeds back into the gig, so schedule it *before* Gate A
-freezes a song's base filename, not after.
+Phase 5 is the one that feeds back into the gig, so schedule it *before* Gate A
+freezes a song's base filename, not after. Phases 2 and 3 are the ones the band
+actually feels, and neither needs a line of alignment code.
 
 ## Honest limits
 
@@ -410,11 +441,16 @@ freezes a song's base filename, not after.
   wrong.
 * **Piecewise stretching leaves seams.** On downbeats, crossfaded, at these
   ratios they are hard to hear. On a sparse intro they will not be.
-* **`-minus-guitar` is the wrong deliverable, not just an imperfect one** — the
-  layered guitars belong to the backing track. Vikingo gets `-full`, and `base +
-  click` wherever a base exists. See above.
-* `-minus-vocals` takes the backing vocals with it. Whether that matters depends
-  on who sings them live — still open.
+* **Alignment is the only genuinely hard part, and it now touches two things
+  only:** deliverable 1, and Tutti in Fila's vocal and bass stems once the base
+  is on the fixed grid. If it turns out badly, everything in Phases 2 and 3
+  still stands.
+* `-minus-vocals` takes the backing vocals with it, since the `vocals` stem does
+  not distinguish lead from backing. Minor here; it matters only if Meco is
+  relying on hearing them.
+* `-minus-guitar` also removes keys and anything else melodic — it is
+  `-minus-other` wearing a friendlier name. Only Tutti in Fila uses it, and only
+  until the re-recorded guitar layers exist.
 * Separation bleed means no removal is complete. Fine here.
 * **Demucs is the wall-clock cost of the whole side goal**, not the code:
   `htdemucs_ft` 4-stem is roughly four times slower than plain `htdemucs`, on

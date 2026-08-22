@@ -67,7 +67,10 @@ early and everything after it is expansion rather than prerequisite.
 Il Phurgone, La Ragazza da Milano, Diversamente Giovani
 
 **B** — Bambolina, Orologiaio, Il Cellulare, Per Niente Stanca, Superman,
-Mandami un Faxe
+Mandami un Faxe — but see the question raised in
+[practice-tracks.md](practice-tracks.md#diversamente-giovani--separate-two-stems-warp-nothing):
+if the previous gig had usable backing tracks for *these* songs too, some of
+Tier B may already be done.
 
 **C** — Tutti In Fila, Ampiamente Contestabile, La Vera Storia Del Vibratore,
 Skizzo Sonovabic, Manlio, L'Esercito Del Surf
@@ -258,9 +261,11 @@ status board, no practice command writes to `render/` or edits a musical field i
 
 Two things about it are worth knowing while planning Phase 1:
 
-* **Minus-one tracks need nothing from Lane A.** Built with the original drum
-  stem they can cover all 23 songs now, and get re-rendered per song as the
-  rebuilt drums land. The band can start learning parts before any drum work.
+* **Minus-one tracks need nothing from Lane A**, and nothing from the alignment
+  problem either: built with each album's own drums they are a plain re-sum of
+  separated stems. Diversamente Giovani needs only `vocals` and `bass`
+  separated from the masters — Vikingo practises against the previous gig's
+  backing tracks — so that album is an afternoon's work, not a phase.
 * **The drums-in-the-mix track is a Lane A QA instrument**, not just a rehearsal
   aid — it is drums-rebuild.md Stage 10 done properly. Run it on a Tier C song
   *before* Gate A freezes that song's base filename, because that is when the

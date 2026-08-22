@@ -16,11 +16,9 @@ members:
     part: vocals
     track: minus-vocals
     note: |
-      The `vocals` stem carries backing vocals too, so this removes them as
-      well. If the base carries backing vocals live, that is wrong in the same
-      way Vikingo's minus-guitar track would be — see the "rule this is an
-      instance of" section in docs/practice-tracks.md. OPEN QUESTION: who sings
-      backing vocals live?
+      Master mix minus the `vocals` stem. The stem does not tell lead from
+      backing, so backing vocals go too — minor, and the only thing to know
+      about it.
 
   - name: Marzio
     nickname: Maf
@@ -34,14 +32,13 @@ members:
   - name: Paolo
     nickname: Vikingo
     part: guitar
-    track: full
+    track: base
     note: |
-      Deliberately NOT minus-guitar. The guitars are layered on the recordings
-      and the extra layers will be in the gig backing track, so removing the
-      `other` stem would take away both what he plays live and what he will
-      hear through the PA. `full` keeps every layer with his own part as the
-      reference; switch this to `base` per song as each base lands, because a
-      base plus click is exactly what he hears on stage.
+      Nothing to build. On Diversamente Giovani he practises against the
+      backing track from the previous gig. On Tutti in Fila he will record the
+      guitar layers himself once the new drums exist, and that base becomes the
+      practice track — so `-minus-guitar` off the album mix is fine as an
+      interim there, and is never needed on DG.
 
 # How a part maps onto demucs 4-stem output, for the tracks that are built by
 # separation. `full` and `base` need no entry: they subtract nothing.
@@ -52,6 +49,4 @@ parts:
     stems: [other]
     note: |
       `other` is everything that is not drums, bass or voice — guitars, keys,
-      whatever else. Only used for an explicit `--parts guitar` request; it is
-      not anyone's default. htdemucs_6s can split a real `guitar` stem out per
-      song, but the layering means that does not rescue the track either.
+      whatever else. Tutti in Fila only, as the interim track described above.
