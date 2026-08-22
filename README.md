@@ -102,6 +102,7 @@ work and those are tracked.
 | [setup.md](docs/setup.md) | installing, and what each dependency tier buys |
 | [workflow.md](docs/workflow.md) | the per-song sequence, and the tempo-drift decision |
 | [drums.md](docs/drums.md) | what the transcriber does well and badly; cleanup settings |
+| [drums-rebuild.md](docs/drums-rebuild.md) | the full process for a professional drum track, and what the pipeline is missing |
 | [reaper.md](docs/reaper.md) | building projects, where bar 1 is, live transport |
 | [gx100.md](docs/gx100.md) | GX-100 MIDI, the program-map gotcha, tempo sync |
 | [lyrics.md](docs/lyrics.md) | the SRT cue format, house style, drafting the missing songs |
