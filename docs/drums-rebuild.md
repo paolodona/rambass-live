@@ -323,7 +323,8 @@ Two traps:
 Then match loudness across the set. `audio.py` has `measure_loudness` (EBU R128
 integrated plus true peak) and nothing calls it. Every backing track in the
 running order should land at the same integrated LUFS with the same true-peak
-ceiling — −1 dBTP is a safe one — or FOH is riding gain between songs all night.
+ceiling — −1 dBTP is a safe one — or FOH is riding gain between songs all
+night.
 
 ## Stage 10 — QA against the band
 
@@ -340,21 +341,149 @@ tempo after Stage 3's flatten.
 Worth considering seriously, because it may be both quicker and better.
 
 The transcription's real value is the **arrangement map**, not the note data.
-Fidelity matters for two things: the kick pattern, because it locks with the
-bass and the riff, and the crash and section placement, because that is the
-arrangement everyone has memorised. For hats, ride, ghost notes and fills, a
-professionally played library groove in the right style — stamped consistently
-on a fixed grid — will beat a cleaned-up transcription of a take that was never
-played to a click.
+For hats, ride, ghost notes and fills, a professionally played library groove in
+the right style — stamped consistently on a fixed grid — will beat a cleaned-up
+transcription of a take that was never played to a click.
 
 So: run Stages 0–5 far enough to extract the map (section boundaries in bars,
-the kick pattern, where every crash and fill lands), then build the part in
-EZdrummer 3 against that map using Bandmate, the groove browser and Song
+the kick and snare patterns, where every crash and fill lands), then build the
+part in EZdrummer against that map using the groove browser, Bandmate and Song
 Creator.
 
 What you get is "same song, same arrangement, same hits in the same places,
 played better", which is what a gig needs. Nobody in the audience will notice a
 different ride pattern. Everybody notices a fill that lands in the wrong bar.
+
+### Which parts have to be exact
+
+Fidelity is not uniform across the kit, and the line falls in a very convenient
+place. **Kick, snare and crash are what the rest of the band plays against** —
+the bass locks to the kick and the backbeat, and the crashes are the arrangement
+everyone has memorised. Get those three right and nobody can tell the hats came
+from a library. Get them wrong and the bass player is fighting the track all
+night.
+
+Those are also the three the pipeline extracts *best*: after the Stage 2 split,
+kick and snare come off their own stems nearly perfectly, and crashes are loud
+and sparse. The parts that are hard to transcribe are exactly the parts where
+fidelity does not matter.
+
+| part | fidelity | source | automatable |
+|---|---|---|---|
+| kick | exact | kick stem | **yes** — highest confidence in the pipeline |
+| snare backbeat | exact | snare stem | **yes** |
+| snare ghost notes | texture | library groove or hand | no — below detection anyway |
+| crash | exact | cymbal stem | **yes** — loud and sparse |
+| crash choke / stopped | exact | cymbal stem, short-decay test | **yes** — see below |
+| hi-hat / ride pattern | texture | library groove per section | partly — grid occupancy voting |
+| toms | texture | library or hand | no |
+| fills | position exact, content free | library fill at the mapped bar | position only |
+
+### Stopped crashes need a canonical name that does not exist
+
+`CANONICAL` in `drummap.py` has `crash`, `crash_2`, `china` and `splash`, and no
+choke. Toontrack maps cymbal chokes as their own MIDI notes, so without a
+`crash_choke` (and probably `china_choke`) in the canonical list *and* in the
+EZdrummer map, every choke silently becomes a normal ringing crash. In a metal
+arrangement that is the difference between a stab and a wash.
+
+Detecting one needs no new machinery. `_classify_high_band` already measures how
+much a high-band hit is still ringing 350 ms after the attack; a choke is
+precisely a crash whose decay is abnormally *short*. One more threshold below
+`OPEN_HAT_SUSTAIN_RATIO`. Reliable on an isolated cymbal stem, hopeless on a mix.
+
+### The library is plain MIDI on disk, and that changes what can be automated
+
+Toontrack's grooves are ordinary `.mid` files in a folder that EZdrummer 2 and 3
+both read:
+
+* macOS — `/Library/Application Support/EZdrummer/Midi`
+* Windows — `C:\Program Files (x86)\Common Files\Toontrack\EZDrummer\Midi`
+
+EZdrummer 3 will also browse third-party MIDI from a **linked folder** of plain
+`.mid` files. That makes this a two-way street, and it is the whole reason the
+alternative can be automated at all.
+
+**Read direction** — the library is a searchable corpus. Score every library
+groove against the kick and snare pattern extracted from the stems, per section,
+and rank them. `mido` is already a core dependency; this is a scoring function
+over note positions, not a research project. The output is "the five library
+grooves closest to what the drummer actually played in this verse".
+
+**Write direction** — write the generated per-section patterns into a linked
+folder and they appear *inside EZdrummer's own browser*, auditionable against the
+kit and draggable onto the Song Track. The pipeline's output arrives where the
+work is already happening.
+
+Which splits the job cleanly:
+
+**Automatable** — kick, snare, crash and choke extraction; section boundaries and
+the Stage 6 consensus vote; hi-hat grid occupancy (is this section 8ths or 16ths,
+does it open on the "and" of 4); library groove matching and ranking per section;
+and the hybrid assembly below.
+
+**Not automatable, and should not be** — which fill goes where (the position is
+automatic, the choice is yours and costs twenty minutes a song), kit and EZX
+choice, the mix, and whether a variation was deliberate.
+
+### The hybrid assembly
+
+This is the move that makes the whole alternative work:
+
+> Take the library groove's hats, ride and ghost notes, then **overwrite its kick
+> and snare with the transcribed ones**.
+
+You get the band's actual rhythmic content on the parts the bass locks to, and a
+session player's feel on the parts nobody is listening to that closely.
+
+### Doing it in EZdrummer, step by step
+
+The shape is the same in 2 and 3; step 3 is where they diverge.
+
+1. **Load the kit** — the EZX, not the core kit (see Stage 8).
+2. **Get the map in.** Drag the generated per-section MIDI onto the **Song
+   Track** at the bar positions from `song.yaml`, or drop the files into a linked
+   MIDI folder and pull them from the browser.
+3. **Find the texture per section.**
+   * *EZdrummer 2* — **Tap2Find**: tap the groove's rhythm and it lists the
+     closest library matches. Plus the browser's genre and intensity filters.
+   * *EZdrummer 3* — drop the **drum stem itself** into **Bandmate** and it
+     suggests matching library grooves directly. This is exactly this workflow,
+     built into the plugin.
+4. **Overwrite kick and snare** with the transcribed ones. EZdrummer 3 does it in
+   the **Grid Editor** without leaving the plugin; EZdrummer 2 means dragging the
+   block out to Reaper and merging there.
+5. **Fills at the mapped bars.** The browser filters for fills; drop one at each
+   position the map identified.
+6. **Song Creator** assembles the sections into the full arrangement. Both
+   versions have it.
+7. **Drag the finished Song Track out to Reaper** onto the DRUMS MIDI track.
+   Everything downstream in this document is unchanged.
+
+### EZdrummer 2 or 3
+
+**What 3 buys that matters here:** Bandmate (audio in, groove suggestions out —
+2 has no equivalent); the Grid Editor, which removes a round-trip to Reaper at
+every section and adds up across roughly forty of them; Tap2Find with a step
+sequencer; a newer 2,500-groove library; velocity and microtiming humanisation.
+
+**What it does not buy:** audio-to-MIDI — *neither* version has it, only Superior
+Drummer 3's Tracker does; multi-out — EZdrummer 2 already does 16 channels, so
+Stage 8 is fine as it stands; and a heavier sound — 3's core kits are Hansa
+Studios rock kits and will still disappear under the guitars on a
+`heaviness: 5` song.
+
+So, in order:
+
+1. **A heavy EZX first.** EZX libraries load in EZdrummer 2 *and* 3, so the
+   purchase is safe either way, and it is the single biggest jump in how
+   professional the result sounds. On this album, a metal EZX on EZdrummer 2
+   beats EZdrummer 3's core kit.
+2. **Then EZdrummer 3.** Bandmate and the Grid Editor fit this workflow, and
+   across six songs the upgrade pays for itself in hours. It will not change the
+   sound — that is the EZX's job.
+3. **Superior Drummer 3 only if** you would rather buy your way out of Stages 2
+   and 4 entirely. More than this job needs if the hybrid works, and it should.
 
 ## Across the album
 
@@ -438,8 +567,17 @@ Ranked by value, none of them implemented:
    function, fits `quantize.py`'s style exactly.
 3. **A tempo map written from detected beat times**, to make Stage 3's
    follow-then-flatten a command rather than hand-entered YAML.
-4. **`config/drum-maps/ezdrummer3.yaml`**, read off the plugin.
-5. **A set-level loudness match** using the `measure_loudness` already in
+4. **A groove matcher over the Toontrack MIDI folder** — score every library
+   `.mid` against a song's extracted kick and snare pattern per section, rank
+   the candidates, and emit the hybrid. `mido` is already a dependency. This is
+   what makes the alternative above a process rather than an afternoon of
+   auditioning.
+5. **`config/drum-maps/ezdrummer.yaml`**, read off the plugin — including the
+   cymbal choke notes.
+6. **`crash_choke` and `china_choke` in `drummap.py`'s `CANONICAL`**, plus the
+   short-decay test in `_classify_high_band` that detects them. Without the
+   names there is nowhere for a choke to go.
+7. **A set-level loudness match** using the `measure_loudness` already in
    `audio.py`.
-6. **The [reaper.md](reaper.md) line 74 contradiction**, which as written bakes
+8. **The [reaper.md](reaper.md) line 74 contradiction**, which as written bakes
    a click into the base.
