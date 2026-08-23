@@ -62,3 +62,12 @@ Thumbs.db
 # Local overrides
 rambass.local.toml
 .env
+
+# Hand-run drum MIDI experiments. The pipeline's own variants are
+# drums-{raw,quantized,consolidated,restored}.mid and those ARE tracked; anything
+# else under midi/ is a one-off from a debugging session. Ignored rather than just
+# untracked because `git add -A` swept these back in twice: -16ths is Manlio
+# quantised to the wrong grid (it is a shuffle), which is an actively misleading
+# file to leave sitting beside the real ones.
+songs/*/*/midi/drums-*-16ths.mid
+songs/*/*/midi/drums-*-prepasses.mid
