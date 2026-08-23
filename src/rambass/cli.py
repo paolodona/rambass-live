@@ -434,6 +434,24 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
             _say(f"   de-flam       -{removed} duplicate hits "
                  f"(within {args.deflam_ms:g} ms)")
 
+        # Before quantising, so the declared stroke is the one that gets snapped,
+        # and well before `drums consolidate`, so the section's vote sees a
+        # consistent backbeat and stamps it across the bars that missed one.
+        if not args.no_voicing and any(s.backbeat for s in song.sections):
+            from .restore import voice_backbeats
+
+            performance, voicing = voice_backbeats(
+                performance, song.sections,
+                end_bar=(song.bars or song.total_bars()) + 1,
+                velocity=args.backbeat_velocity)
+            for entry in voicing["sections"]:
+                _say(f"   voicing       {entry['name']:<18} "
+                     f"{entry['renamed']} -> {entry['articulation']} "
+                     f"at v{entry['velocity'] if entry['velocity'] else '(unchanged)'}, "
+                     f"{entry['dropped']} coincident hand hits dropped"
+                     + (f", {entry['empty_slots']} empty slots left for the vote"
+                        if entry["empty_slots"] else ""))
+
         # The grid belongs to the song, so the manifest wins over the built-in
         # default and an explicit flag wins over both.
         subdivision = (args.subdivision if args.subdivision is not None
@@ -1567,6 +1585,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--accent-kick", type=int, default=0, help="fixed kick velocity")
     p.add_argument("--accent-snare", type=int, default=0, help="fixed snare velocity")
     p.add_argument("--downbeat-boost", type=int, default=0)
+    p.add_argument("--no-voicing", action="store_true",
+                   help="ignore the sections' declared backbeat articulation")
+    p.add_argument("--backbeat-velocity", type=int, default=None,
+                   help="velocity for a declared backbeat articulation; the "
+                        "default is the median of what the detector already "
+                        "named, which is the only measurement on the right "
+                        "instrument (see restore.voice_backbeats)")
     p.set_defaults(func=cmd_drums_clean)
 
     p = drums_sub.add_parser(

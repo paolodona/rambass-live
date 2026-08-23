@@ -34,6 +34,7 @@ sections:
   bar: 4
 - name: verse-1
   bar: 6
+  backbeat: sidestick
 - name: verse-1-lift
   bar: 14
 - name: break-1
@@ -41,6 +42,7 @@ sections:
 - name: verse-2
   bar: 20
   beat: 3.0
+  backbeat: sidestick
 - name: verse-2-lift
   bar: 28
   beat: 3.0
@@ -52,6 +54,7 @@ sections:
   beat: 3.0
 - name: verse-3
   bar: 43
+  backbeat: sidestick
 - name: verse-3-lift
   bar: 51
 - name: chorus-2

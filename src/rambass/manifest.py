@@ -36,6 +36,16 @@ STAGES = (
 
 STATUS_VALUES = ("todo", "wip", "done", "n/a")
 
+#: What a section may declare its backbeat to be, when no detector can settle it.
+#:
+#: Deliberately short. This is not a general re-voicing facility — it names the
+#: one thing that recurs across an album and that measurement cannot decide: a
+#: verse played with the stick across the rim and a chorus played on the head.
+#: See :func:`~rambass.restore.voice_backbeats` for why Manlio's verse-2 forced
+#: it. Lives here rather than in ``restore.py`` because it is manifest schema,
+#: and ``manifest.py`` must not import anything that pulls in mido.
+BACKBEAT_ARTICULATIONS = ("", "sidestick", "snare")
+
 #: Where this song's accompaniment comes from.
 #:
 #: * ``a-cappella`` — nowhere. The band sings it unaccompanied, so there is no
@@ -104,6 +114,15 @@ class Section:
     bar: int
     beat: float = 1.0
     note: str = ""
+    #: How this section's backbeat is played, when no detector can settle it.
+    #:
+    #: ``sidestick`` is the case that made it exist: Manlio's three verses play
+    #: beats 2 and 4 with the stick across the rim and the lifts and choruses
+    #: play them on the head, and in verse-2 the two are spectrally identical —
+    #: see :func:`~rambass.restore.voice_backbeats` for the measurement. This is
+    #: arrangement structure, not a tuning knob: it is settled by ear once, the
+    #: same way ``drums.subdivision`` is, and never re-derived from audio.
+    backbeat: str = ""
 
     @property
     def position(self) -> tuple[int, float]:
@@ -117,12 +136,15 @@ class Section:
             bar=int(data["bar"]),
             beat=float(data.get("beat", 1.0)),
             note=str(data.get("note", "")),
+            backbeat=str(data.get("backbeat", "") or ""),
         )
 
     def to_dict(self) -> dict:
         out: dict = {"name": self.name, "bar": self.bar}
         if self.beat != 1.0:
             out["beat"] = self.beat
+        if self.backbeat:
+            out["backbeat"] = self.backbeat
         if self.note:
             out["note"] = self.note
         return out
@@ -407,6 +429,12 @@ class Song:
                     f"are both at bar {section.bar} beat {section.beat:g}"
                 )
             seen[section.position] = section.name
+            if section.backbeat not in BACKBEAT_ARTICULATIONS:
+                named = ", ".join(a for a in BACKBEAT_ARTICULATIONS if a)
+                out.append(
+                    f"section {section.name!r} declares backbeat "
+                    f"{section.backbeat!r}; expected empty or one of {named}"
+                )
         if self.bars and any(s.bar > self.bars for s in self.sections):
             out.append("a section starts after the last bar of the song")
         for name, value in (("subdivision", self.drum_subdivision),
