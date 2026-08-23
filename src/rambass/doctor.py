@@ -8,6 +8,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
+from .audio import AudioError, FFMPEG_ENV, _tool_path
+
 
 @dataclass
 class Check:
@@ -42,14 +44,28 @@ def run_checks() -> list[Check]:
         "everything", "install Python 3.10 or newer",
     ))
 
+    # Through audio._tool_path, not shutil.which, so this agrees with the code
+    # that actually runs the tools. Asked directly, `which` says "not on PATH"
+    # for an ffmpeg that RAMBASS_FFMPEG has already located and that every audio
+    # command is happily using -- and a pre-flight check which disagrees with the
+    # thing it is checking is worse than no check.
     for tool, needed in (("ffmpeg", "decoding audio, rendering video"),
                          ("ffprobe", "reading durations")):
-        path = shutil.which(tool)
+        try:
+            path = _tool_path(tool)
+        except AudioError:
+            path = ""
+        if path:
+            version = _version([path, "-version"])
+            where = "" if shutil.which(tool) else f"  (via {FFMPEG_ENV})"
+            detail = f"{version or path}{where}" if version else f"{path}{where}"
+        else:
+            detail = "not found on PATH"
         checks.append(Check(
-            tool, bool(path),
-            _version([tool, "-version"]) if path else "not on PATH",
-            needed,
-            "brew install ffmpeg  (macOS)  ·  apt install ffmpeg  (Linux)",
+            tool, bool(path), detail, needed,
+            "brew install ffmpeg  (macOS)  ·  apt install ffmpeg  (Linux)  ·  "
+            f"winget install Gyan.FFmpeg  (Windows).  Already installed but not "
+            f"linked? Set {FFMPEG_ENV} to the folder holding it.",
         ))
 
     for module, needed, extra in (

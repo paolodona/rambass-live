@@ -58,6 +58,44 @@ def _mark(song: Song, stage: str, state: str = "done") -> None:
         save_song(song)
 
 
+def use_utf8() -> None:
+    """Make stdout and stderr able to carry the characters the CLI prints.
+
+    Measured on Paolo's machine before this existed::
+
+        $ rambass sections manlio
+        rambass: 'charmap' codec can't encode characters in position 0-1:
+                 character maps to <undefined>
+
+    Every report here opens with ``──``, the tables use ``→`` and the prose uses
+    en dashes. On Windows a console that has not been switched to UTF-8 hands
+    Python a ``cp1252`` stdout, so the *first* line of output raises
+    ``UnicodeEncodeError`` and the command produces nothing at all — with an
+    error message that points at a codec rather than at a codepage.
+
+    Setting ``PYTHONIOENCODING=utf-8`` in a shell profile fixes it for one person
+    on one machine. This fixes it everywhere, which matters because
+    docs/setup.md promises these commands run on a venue laptop and a venue is
+    the last place anybody will debug a codepage.
+
+    Everything here is best-effort on purpose. ``sys.stdout`` can be ``None``
+    (pythonw, a frozen build), or something without ``reconfigure`` (a pipe
+    wrapper, a test double), and none of that may take the CLI down before it has
+    printed a word.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None or getattr(stream, "encoding", "").lower() in (
+                "utf-8", "utf8"):
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError, AttributeError):
+            pass
+
+
 def _say(message: str = "") -> None:
     print(message)
 
@@ -2264,6 +2302,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # First, before anything can try to print a box-drawing character.
+    use_utf8()
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):

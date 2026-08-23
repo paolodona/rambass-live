@@ -51,3 +51,37 @@ Reaper 7 API. Verified against Reaper 7.78.
 Not included and not scriptable from here. Anything that reads General MIDI will
 work. Once you have picked one, read its note mapping off its own key-map page
 and put it in `config/drum-maps/` — see docs/drums.md.
+
+## ffmpeg is installed but the command still says it is not
+
+The commonest Windows case, and it is not an installation problem. `winget
+install Gyan.FFmpeg` puts the binaries in
+
+```
+%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_...\ffmpeg-9.0-full_build\bin
+```
+
+and does not always link them, so `where ffmpeg` finds nothing and every audio
+command reports an install hint for something already present.
+
+Point `RAMBASS_FFMPEG` at that folder — or at the binary itself — rather than
+editing the system PATH:
+
+```powershell
+$env:RAMBASS_FFMPEG = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0-full_build\bin"
+```
+
+```bash
+export RAMBASS_FFMPEG="$LOCALAPPDATA\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0-full_build\\bin"
+```
+
+In Git Bash it must stay in **Windows** form: the value is handed to Python, and
+Python on Windows cannot open a `/c/...` path.
+
+A set-but-wrong value is an error rather than a silent fall-through to PATH,
+because otherwise a typo in the variable reports "ffmpeg is not on PATH" and
+sends you to check the one thing that was never the problem.
+
+`rambass doctor` resolves it the same way the audio code does and says which
+route it took, so `[ok ] ffmpeg ... (via RAMBASS_FFMPEG)` means the override is
+doing the work.
