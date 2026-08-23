@@ -16,6 +16,8 @@ drums:
   origin: extracted
   kit: ''
   map: general-midi
+  subdivision: 3
+  cymbal_subdivision: 3
 source:
   audio: 09 Manlio.wav
   url: https://drive.google.com/file/d/1kDxz8I6egN0FwbGrWVPuxGJcFnvUn9rI/view
@@ -57,4 +59,9 @@ notes: '60 BPM, not 120: the detected pulse was 60.02 and the octave was settled
   rather than left to the beat tracker, which cannot cross an octave (analyze.refine_tempo
   searches +-4%). Rounded from 60.02 to a flat 60 — the 0.02 is 107 ms across the
   song, which is why the transcription was re-run against 60 rather than re-quantised
-  from MIDI placed at 60.02.'
+  from MIDI placed at 60.02. GRID: this is a shuffle, not straight 16ths. The hi-hat
+  (513 hits) sits on 0, 1/3 and 2/3 of the beat: 85% of hats, kicks and crashes land
+  within 60 ms of a triplet-8th and only 5% on the 16th-only positions (1/4, 1/2,
+  3/4). Quantise it with `--subdivision 3 --cymbal-subdivision 3`; the default 4 is
+  the wrong grid and drags every triplet 83 ms onto a 16th. Toms are the exception
+  (19% on straight positions) because the fills are not shuffled.'
