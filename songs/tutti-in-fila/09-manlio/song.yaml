@@ -32,10 +32,15 @@ sections:
   bar: 1
 - name: verse-1
   bar: 6
+- name: verse-1-lift
+  bar: 14
 - name: break-1
   bar: 18
 - name: verse-2
   bar: 20
+  beat: 3.0
+- name: verse-2-lift
+  bar: 28
   beat: 3.0
 - name: chorus-1
   bar: 32
@@ -45,6 +50,8 @@ sections:
   beat: 3.0
 - name: verse-3
   bar: 43
+- name: verse-3-lift
+  bar: 51
 - name: chorus-2
   bar: 55
 - name: break-3
