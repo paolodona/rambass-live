@@ -496,10 +496,40 @@ The shape is the same in 2 and 3; step 3 is where they diverge.
 
 ### EZdrummer 2 or 3
 
-**What 3 buys that matters here:** Bandmate (audio in, groove suggestions out —
-2 has no equivalent); the Grid Editor, which removes a round-trip to Reaper at
-every section and adds up across roughly forty of them; Tap2Find with a step
-sequencer; a newer 2,500-groove library; velocity and microtiming humanisation.
+**The starting point is EZdrummer 2, owned.** BFD3 — the sampler the band used
+for Diversamente Giovani — is not available here; it may be sourceable from
+Marzio at some point. If it ever is it reopens a different comparison, because
+BFD3 is in Superior Drummer's class rather than EZdrummer's, but it offers
+nothing like Bandmate or the Grid Editor and so makes the per-section workflow
+below slower, not faster. Do not wait for it.
+
+**EZdrummer 2 is end-of-life.** Toontrack permanently discontinued it on
+3 May 2022 at version 2.2.2 and it will not be updated again, so it is VST2, AU,
+AAX, RTAS and standalone and **there will never be a VST3**. 2.2.2 did add native
+Apple silicon for the VST, AU and standalone; only the AAX is Intel-only. None of
+that costs anything on this job: Reaper loads VST2 natively on both platforms,
+and [live-playback.md](live-playback.md) requires the show session to hold no
+plugins at all, so no drum instrument is ever loaded at the gig. The missing
+VST3 only bites in a VST3-only host — Cubase 14 dropped VST2 — which is a
+portability argument for another day, not a gig risk.
+
+**What 3 buys that matters here** is two features landing on steps 3 and 4
+above, which are the two steps you repeat per section:
+
+| step | on 2 | on 3 |
+|---|---|---|
+| 3. find the texture | Tap2Find — tap the groove in by hand, once per section | **Bandmate** — drop `stems/drums.wav` in and it suggests matching library grooves |
+| 4. overwrite kick and snare | drag the block out to Reaper, merge there, drag back | **Grid Editor** — inside the plugin, no round trip |
+
+Five backing tracks and roughly forty sections, so that is around forty
+hand-tapped searches and forty Reaper round trips removed. Plus a newer
+2,500-groove library and a step sequencer behind Tap2Find. The upgrade is USD 99
+from EZdrummer 2 against USD 179 new, and at any plausible value of a Saturday
+it clears.
+
+Bandmate is also the only thing in the EZdrummer line that recovers part of what
+SD3's Tracker would have done. It does not transcribe — see Stage 4 — but the
+*matching* it does is exactly what step 3 asks for.
 
 **What it does not buy:** audio-to-MIDI — *neither* version has it, only Superior
 Drummer 3's Tracker does; multi-out — EZdrummer 2 already does 16 channels, so
@@ -507,17 +537,29 @@ Stage 8 is fine as it stands; and a heavier sound — 3's core kits are Hansa
 Studios rock kits and will still disappear under the guitars on a
 `heaviness: 5` song.
 
+**One thing to switch off rather than count as a benefit:** 3's velocity and
+microtiming humanisation. `quantize.py` already does both from a seed, so that
+re-running the pipeline after changing one setting does not reshuffle the song.
+The plugin doing it again on top is the fight Stage 8 warns about — turn it off
+along with the quantise.
+
 So, in order:
 
-1. **A heavy EZX first.** EZX libraries load in EZdrummer 2 *and* 3, so the
-   purchase is safe either way, and it is the single biggest jump in how
-   professional the result sounds. On this album, a metal EZX on EZdrummer 2
-   beats EZdrummer 3's core kit.
-2. **Then EZdrummer 3.** Bandmate and the Grid Editor fit this workflow, and
-   across six songs the upgrade pays for itself in hours. It will not change the
-   sound — that is the EZX's job.
+1. **A heavy EZX first.** EZX libraries load in EZdrummer 2 *and* 3 *and* in
+   Superior Drummer 3, so it is the one purchase here that cannot be stranded,
+   and it is the single biggest jump in how professional the result sounds. On
+   this album, a metal EZX on EZdrummer 2 beats EZdrummer 3's core kit.
+2. **Then the EZdrummer 3 upgrade**, USD 99. Bandmate and the Grid Editor fit
+   this workflow, and across five backing tracks it pays for itself in hours. It
+   will not change the sound — that is the EZX's job.
 3. **Superior Drummer 3 only if** you would rather buy your way out of Stages 2
    and 4 entirely. More than this job needs if the hybrid works, and it should.
+   Deferring it is nearly free: the crossgrade is USD 319 against USD 399 direct,
+   so upgrading to 3 now and crossgrading later costs USD 19 more in total.
+
+Formats, discontinuation date and prices above are off Toontrack's own product
+pages and support forum, checked August 2026. The drum map is a separate cost
+either way and does not transfer between them — see Stage 8.
 
 ## Across the album
 
