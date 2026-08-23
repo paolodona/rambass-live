@@ -570,10 +570,16 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
         if not args.no_voicing and any(s.backbeat for s in song.sections):
             from .restore import voice_backbeats
 
+            # The level belongs to the song, so the manifest wins over the
+            # measured median and an explicit flag wins over both. 0 in the
+            # manifest means "not decided", not velocity 0.
+            backbeat_velocity = (args.backbeat_velocity
+                                 if args.backbeat_velocity is not None
+                                 else (song.drum_backbeat_velocity or None))
             performance, voicing = voice_backbeats(
                 performance, song.sections,
                 end_bar=(song.bars or song.total_bars()) + 1,
-                velocity=args.backbeat_velocity)
+                velocity=backbeat_velocity)
             for entry in voicing["sections"]:
                 _say(f"   voicing       {entry['name']:<18} "
                      f"{entry['renamed']} -> {entry['articulation']} "
@@ -1983,10 +1989,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-voicing", action="store_true",
                    help="ignore the sections' declared backbeat articulation")
     p.add_argument("--backbeat-velocity", type=int, default=None,
-                   help="velocity for a declared backbeat articulation; the "
-                        "default is the median of what the detector already "
-                        "named, which is the only measurement on the right "
-                        "instrument (see restore.voice_backbeats)")
+                   help="velocity for a declared backbeat articulation. Once "
+                        "you have settled it by ear, put it in song.yaml as "
+                        "drums.backbeat_velocity so a re-run keeps it; without "
+                        "either, the default is the median of what the detector "
+                        "already named, which is the only measurement on the "
+                        "right instrument (see restore.voice_backbeats)")
     p.set_defaults(func=cmd_drums_clean)
 
     p = drums_sub.add_parser(

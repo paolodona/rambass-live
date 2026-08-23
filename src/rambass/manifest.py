@@ -333,6 +333,19 @@ class Song:
     #: Grid per beat for the crash family, which is never snapped as tight as
     #: the rest of the kit -- a crash is heard as an event, not a subdivision.
     drum_cymbal_subdivision: int = 2
+    #: How loud a *declared* backbeat articulation is stamped. 0 = not decided,
+    #: which is not velocity 0: :func:`~rambass.restore.voice_backbeats` then
+    #: uses the median of the population the detector named, which is the only
+    #: number measured on the right instrument.
+    #:
+    #: It needs to live here for the same reason the subdivision does. That
+    #: median is honest on the part's own scale and can still be inaudible
+    #: through a given kit -- Manlio's 50 declared rim clicks all came out v45,
+    #: the floor, under hi-hats at 75-98 and snares at 109, and Paolo could not
+    #: hear them. How loud a rim click should be is a decision about the kit,
+    #: settled by ear once; a `--backbeat-velocity` flag is whoever last typed a
+    #: command, and the next re-run drops silently back to the floor.
+    drum_backbeat_velocity: int = 0
     #: Stage 7's hand edits, bar-anchored so they survive a re-transcription.
     #:
     #: A crash drawn into the Reaper MIDI item is gone the next time
@@ -407,6 +420,7 @@ class Song:
             drum_map=str(drums.get("map", "general-midi")),
             drum_subdivision=int(drums.get("subdivision", 4) or 4),
             drum_cymbal_subdivision=int(drums.get("cymbal_subdivision", 2) or 2),
+            drum_backbeat_velocity=int(drums.get("backbeat_velocity", 0) or 0),
             drum_additions=[Addition.from_dict(a)
                             for a in _as_list(drums.get("additions"))],
             drum_removals=[Removal.from_dict(r)
@@ -454,6 +468,8 @@ class Song:
                 "map": self.drum_map,
                 "subdivision": self.drum_subdivision,
                 "cymbal_subdivision": self.drum_cymbal_subdivision,
+                **({"backbeat_velocity": self.drum_backbeat_velocity}
+                   if self.drum_backbeat_velocity else {}),
                 **({"additions": [a.to_dict() for a in self.drum_additions]}
                    if self.drum_additions else {}),
                 **({"removals": [r.to_dict() for r in self.drum_removals]}
@@ -530,6 +546,12 @@ class Song:
                     f"drums.{name} is {value}; expected a musical grid "
                     "(1, 2, 3, 4, 6, 8, 12 or 16 per beat)"
                 )
+        if not 0 <= self.drum_backbeat_velocity <= 127:
+            out.append(
+                f"drums.backbeat_velocity is {self.drum_backbeat_velocity}; "
+                "expected a MIDI velocity 1-127, or 0 for \"use the measured "
+                "median\""
+            )
         # Stage 7's edits. A bad one is worth catching here rather than at the
         # moment `drums restore` runs, because the list is hand-written and the
         # command is run near the end of a long session.

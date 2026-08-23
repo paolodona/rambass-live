@@ -269,7 +269,20 @@ reference is the median of the population measured on the right instrument, whic
 on Manlio is v45. That is the floor and it is correct on this scale: a rim click
 here is 25-30 dB below the same drummer's snare and the whole velocity range only
 spans 30 dB. How loud it should *sound* is a Stage 8 question about the kit's
-rim-click samples — `--backbeat-velocity` sets it by ear.
+rim-click samples, and the answer belongs in the manifest: **`drums.backbeat_velocity`**.
+Paolo's verdict on the first pass was "the cross-stick/side-stick are too low in
+volume (eg: 24.4) and are barely audible", which is what v45 does under hi-hats at
+75-98 and snares at 109. Manlio declares `backbeat_velocity: 96` and its 48
+declared clicks are stamped there; `drums clean --backbeat-velocity` overrides it
+for one listen, but only the manifest value survives a re-run, and `rambass stale`
+flags `drums-quantized.mid` when it changes.
+
+Two rim clicks on Manlio stay at v45 after this, at Reaper 4.3.67 and 66.3 — the
+detector found them in `theme-intro` and `break-3`, which declare no backbeat, so
+nothing renamed or re-levelled them. If they need to be heard, the honest fixes
+are to declare those sections or to put the hit in `drums.additions`; quietly
+re-levelling every hit that happens to share the name would be a hand edit
+pretending to be a rule.
 
 ## Stage 6 — sections, and consolidating each one to a pattern
 

@@ -18,6 +18,7 @@ drums:
   map: general-midi
   subdivision: 3
   cymbal_subdivision: 3
+  backbeat_velocity: 96
   additions:
   - bar: 1
     instrument: crash

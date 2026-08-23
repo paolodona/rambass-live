@@ -336,6 +336,26 @@ def test_a_stage_seven_edit_does_make_the_restore_stale(song):
     assert any("additions" in reason for reason in entry.reasons)
 
 
+def test_changing_the_backbeat_velocity_makes_the_clean_stale(song):
+    """The level is stamped during `drums clean`, so a new one is a rebuild —
+    and the whole point of keeping it in song.yaml is that this shows up."""
+    from rambass.manifest import save_song
+
+    raw = _touch(song.directory / "midi" / "drums-raw.mid")
+    quantized = _touch(song.directory / "midi" / "drums-quantized.mid")
+    stamp(song, raw, step="drums transcribe", inputs=[])
+    stamp(song, quantized, step="drums clean", inputs=[raw])
+
+    song.drum_backbeat_velocity = 96
+    save_song(song)
+
+    states = {s.artifact: s for s in stale_report(song)}
+    assert states["midi/drums-raw.mid"].state == "ok", "the transcription is untouched"
+    entry = states["midi/drums-quantized.mid"]
+    assert entry.state == "stale"
+    assert any("backbeat_velocity" in reason for reason in entry.reasons)
+
+
 # ── the Reaper project has to get the *finished* part ────────────────────────
 #
 # `reaper build` defaulted to drums-quantized.mid, which is the part before the

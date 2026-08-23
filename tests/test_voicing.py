@@ -264,3 +264,114 @@ def test_a_section_that_declares_nothing_keeps_its_dynamics():
     performance = DrumPerformance(hits, performance.timeline)
     out, _ = voice_backbeats(performance, _sections(), end_bar=5)
     assert out.hits == performance.hits
+
+# ── how loud the click is belongs in song.yaml ────────────────────────────────
+#
+# Paolo, listening to Manlio's verses: *"the cross-stick/side-stick are too low
+# in volume (eg: 24.4) and are barely audible."* He is right and the reason is in
+# the block above: v45 is the honest median of the population measured on the
+# right instrument, and on this kit's rim-click samples it disappears under
+# hi-hats sitting at 75-98 (all 50 of Manlio's declared clicks came out 45,
+# against a hat median of 81 and a snare median of 109).
+#
+# So the level is a decision, and a decision lives in the manifest. Same argument
+# as `drums.subdivision`: `drums clean --backbeat-velocity 96` is whoever last
+# typed a command, and the next re-run silently drops back to the floor —
+# `drums.backbeat_velocity: 96` is in git, is reapplied every time, and shows up
+# in `rambass stale` when it changes.
+
+
+def test_the_backbeat_velocity_round_trips_through_song_yaml(project):
+    from rambass.manifest import load_song, save_song
+    from rambass.manifest import Song
+
+    directory = project.songs_dir / "a" / "01-a"
+    item = Song(slug="a", title="A", bpm=60.0, directory=directory,
+                drum_backbeat_velocity=96)
+    save_song(item, directory)
+    assert load_song(directory).drum_backbeat_velocity == 96
+
+
+def test_no_backbeat_velocity_means_use_the_measured_median(project):
+    from rambass.manifest import Song, load_song, save_song
+
+    directory = project.songs_dir / "a" / "01-a"
+    save_song(Song(slug="a", title="A", bpm=60.0, directory=directory), directory)
+    assert load_song(directory).drum_backbeat_velocity == 0
+
+
+@pytest.mark.parametrize("value", [-1, 128, 200])
+def test_a_backbeat_velocity_outside_the_midi_range_is_refused(value):
+    from rambass.manifest import Song
+
+    item = Song(slug="x", title="X", bpm=60.0, drum_backbeat_velocity=value)
+    assert any("backbeat_velocity" in problem for problem in item.problems())
+
+
+def test_a_backbeat_velocity_inside_the_range_is_fine():
+    from rambass.manifest import Song
+
+    for value in (0, 1, 96, 127):
+        item = Song(slug="x", title="X", bpm=60.0, drum_backbeat_velocity=value)
+        assert not [p for p in item.problems() if "backbeat_velocity" in p]
+
+
+# ── end to end through `drums clean` ─────────────────────────────────────────
+
+
+def _shuffle_verse_project(song, velocity):
+    """A song whose verse declares a side-stick backbeat, with raw MIDI on disk."""
+    from rambass.manifest import save_song
+    from rambass.midiio import write_drum_midi
+
+    song.bpm = 60.0
+    song.bars = 4
+    song.drum_subdivision = 3
+    song.drum_cymbal_subdivision = 3
+    song.sections = [Section("verse-2", 1, backbeat="sidestick")]
+    song.drum_backbeat_velocity = velocity
+    save_song(song, song.dir)
+    from rambass.manifest import load_song
+
+    reloaded = load_song(song.dir)
+    performance = _verse(4)                     # hats at 70, open hats on 2 and 4
+    write_drum_midi(reloaded.drum_midi_path("raw"),
+                    DrumPerformance(performance.hits, reloaded.timeline()))
+    return reloaded
+
+
+def test_the_manifest_velocity_is_used_when_no_flag_is_given(cwd_song):
+    from rambass.cli import main
+    from rambass.midiio import read_drum_midi
+
+    song = _shuffle_verse_project(cwd_song, 96)
+    assert main(["drums", "clean", song.slug, "--output", "frommanifest"]) == 0
+    out = read_drum_midi(song.drum_midi_path("frommanifest"))
+    clicks = [h.velocity for h in out.hits if h.instrument == "sidestick"]
+    assert clicks and set(clicks) == {96}
+
+
+def test_an_explicit_flag_beats_the_manifest_velocity(cwd_song):
+    from rambass.cli import main
+    from rambass.midiio import read_drum_midi
+
+    song = _shuffle_verse_project(cwd_song, 96)
+    assert main(["drums", "clean", song.slug, "--backbeat-velocity", "70",
+                 "--output", "forced"]) == 0
+    out = read_drum_midi(song.drum_midi_path("forced"))
+    clicks = [h.velocity for h in out.hits if h.instrument == "sidestick"]
+    assert clicks and set(clicks) == {70}
+
+
+def test_with_no_manifest_velocity_the_measured_median_still_wins(cwd_song):
+    """0 means "not decided", which is not the same as velocity 0."""
+    from rambass.cli import main
+    from rambass.midiio import read_drum_midi
+
+    song = _shuffle_verse_project(cwd_song, 0)
+    assert main(["drums", "clean", song.slug, "--output", "measured"]) == 0
+    out = read_drum_midi(song.drum_midi_path("measured"))
+    clicks = [h.velocity for h in out.hits if h.instrument == "sidestick"]
+    # nothing was named sidestick by the detector here, so there is no reference
+    # population and the renamed hits keep the open hat's own velocity
+    assert clicks and set(clicks) == {85}

@@ -281,8 +281,14 @@ found in the hat stem carries a number meaning "loud for a hi-hat" and renaming
 it to a rim click makes that number meaningless. The reference is the median of
 whatever was measured on the right instrument (v45 on Manlio, which is the floor
 and correct — a rim click here is 25-30 dB below the same drummer's snare and the
-velocity range only spans 30 dB). Its audible level is a kit decision;
-`--backbeat-velocity` sets it.
+velocity range only spans 30 dB). Its audible level is a kit decision, and it
+**lives in `song.yaml` as `drums.backbeat_velocity`**, not in a flag. Paolo heard
+the first result and said the clicks were "barely audible": all 50 on Manlio came
+out at v45 under hi-hats at 75-98 and snares at 109. Manlio now declares
+`backbeat_velocity: 96`. `drums clean --backbeat-velocity` still overrides for a
+listen, but a value only in a flag is gone at the next re-run — same argument as
+`drums.subdivision`, and `rambass stale` reports the field when it changes. 0
+means "not decided", which is not velocity 0: the measured median is used then.
 
 **A hi-hat is never loudness evidence.** `suppress_cross_stem_bleed`'s `exclude`
 list means "quiet by nature", and that disqualifies an instrument from *both*
