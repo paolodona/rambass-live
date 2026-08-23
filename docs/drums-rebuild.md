@@ -549,9 +549,10 @@ So, in order:
    Superior Drummer 3, so it is the one purchase here that cannot be stranded,
    and it is the single biggest jump in how professional the result sounds. On
    this album, a metal EZX on EZdrummer 2 beats EZdrummer 3's core kit.
-2. **Then the EZdrummer 3 upgrade**, USD 99. Bandmate and the Grid Editor fit
-   this workflow, and across five backing tracks it pays for itself in hours. It
-   will not change the sound — that is the EZX's job.
+2. **Then the EZdrummer 3 upgrade**, USD 99 — **on trial now**, see below.
+   Bandmate and the Grid Editor fit this workflow, and across five backing tracks
+   they should pay for themselves in hours. It will not change the sound — that
+   is the EZX's job.
 3. **Superior Drummer 3 only if** you would rather buy your way out of Stages 2
    and 4 entirely. More than this job needs if the hybrid works, and it should.
    Deferring it is nearly free: the crossgrade is USD 319 against USD 399 direct,
@@ -560,6 +561,50 @@ So, in order:
 Formats, discontinuation date and prices above are off Toontrack's own product
 pages and support forum, checked August 2026. The drum map is a separate cost
 either way and does not transfer between them — see Stage 8.
+
+### The 10-day trial, and what it has to answer
+
+**EZdrummer 3 is installed as Toontrack's free 10-day trial** (Product Manager,
+Free Trials category), started 23 August 2026 — so the buy-or-lapse date is
+around 2 September. Check Product Manager for the real one. The USD 99 upgrade is
+not spent yet and this trial is what decides it.
+
+Ten days is about one song's worth of the Budget below, so treat it as a single
+shake-down run rather than an album attempt, and do it on **09 Manlio** for
+exactly the reasons in "Order to do them in": sparse, energy 1, errors obvious,
+iterations fast.
+
+**The trial cannot answer the sound question, so do not ask it.** No heavy EZX is
+bought yet, so everything you hear is 3's core Hansa kit — which this section
+already predicts will vanish under the guitars on a `heaviness: 5` song. Judging
+the core kit and concluding "3 is not worth it" would be measuring the EZX
+decision, not this one. The trial is a **workflow** test.
+
+What it does have to answer, all of it on steps 3 and 4 above:
+
+1. **Does Bandmate return usable grooves from `stems/drums.wav`?** Try two
+   contrasting sections — a Manlio verse and one Tutti In Fila verse — and see
+   whether the suggestions come back in the right style at the right intensity,
+   or whether you end up filtering the browser by hand anyway.
+2. **Does the Grid Editor really remove the round trip?** Paste the transcribed
+   kick and snare over a library groove inside the plugin, and check the result
+   survives being dragged out to Reaper intact.
+3. **Time one section each way** — Tap2Find plus a Reaper merge on 2, against
+   Bandmate plus the Grid Editor on 3.
+
+Then the arithmetic is easy. USD 99 across roughly forty sections is **USD 2.50 a
+section**, so a saving of more than a couple of minutes per section pays for the
+upgrade. If it does not save that, "stay on 2" is a real result of the trial, not
+a failure of it — 2 does every step in this document, just more slowly.
+
+**Nothing done during the trial may be allowed to die with it.** End every
+session at step 7: drag the Song Track out to Reaper and commit the MIDI. Once it
+is in the repo it is instrument names in a `.mid` rather than plugin state, so it
+opens in EZdrummer 2 if the trial lapses and `rambass drums remap` retargets it
+to whatever kit ships. What *would* be stranded is an arrangement left living
+inside an EZdrummer 3 project, or a Grid Editor part that was never exported. Do
+the Stage 8 drum map on day one for the same reason — half an hour, and every
+test above depends on it.
 
 ## Across the album
 
