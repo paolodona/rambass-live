@@ -419,3 +419,127 @@ def test_no_warped_file_means_an_empty_track_not_a_missing_one(project, song):
     assert any(row.startswith("TRACK\tREF aligned") for row in rows)
     assert not [row for row in rows
                 if row.startswith("ITEM\tREF aligned")]
+
+
+# ── a malformed align.yaml must not crash the CLI ────────────────────────────
+#
+# Found by a test that wrote `x` into the file as a placeholder: `yaml.safe_load`
+# returns the *string* "x", and both readers went straight to `.get` on it —
+# AttributeError, no message, from a command that had nothing to do with
+# alignment. This file is documented as hand-correctable, so a half-finished edit
+# is a completely ordinary state for it to be in.
+
+
+@pytest.mark.parametrize("text", ["x", "[1, 2, 3]", "", "null", "- bar: 1"])
+def test_a_file_that_is_not_a_mapping_reads_as_no_map(tmp_path, text):
+    from rambass.align import load_align
+
+    path = tmp_path / "align.yaml"
+    path.write_text(text, encoding="utf-8")
+    assert load_align(path).mode == "none"
+
+
+@pytest.mark.parametrize("text", ["x", "anchors: nonsense", "anchors: [{}]",
+                                  "anchors: [{bar: one, at: 2}]"])
+def test_a_broken_file_gives_no_anchor_rather_than_a_traceback(project, song, text):
+    align = song.path("practice", "align.yaml")
+    align.parent.mkdir(parents=True, exist_ok=True)
+    align.write_text(text, encoding="utf-8")
+    assert song.align_anchor() is None
+
+
+def test_a_good_file_still_reads(project, song):
+    align = song.path("practice", "align.yaml")
+    align.parent.mkdir(parents=True, exist_ok=True)
+    align.write_text("anchors:\n  - {bar: 1, at: 0.692}\n", encoding="utf-8")
+    assert song.align_anchor() == pytest.approx(0.692)
+
+
+# ── a fit must not leave behind a map the warp will refuse ───────────────────
+#
+# Hit for real: `align --fit --every-beats 4` wrote a map whose first segment
+# needed a 1.77x stretch, and the next `--warp` refused it — correctly, but by
+# then the good map had already been overwritten. The fit is the place that knows
+# it produced something unusable, so it is the place to say so.
+
+
+def test_a_fit_that_cannot_be_warped_is_reported(tmp_path):
+    from rambass.align import plan_problem
+
+    timeline = Timeline(bpm=60.0)
+    bad = AlignMap(anchors=[Anchor(bar=1, at=0.0), Anchor(bar=2, at=7.1)])
+    problem = plan_problem(bad, timeline, bars=8)
+    assert problem and "1.77" in problem or "bar 1" in problem
+
+
+def test_a_usable_fit_reports_no_problem():
+    from rambass.align import plan_problem
+
+    timeline = Timeline(bpm=60.0)
+    good = AlignMap(anchors=[Anchor(bar=1, at=0.5), Anchor(bar=2, at=4.6),
+                             Anchor(bar=3, at=8.55)])
+    assert plan_problem(good, timeline, bars=8) is None
+
+
+def test_an_empty_map_is_not_a_problem_it_is_just_empty():
+    from rambass.align import plan_problem
+
+    assert plan_problem(AlignMap(anchors=[]), Timeline(bpm=60.0), bars=8) is None
+
+
+# ── the first detected beat is not bar 1 ─────────────────────────────────────
+#
+# The bug this exists to stop, found on the first re-separation. `beat_track` on
+# Manlio's new drum stem reports its first beat at **3.831 s** — the song opens on
+# a single kick and the new separation made it less prominent, so the tracker
+# simply starts three beats late. Anchoring bar 1 to `times[0]` then built the
+# whole chain 3.1 s off, and `--keep-bar-one` patched bar 1 back to the real
+# 0.692 *afterwards* — leaving a map whose first segment claimed 4.1 s of
+# recording for one beat of grid. The warp guard caught it, but only after a
+# working map had been overwritten.
+#
+# Where bar 1 is, is a *measurement* (analyze.find_grid_anchor, or an ear). The
+# fitter is told, it does not guess.
+
+
+def _sparse_intro_beats(first=3.831, n=32):
+    """A take whose tracker misses the intro: beats start most of a bar late."""
+    return [first + i for i in range(n)]
+
+
+def test_the_chain_starts_from_the_known_anchor_not_the_first_beat():
+    timeline = Timeline(bpm=60.0)
+    beats = _sparse_intro_beats()
+    anchors = fit_anchors(beats, timeline, bars=8, every_beats=4, start_at=0.831)
+    # 0.831 + 3 s puts bar 2 at 3.831, which is a beat the tracker did find.
+    assert anchors[0].bar == 1 and anchors[0].at == pytest.approx(0.831)
+    plan = warp_plan(AlignMap(anchors=anchors), timeline, bars=8)
+    assert all(0.8 < segment.rate < 1.25 for segment in plan)
+
+
+def test_without_a_known_anchor_it_still_falls_back_to_the_first_beat():
+    """A song nobody has measured yet has to produce *something* usable."""
+    timeline = Timeline(bpm=60.0)
+    anchors = fit_anchors(_sparse_intro_beats(), timeline, bars=8, every_beats=4)
+    assert anchors[0].at == pytest.approx(3.831)
+
+
+def test_a_known_anchor_never_leaves_an_inconsistent_first_segment():
+    """The exact failure: bar 1 at 0.692 with the chain built from 3.831."""
+    timeline = Timeline(bpm=60.0)
+    anchors = fit_anchors(_sparse_intro_beats(), timeline, bars=8,
+                          every_beats=4, start_at=0.692)
+    amap = AlignMap(anchors=anchors)
+    from rambass.align import plan_problem
+
+    assert plan_problem(amap, timeline, bars=8) is None
+    assert anchors[0].at == pytest.approx(0.692)
+
+
+def test_the_known_anchor_is_used_exactly_not_snapped_away():
+    """It came from a measurement or an ear. Snapping it to whatever the tracker
+    found nearby is how the 3.1 s error got in in the first place."""
+    timeline = Timeline(bpm=60.0)
+    anchors = fit_anchors([0.9 + i for i in range(16)], timeline, bars=4,
+                          every_beats=4, start_at=0.692)
+    assert anchors[0].at == pytest.approx(0.692)

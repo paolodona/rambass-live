@@ -469,8 +469,9 @@ def cmd_drums_transcribe(args: argparse.Namespace) -> int:
                      "re-measure the anchor (docs/drums.md) before going further.")
             target = song.drum_midi_path("raw")
             write_drum_midi(target, performance, load_drum_map(song.drum_map, project))
-            _stamp(song, target, "drums transcribe",
-                   [*parts.values(), kit, song.path("practice", "align.yaml")])
+            # Not align.yaml: only the bar-1 anchor out of it matters here, and
+            # provenance records that as a scalar. See provenance.SCALARS.
+            _stamp(song, target, "drums transcribe", [*parts.values(), kit])
             _say(f"→ {target}  ({len(performance.hits)} hits)")
             _mark(song, "drums_midi", "wip")
             continue
@@ -661,8 +662,8 @@ def cmd_align(args: argparse.Namespace) -> int:
     import numpy as np
 
     from .align import (
-        AlignMap, Anchor, fit_anchors, load_align, residual_holdout_ms,
-        residual_ms, save_align, warp_plan, warp_samples,
+        AlignMap, Anchor, fit_anchors, load_align, plan_problem,
+        residual_holdout_ms, residual_ms, save_align, warp_plan, warp_samples,
     )
     from .analyze import analyze_tempo
     from .audio import load_audio, write_wav
@@ -682,8 +683,14 @@ def cmd_align(args: argparse.Namespace) -> int:
                 continue
             _say(f"── {song.title}: fitting anchors against {reference.name}")
             analysis = analyze_tempo(reference)
-            anchors = fit_anchors(analysis.beat_times, timeline,
-                                  bars=bars, every_beats=args.every_beats)
+            # The stored anchor, when there is one, *starts the chain* rather
+            # than being patched over bar 1 afterwards -- see fit_anchors for
+            # what patching it afterwards produced.
+            anchors = fit_anchors(
+                analysis.beat_times, timeline, bars=bars,
+                every_beats=args.every_beats,
+                start_at=amap.offset if (amap.anchors and args.keep_bar_one)
+                else None)
             if not anchors:
                 _say("   no beat landed near a bar line — the anchor is probably "
                      "wrong, or this is the wrong reference file")
@@ -705,11 +712,6 @@ def cmd_align(args: argparse.Namespace) -> int:
                                "between them is the only thing interpolation "
                                "can get wrong")
             fitted.residual_max_ms, fitted.residual_mean_ms = worst, mean
-            # Keep a hand-corrected bar 1 rather than overwriting it: the old file
-            # may have been fixed by ear, and that beats any fit.
-            if amap.anchors and args.keep_bar_one:
-                fitted.anchors = [Anchor(bar=1, at=amap.offset)] + [
-                    a for a in fitted.anchors if a.bar != 1]
             _say(f"   {len(fitted.anchors)} anchors every "
                  f"{args.every_beats} beat(s), residual {worst:.0f} ms worst / "
                  f"{mean:.0f} ms mean")
@@ -726,10 +728,17 @@ def cmd_align(args: argparse.Namespace) -> int:
                         " With an anchor on every beat this is the beat "
                         "tracker's own jitter, not a bad fit — fine for a "
                         "reference, which is all this is."))
+            problem = plan_problem(fitted, timeline, bars=bars)
+            if problem and not args.force:
+                _say(f"   ! {problem}")
+                _say(f"     NOT written — the map you have still works. Try a "
+                     f"finer --every-beats, or --force to write it anyway.")
+                continue
             if args.dry_run:
                 _say("   dry run — nothing written.")
             else:
                 save_align(target, fitted)
+                _stamp(song, target, "align fit", [song.stem_path("drums")])
                 _say(f"→  {target}")
             amap = fitted
 
@@ -756,6 +765,7 @@ def cmd_align(args: argparse.Namespace) -> int:
             continue
         out = song.path("practice", f"{args.stem}-aligned.wav")
         write_wav(out, warped, sample_rate)
+        _stamp(song, out, "align warp", [target, source])
         _say(f"→  {out}")
         _say("   Drop it on a track at the count-in and play the new drums "
              "against it. It is a reference, not a deliverable.")
@@ -2023,6 +2033,8 @@ def build_parser() -> argparse.ArgumentParser:
                         "corrected by ear")
     p.add_argument("--refit-bar-one", dest="keep_bar_one", action="store_false",
                    help="let the fit replace bar 1 as well")
+    p.add_argument("--force", action="store_true",
+                   help="write a fitted map even if it cannot be warped")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_align)
 

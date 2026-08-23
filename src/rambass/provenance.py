@@ -51,6 +51,36 @@ FULL_HASH_LIMIT = 4 << 20
 SAMPLE_BYTES = 1 << 20
 
 
+#: Single values a step reads *out of* a file, rather than the file itself.
+#:
+#: Second instance of the same lesson as the per-field manifest hashes, so it got
+#: a mechanism instead of another special case. `drums transcribe` reads exactly
+#: one number from practice/align.yaml -- the bar-1 offset -- but depending on the
+#: whole file meant that `align --fit`, which re-fits three hundred anchors and
+#: preserves bar 1, declared the entire drum chain stale for a change that cannot
+#: move a single hit. A hand correction to bar 1 still must invalidate it, which
+#: is the whole reason that number is in that file, so the dependency is on the
+#: *value*.
+SCALARS = {
+    "align/bar1": lambda song: song.align_anchor(),
+}
+
+
+def scalar_hashes(song, names) -> dict:
+    """Hash each named scalar. Unknown names are skipped, not raised on."""
+    out = {}
+    for name in sorted(names):
+        resolve = SCALARS.get(name)
+        if resolve is None:
+            continue
+        try:
+            value = resolve(song)
+        except (OSError, ValueError, KeyError):
+            value = None
+        out[name] = hashlib.sha256(repr(value).encode()).hexdigest()[:16]
+    return out
+
+
 @dataclass(frozen=True)
 class Step:
     """One producing command, and everything that decides whether its output is
@@ -68,6 +98,8 @@ class Step:
     inputs: tuple[str, ...] = ()
     modules: tuple[str, ...] = ()
     fields: tuple[str, ...] = ()
+    #: Values read out of a file rather than the file itself. See :data:`SCALARS`.
+    scalars: tuple[str, ...] = ()
     #: Skip this step entirely for these ``drums.origin`` values.
     skip_origins: tuple[str, ...] = ()
 
@@ -90,8 +122,9 @@ PIPELINE: tuple[Step, ...] = (
         command="rambass drums transcribe {slug}",
         inputs=("stems/parts/kick.wav", "stems/parts/snare.wav",
                 "stems/parts/hihat.wav", "stems/parts/toms.wav",
-                "stems/parts/cymbals.wav", "stems/drums.wav",
-                "practice/align.yaml"),
+                "stems/parts/cymbals.wav", "stems/drums.wav"),
+        # Not practice/align.yaml itself: only the bar-1 anchor out of it.
+        scalars=("align/bar1",),
         modules=("transcribe", "analyze", "midiio", "drummap"),
         fields=("tempo", "count_in", "bars", "drums/origin", "drums/map",
                 "drums/subdivision"),
@@ -125,6 +158,31 @@ PIPELINE: tuple[Step, ...] = (
         # Only Stage 7's own edits, plus what places them on the grid.
         fields=("tempo", "bars", "drums/map", "drums/additions",
                 "drums/removals"),
+        skip_origins=("a-cappella", "backing-track"),
+    ),
+    # Practice, and last on purpose. CLAUDE.md: practice must never gate the gig,
+    # so nothing in the drum chain above takes an input from `practice/` and this
+    # pair takes none from `midi/`. They are here because staleness is a
+    # different question from gig-readiness -- found the hard way, when
+    # `rambass stems --drums-only` rewrote no_drums.wav, `stale` correctly
+    # flagged the whole drum chain, and said nothing at all about the warped
+    # reference that had just become a warp of a file that no longer existed.
+    Step(
+        name="align fit",
+        artifact="practice/align.yaml",
+        command="rambass align {slug} --fit",
+        inputs=("stems/drums.wav",),
+        modules=("align", "analyze"),
+        fields=("tempo", "bars"),
+        skip_origins=("a-cappella", "backing-track"),
+    ),
+    Step(
+        name="align warp",
+        artifact="practice/no_drums-aligned.wav",
+        command="rambass align {slug} --warp",
+        inputs=("practice/align.yaml", "stems/no_drums.wav"),
+        modules=("align", "audio"),
+        fields=("tempo", "bars"),
         skip_origins=("a-cappella", "backing-track"),
     ),
 )
@@ -273,7 +331,18 @@ def stamp(song, artifact, *, step: str, inputs=()) -> None:
         "self": fingerprint(artifact),
         "code": code_hash(modules),
         "manifest": manifest_hashes(song, fields),
-        "inputs": {_relative(song, path): fingerprint(path) for path in inputs},
+        "scalars": scalar_hashes(song, known.scalars if known else ()),
+        # Filtered to what the step declares. `stamp` is called with whatever
+        # paths the command happens to have to hand, while the cascade reasons
+        # from Step.inputs -- and the two drifted apart within the hour:
+        # `drums transcribe` went on passing practice/align.yaml after the step
+        # had narrowed to the bar-1 anchor, so the whole drum chain reported
+        # stale for a refit that could not move a hit. One source of truth.
+        "inputs": {
+            name: fingerprint(path)
+            for name, path in ((_relative(song, p), p) for p in inputs)
+            if known is None or name in known.inputs
+        },
     }
     write_stamps(song, stamps)
 
@@ -362,6 +431,14 @@ def stale_report(song) -> list[Staleness]:
             elif step.fields and was != manifest_hash(song, step.fields):
                 # Provenance from before per-field hashing. Cannot say which.
                 entry.reasons.append("song.yaml changed")
+            was_scalars = recorded.get("scalars") or {}
+            if step.scalars:
+                now = scalar_hashes(song, step.scalars)
+                for name, value in now.items():
+                    if was_scalars.get(name) != value:
+                        entry.reasons.append(
+                            "the bar-1 anchor in practice/align.yaml changed"
+                            if name == "align/bar1" else f"{name} changed")
             for name, was in (recorded.get("inputs") or {}).items():
                 now = fingerprint(Path(song.directory) / name)
                 if not now:

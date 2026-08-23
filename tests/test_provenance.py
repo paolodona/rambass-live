@@ -366,3 +366,142 @@ def test_raw_is_never_chosen_over_nothing(song):
     (song.directory / "midi").mkdir(parents=True, exist_ok=True)
     song.drum_midi_path("raw").write_bytes(b"MThd")
     assert song.best_drum_midi().name == "drums-quantized.mid"
+
+
+# ── the warped reference is a derived file too ───────────────────────────────
+#
+# Found the hard way on the first real re-separation. `rambass stems --drums-only`
+# rewrote no_drums.wav, `stale` correctly flagged the whole drum chain, and said
+# nothing at all about practice/no_drums-aligned.wav -- which had just become a
+# warp of a file that no longer existed. It only got rebuilt because somebody
+# remembered, which is precisely the thing this module exists to stop needing.
+
+
+def test_the_align_map_and_the_warped_reference_are_tracked():
+    from rambass.provenance import PIPELINE
+
+    artifacts = [step.artifact for step in PIPELINE]
+    assert "practice/align.yaml" in artifacts
+    assert "practice/no_drums-aligned.wav" in artifacts
+
+
+def test_a_new_no_drums_makes_the_warped_reference_stale(song):
+    bed = _touch(song.directory / "stems" / "no_drums.wav")
+    amap = _touch(song.directory / "practice" / "align.yaml")
+    warped = _touch(song.directory / "practice" / "no_drums-aligned.wav")
+    stamp(song, warped, step="align warp", inputs=[amap, bed])
+
+    bed.write_text("re-separated", encoding="utf-8")
+    entry = {s.artifact: s for s in stale_report(song)}[
+        "practice/no_drums-aligned.wav"]
+    assert entry.state == "stale"
+    assert any("no_drums.wav" in reason for reason in entry.reasons)
+    assert "align" in entry.command
+
+
+def test_refitting_the_map_makes_the_warp_stale_too(song):
+    """The chain has to hold here as well: a new map means a new warp."""
+    bed = _touch(song.directory / "stems" / "no_drums.wav")
+    amap = _touch(song.directory / "practice" / "align.yaml")
+    warped = _touch(song.directory / "practice" / "no_drums-aligned.wav")
+    stamp(song, amap, step="align fit", inputs=[])
+    stamp(song, warped, step="align warp", inputs=[amap, bed])
+
+    amap.write_text("new anchors", encoding="utf-8")
+    states = {s.artifact: s for s in stale_report(song)}
+    assert states["practice/align.yaml"].state == "edited"
+    assert states["practice/no_drums-aligned.wav"].state == "stale"
+
+
+def test_the_practice_artifacts_never_block_the_drum_chain(song):
+    """CLAUDE.md: practice must never gate the gig. So they are reported, and
+    nothing downstream of the drums depends on them."""
+    from rambass.provenance import PIPELINE, step_for
+
+    for name in ("midi/drums-quantized.mid", "midi/drums-consolidated.mid",
+                 "midi/drums-restored.mid"):
+        assert not any("practice/" in given for given in step_for(name).inputs)
+    warp = step_for("practice/no_drums-aligned.wav")
+    assert not any("midi/" in given for given in warp.inputs)
+    assert [s.artifact for s in PIPELINE][-1] == "practice/no_drums-aligned.wav"
+
+
+# ── depend on the value you read, not the file it lives in ───────────────────
+#
+# Second instance of the same bug class as the `drums` block, so it is worth a
+# mechanism rather than another special case. `drums transcribe` reads exactly one
+# number out of practice/align.yaml -- `song.align_anchor()`, the bar-1 offset --
+# but depended on the whole file. So `rambass align --fit`, which re-fits 300-odd
+# anchors and *preserves* bar 1 by default, declared the entire drum chain stale
+# for a change that cannot affect a single hit.
+#
+# A hand correction to bar 1 must still invalidate it. That is the whole reason
+# the anchor is in that file.
+
+
+def test_refitting_the_other_anchors_does_not_touch_the_drum_chain(song, tmp_path):
+    from rambass.align import AlignMap, Anchor, save_align
+
+    align = song.path("practice", "align.yaml")
+    save_align(align, AlignMap(anchors=[Anchor(bar=1, at=0.692),
+                                       Anchor(bar=2, at=4.83)]))
+    raw = _touch(song.directory / "midi" / "drums-raw.mid")
+    stamp(song, raw, step="drums transcribe", inputs=[])
+
+    # A refit: many more anchors, bar 1 untouched.
+    save_align(align, AlignMap(anchors=[Anchor(bar=1, at=0.692)]
+                               + [Anchor(bar=b, at=0.692 + 4.0 * (b - 1))
+                                  for b in range(2, 20)]))
+    assert {s.artifact: s for s in stale_report(song)}[
+        "midi/drums-raw.mid"].state == "ok"
+
+
+def test_correcting_bar_one_by_ear_does_make_it_stale(song):
+    from rambass.align import AlignMap, Anchor, save_align
+
+    align = song.path("practice", "align.yaml")
+    save_align(align, AlignMap(anchors=[Anchor(bar=1, at=0.692)]))
+    raw = _touch(song.directory / "midi" / "drums-raw.mid")
+    stamp(song, raw, step="drums transcribe", inputs=[])
+
+    save_align(align, AlignMap(anchors=[Anchor(bar=1, at=0.750)]))
+    entry = {s.artifact: s for s in stale_report(song)}["midi/drums-raw.mid"]
+    assert entry.state == "stale"
+    assert any("anchor" in reason for reason in entry.reasons)
+
+
+def test_the_warp_still_depends_on_the_whole_map(song):
+    """It resamples between every anchor, so every anchor matters to it."""
+    from rambass.provenance import step_for
+
+    assert "practice/align.yaml" in step_for("practice/no_drums-aligned.wav").inputs
+    assert "practice/align.yaml" not in step_for("midi/drums-raw.mid").inputs
+
+
+def test_an_unknown_scalar_name_is_not_a_crash(song):
+    from rambass.provenance import scalar_hashes
+
+    assert scalar_hashes(song, ("nonsense",)) == {}
+
+
+def test_a_command_cannot_record_an_input_its_step_does_not_declare(song):
+    """The two nearly drifted apart the first time. `stamp` records whatever the
+    command hands it, while the cascade reasons from `Step.inputs` -- so
+    `drums transcribe` kept passing practice/align.yaml after the step had
+    stopped declaring it, and the whole drum chain went on reporting stale for a
+    refit that preserved bar 1. Whatever a command records has to be something
+    its step knows about."""
+    from rambass.provenance import PIPELINE, read_stamps
+
+    declared = {step.artifact: set(step.inputs) for step in PIPELINE}
+    (song.directory / "midi").mkdir(parents=True, exist_ok=True)
+    artifact = song.drum_midi_path("raw")
+    artifact.write_bytes(b"MThd")
+    stray = song.path("practice", "align.yaml")
+    stray.parent.mkdir(parents=True, exist_ok=True)
+    stray.write_text("x", encoding="utf-8")
+
+    stamp(song, artifact, step="drums transcribe", inputs=[stray])
+    recorded = set(read_stamps(song)["midi/drums-raw.mid"]["inputs"])
+    assert recorded <= declared["midi/drums-raw.mid"], (
+        f"recorded an undeclared input: {recorded - declared['midi/drums-raw.mid']}")

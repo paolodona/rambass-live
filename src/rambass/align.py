@@ -146,6 +146,7 @@ def fit_anchors(
     bars: int,
     every_beats: int = 4,
     tolerance: float = ANCHOR_TOLERANCE,
+    start_at: float | None = None,
 ) -> list[Anchor]:
     """Anchor every *every_beats* beats to the detected beat nearest that line.
 
@@ -173,6 +174,18 @@ def fit_anchors(
     real beat handles both, because the prediction tracks the take while the
     tolerance still refuses a bar the detector never saw.
 
+    *start_at* is where bar 1 beat 1 is **known** to be, from
+    :func:`~rambass.analyze.find_grid_anchor` or from an ear, and it is used
+    exactly rather than snapped. Passing it matters more than it looks. The first
+    *detected* beat is not bar 1: on Manlio's re-separated drum stem
+    ``beat_track`` reports its first beat at **3.831 s**, because the song opens
+    on a single kick that the new separation left less prominent, so the tracker
+    starts three beats late. Chaining from ``times[0]`` then built the whole map
+    3.1 s off — and patching bar 1 back afterwards, which is what the caller used
+    to do, left a map whose first segment claimed 4.1 s of recording for one beat
+    of grid. Without it, ``times[0]`` is the only thing available and is used, so
+    a song nobody has measured yet still gets a usable map.
+
     Bar 1 is always attempted, because every downstream consumer needs to know
     where the music starts.
     """
@@ -185,7 +198,7 @@ def fit_anchors(
     step = max(int(every_beats), 1)
 
     out: list[Anchor] = []
-    predicted, rate = float(times[0]), 1.0
+    predicted, rate = float(times[0] if start_at is None else start_at), 1.0
     previous_grid: float | None = None
     previous_at = 0.0
     for index_beat in range(0, bars * per_bar, step):
@@ -194,6 +207,13 @@ def fit_anchors(
         grid = timeline.bar_beat_to_seconds(bar, beat)
         if previous_grid is not None:
             predicted = previous_at + (grid - previous_grid) * rate
+        # The known anchor is a measurement. Snapping it to whatever the tracker
+        # happened to find nearby is how the 3.1 s error got in.
+        if previous_grid is None and start_at is not None:
+            anchor = Anchor(bar=bar, beat=beat, at=float(start_at))
+            out.append(anchor)
+            previous_grid, previous_at = grid, anchor.at
+            continue
         index = int(np.argmin(np.abs(times - predicted)))
         if abs(times[index] - predicted) > reach:
             continue
@@ -307,6 +327,21 @@ def warp_plan(amap: AlignMap, timeline: Timeline, *, bars: int) -> list[WarpSegm
     return out
 
 
+def plan_problem(amap: AlignMap, timeline: Timeline, *, bars: int) -> str | None:
+    """The message :func:`warp_plan` would raise, or ``None`` if it would not.
+
+    So that a fit can check its own output before overwriting a good map. Hit for
+    real: ``align --fit --every-beats 4`` wrote a map whose first segment needed a
+    1.77x stretch, the next ``--warp`` refused it, and by then the working map was
+    gone. The fit is what knows it produced something unusable.
+    """
+    try:
+        warp_plan(amap, timeline, bars=bars)
+    except ProjectError as problem:
+        return str(problem)
+    return None
+
+
 def warp_samples(samples, sample_rate: int, plan) -> np.ndarray:
     """Resample each segment so the recording lands on the grid.
 
@@ -346,9 +381,20 @@ def load_align(path) -> AlignMap:
     if not path.is_file():
         return AlignMap()
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    residual = data.get("residual_ms") or {}
+    if not isinstance(data, dict):
+        return AlignMap()
+    residual = data.get("residual_ms")
+    residual = residual if isinstance(residual, dict) else {}
+    anchors = []
+    for entry in data.get("anchors") or []:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            anchors.append(Anchor.from_dict(entry))
+        except (TypeError, ValueError, KeyError):
+            continue
     return AlignMap(
-        anchors=[Anchor.from_dict(a) for a in (data.get("anchors") or [])],
+        anchors=anchors,
         source=str(data.get("source", "")),
         detected_bpm=float(data.get("detected_bpm", 0.0) or 0.0),
         residual_max_ms=(None if residual.get("max") is None

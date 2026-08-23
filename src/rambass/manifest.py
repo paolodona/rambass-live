@@ -625,10 +625,20 @@ class Song:
         path = self.path("practice", "align.yaml")
         if not path.exists():
             return None
+        # Defensively: this file is documented as hand-correctable, so a
+        # half-finished edit is an ordinary state for it to be in, and a
+        # traceback out of an unrelated command is a poor way to find out.
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        if not isinstance(data, dict):
+            return None
         for entry in data.get("anchors") or []:
-            if int(entry.get("bar", 0)) == 1:
-                return float(entry["at"])
+            if not isinstance(entry, dict):
+                continue
+            try:
+                if int(entry.get("bar", 0)) == 1:
+                    return float(entry["at"])
+            except (TypeError, ValueError, KeyError):
+                continue
         return None
 
     def stem_path(self, stem: str) -> Path | None:

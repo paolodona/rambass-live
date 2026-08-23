@@ -5,20 +5,21 @@
 midi/drums-consolidated.mid:
   code: f20dc4fbc6788e1b
   inputs:
-    midi/drums-quantized.mid: 10bd353a54c8cedc
+    midi/drums-quantized.mid: 2d91d98942edb539
   manifest:
     bars: 282b639f9f9d4d15
     drums/map: c253d20d4554684f
     drums/subdivision: ae1949f77bd48bdc
     sections: 5af6519e9d267cbe
     tempo: 72321402045f8010
-  self: 1fc31a584012b08f
+  scalars: {}
+  self: b028520dc395f1e1
   step: drums consolidate
   version: 0.1.0
 midi/drums-quantized.mid:
   code: ff7cf58a0c4980a0
   inputs:
-    midi/drums-raw.mid: fb64ba51e92b9165
+    midi/drums-raw.mid: ca1ec95a23912b27
   manifest:
     bars: 282b639f9f9d4d15
     drums/cymbal_subdivision: ae1949f77bd48bdc
@@ -26,14 +27,14 @@ midi/drums-quantized.mid:
     drums/subdivision: ae1949f77bd48bdc
     sections: 5af6519e9d267cbe
     tempo: 72321402045f8010
-  self: 10bd353a54c8cedc
+  scalars: {}
+  self: 2d91d98942edb539
   step: drums clean
   version: 0.1.0
 midi/drums-raw.mid:
   code: 11a0ccd9ada92611
   inputs:
-    practice/align.yaml: fa25090fa8a04fbc
-    stems/drums.wav: b7bf038b78a90ff6
+    stems/drums.wav: 111446d6e131bd9a
     stems/parts/cymbals.wav: e9e727cb5a9da8c7
     stems/parts/hihat.wav: d9519f5a195844ce
     stems/parts/kick.wav: 577ff19a684c3bb0
@@ -46,19 +47,53 @@ midi/drums-raw.mid:
     drums/origin: dd8ca37b9cc8d613
     drums/subdivision: ae1949f77bd48bdc
     tempo: 72321402045f8010
-  self: fb64ba51e92b9165
+  scalars:
+    align/bar1: 7a7aaf305bb9f734
+  self: ca1ec95a23912b27
   step: drums transcribe
   version: 0.1.0
 midi/drums-restored.mid:
   code: 878ae06dd0ddff2f
   inputs:
-    midi/drums-consolidated.mid: 1fc31a584012b08f
+    midi/drums-consolidated.mid: b028520dc395f1e1
   manifest:
     bars: 282b639f9f9d4d15
     drums/additions: 8ee473396544c27e
     drums/map: c253d20d4554684f
     drums/removals: 6a3a80ad810fe5b6
     tempo: 72321402045f8010
-  self: 6b504fe90f53a0e3
+  scalars: {}
+  self: 060abd3d31b4074e
   step: drums restore
+  version: 0.1.0
+practice/align.yaml:
+  code: 00831912db8ce21b
+  inputs:
+    stems/drums.wav: 111446d6e131bd9a
+  manifest:
+    bars: 282b639f9f9d4d15
+    tempo: 72321402045f8010
+  scalars: {}
+  self: fc2c68f2e66af72a
+  step: align fit
+  version: 0.1.0
+practice/no_drums-aligned.wav:
+  code: 27c44738b8f398bb
+  inputs:
+    practice/align.yaml: fc2c68f2e66af72a
+    stems/no_drums.wav: a478dfe167d8c7d2
+  manifest:
+    bars: 282b639f9f9d4d15
+    tempo: 72321402045f8010
+  scalars: {}
+  self: 5e17cc5411d3a179
+  step: align warp
+  version: 0.1.0
+stems/drums.wav:
+  code: 8a5274681ced34f3
+  inputs:
+    source/09 Manlio.wav: 0202dd9d984d3b85
+  manifest: {}
+  self: 111446d6e131bd9a
+  step: stems
   version: 0.1.0
