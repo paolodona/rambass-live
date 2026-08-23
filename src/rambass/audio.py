@@ -7,6 +7,7 @@ without complaint. That also keeps ``librosa`` needed only for the actual DSP.
 
 from __future__ import annotations
 
+import os
 import shutil
 import struct
 import subprocess
@@ -34,23 +35,57 @@ def require_module(name: str, extra: str):
         ) from exc
 
 
-def ffmpeg_path() -> str:
-    path = shutil.which("ffmpeg")
+#: Point this at ffmpeg when it is installed but not on PATH — which is the
+#: normal state of a winget install on Windows, where the binary lands in
+#: ``%LOCALAPPDATA%\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_...\\bin`` and
+#: nothing links it. Either the directory or the binary itself.
+FFMPEG_ENV = "RAMBASS_FFMPEG"
+
+
+def _tool_path(name: str) -> str:
+    """*name* from :data:`FFMPEG_ENV` if it is set, else from PATH.
+
+    A set-but-wrong override is an error rather than a silent fall-through to
+    PATH: otherwise a typo in the variable produces "ffmpeg is not on PATH",
+    which sends the reader to check the one thing that was never the problem.
+    """
+    override = os.environ.get(FFMPEG_ENV, "").strip().strip('"')
+    if override:
+        base = Path(override)
+        candidates = [base] if base.is_file() else []
+        directory = base.parent if base.is_file() else base
+        for suffix in (".exe", ""):
+            candidates.append(directory / f"{name}{suffix}")
+        for candidate in candidates:
+            if candidate.is_file():
+                # A directory override names ffmpeg; ffprobe sits beside it.
+                found = candidate if candidate.stem == name else None
+                if found is None:
+                    continue
+                return str(found)
+        raise AudioError(
+            f"{FFMPEG_ENV} is set to {override!r} but there is no {name} there.\n"
+            f"  it should be the ffmpeg directory, or the ffmpeg binary itself"
+        )
+    path = shutil.which(name)
     if not path:
         raise AudioError(
-            "ffmpeg is not on PATH. Install it:\n"
+            f"{name} is not on PATH. Install it:\n"
             "  macOS:   brew install ffmpeg\n"
             "  Linux:   apt install ffmpeg\n"
-            "  Windows: winget install Gyan.FFmpeg"
+            "  Windows: winget install Gyan.FFmpeg\n"
+            f"Already installed? Set {FFMPEG_ENV} to the folder holding it "
+            f"(or to the binary) instead of editing PATH."
         )
     return path
 
 
+def ffmpeg_path() -> str:
+    return _tool_path("ffmpeg")
+
+
 def ffprobe_path() -> str:
-    path = shutil.which("ffprobe")
-    if not path:
-        raise AudioError("ffprobe is not on PATH (it ships with ffmpeg)")
-    return path
+    return _tool_path("ffprobe")
 
 
 def run(cmd: list[str], *, quiet: bool = True) -> subprocess.CompletedProcess:

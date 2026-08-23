@@ -183,6 +183,24 @@ class TranscriptionReport:
         return "\n".join(lines)
 
 
+def recount(report: TranscriptionReport, hits: list[Hit]) -> None:
+    """Set ``report.per_instrument`` from the hits, not from what a band produced.
+
+    The distinction is not pedantic. ``per_instrument`` starts life as the union
+    of the *detection bands*' own tallies, and several instruments in a finished
+    part were never a band: :func:`split_cymbal_runs` invents ``hihat_open``,
+    :func:`label_sidesticks` invents ``sidestick``. Refreshing only the keys that
+    already existed therefore reports a part that is not the one on disk —
+    measured on Manlio, the summary claimed 6 instruments and 827 hits for a part
+    holding 7 and 1122, because all 295 open hi-hats were invisible to it. Paolo
+    read that and reasonably concluded the cymbals had been missed.
+    """
+    report.per_instrument = {
+        instrument: sum(1 for hit in hits if hit.instrument == instrument)
+        for instrument in sorted({hit.instrument for hit in hits})
+    }
+
+
 def transcribe_drums(
     path,
     *,
@@ -468,9 +486,7 @@ def transcribe_parts(
                 hat=hat_samples, sample_rate=22050, offset=offset))
             sidesticks += renamed
             if renamed:
-                report.per_instrument["sidestick"] = renamed
-                report.per_instrument["snare"] = (
-                    report.per_instrument.get("snare", renamed) - renamed)
+                recount(report, part_hits)
         if wander:
             moved = dewander([h.time + offset for h in part_hits], wander)
             part_hits = [
@@ -532,10 +548,7 @@ def transcribe_parts(
             merged.playability_note = (
                 f"dropped {notes['playability']} hits that would have needed a "
                 f"third hand — see transcribe.enforce_playability")
-        if bled or notes["collisions"]["dropped"] or notes["playability"]:
-            for instrument in list(merged.per_instrument):
-                merged.per_instrument[instrument] = sum(
-                    1 for hit in hits if hit.instrument == instrument)
+        recount(merged, hits)
     from .analyze import grid_confidence
     merged.confidence = grid_confidence(
         [h.time for h in hits if h.instrument in ("kick", "snare")], timeline.bpm)
