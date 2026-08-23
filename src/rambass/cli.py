@@ -497,6 +497,73 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_drums_consolidate(args: argparse.Namespace) -> int:
+    """Stage 6: replace each section with the pattern its bars agree on.
+
+    Its own command and its own variant, deliberately. `consolidate` removes the
+    fills by design — a fill is the bar that does not repeat, so no threshold can
+    keep it and be doing its job — and on a song like Manlio that is the breaks,
+    the closing fill and every tom run, all to be put back by hand at Stage 7.
+    Folding that into `drums clean` would make a large musical change a side
+    effect of a command that is run constantly, and would overwrite the only copy
+    of the unconsolidated part. Keeping both on disk is what lets it be judged by
+    ear.
+    """
+    from .midiio import read_drum_midi, write_drum_midi
+    from .quantize import ConsolidateSettings, consolidate
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        source = song.drum_midi_path(args.input)
+        if not source.exists():
+            _say(f"{song.slug}: no {source.name} — transcribe and clean it first")
+            continue
+        spans = song.consolidation_spans()
+        if not spans:
+            _say(f"{song.slug}: no sections, so there is nothing to vote within. "
+                 f"Add them with `rambass section` — `rambass sections {song.slug}` "
+                 f"reviews them.")
+            continue
+
+        drum_map = load_drum_map(song.drum_map, project)
+        performance = read_drum_midi(source, drum_map)
+        performance.timeline = song.timeline()
+        _say(f"── {song.title}: {len(performance.hits)} hits from {source.name}, "
+             f"{len(spans)} sections")
+
+        performance, report = consolidate(performance, spans, settings=ConsolidateSettings(
+            subdivision=args.subdivision or song.drum_subdivision,
+            threshold=args.threshold,
+            unit_bars=args.unit_bars,
+        ))
+
+        _say(f"   {'section':<16}{'spans':>6}{'reps':>6}{'unit':>6}"
+             f"{'hits':>12}{'agree':>7}")
+        for entry in report["sections"]:
+            if "skipped" in entry:
+                _say(f"   {entry['name']:<16}{entry['spans']:>6}{'—':>6}{'—':>6}"
+                     f"{entry['hits_before']:>6} kept{'':>7}   {entry['skipped']}")
+                continue
+            _say(f"   {entry['name']:<16}{entry['spans']:>6}{entry['repeats']:>6}"
+                 f"{entry['unit_bars']:>5}b{entry['hits_before']:>6} ->"
+                 f"{entry['hits_after']:>4}{entry['coverage']:>7.0%}")
+        _say(f"   {'total':<16}{'':>6}{'':>6}{'':>6}"
+             f"{report['hits_before']:>6} ->{report['hits_after']:>4}"
+             f"   ({report['untouched']} outside every section, untouched)")
+
+        if args.dry_run:
+            _say("   dry run — nothing written.")
+            continue
+        target = song.drum_midi_path(args.output)
+        write_drum_midi(target, performance, drum_map)
+        _say(f"→  {target}")
+    _say()
+    _say("Stage 6 deliberately removes the fills: a fill is the bar that does not")
+    _say("repeat, so no threshold keeps it. Put them back by hand — Stage 7 of")
+    _say("docs/drums-rebuild.md. The input variant is untouched, so A/B the two.")
+    return 0
+
+
 def cmd_drums_remap(args: argparse.Namespace) -> int:
     from .midiio import read_drum_midi, write_drum_midi
 
@@ -1501,6 +1568,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--accent-snare", type=int, default=0, help="fixed snare velocity")
     p.add_argument("--downbeat-boost", type=int, default=0)
     p.set_defaults(func=cmd_drums_clean)
+
+    p = drums_sub.add_parser(
+        "consolidate",
+        help="Stage 6: replace each section with the pattern its bars agree on",
+    )
+    _add_song_args(p)
+    p.add_argument("--input", default="quantized",
+                   help="input variant (default: quantized — vote on the grid)")
+    p.add_argument("--output", default="consolidated", help="output variant")
+    p.add_argument("--threshold", type=float, default=0.55,
+                   help="keep a hit where this share of the repetitions played "
+                        "it (default 0.55; docs/drums-rebuild.md argues 0.5-0.6)")
+    p.add_argument("--subdivision", type=int, default=None,
+                   help="slot grid to vote on; default drums.subdivision")
+    p.add_argument("--unit-bars", type=int, default=0,
+                   help="repeat length in bars; 0 works out 1 or 2 per section")
+    p.add_argument("--dry-run", action="store_true",
+                   help="report what it would do and write nothing")
+    p.set_defaults(func=cmd_drums_consolidate)
 
     p = drums_sub.add_parser("remap", help="move a drum MIDI onto another kit's mapping")
     p.add_argument("song")

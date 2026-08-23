@@ -254,6 +254,20 @@ class ConsolidateSettings:
     #: below it is unintended variation from the drummer and transcription
     #: error, neither of which repeats reliably.
     threshold: float = 0.55
+    #: Fewest repetitions a section needs before its pattern is voted on at all.
+    #:
+    #: **Not 2.** At n=2 a hit must appear in *both* repetitions to clear a 0.55
+    #: threshold, because 1 of 2 is 50% — that is unanimity, not agreement, and
+    #: anything that varies in the slightest is deleted. Measured on Manlio,
+    #: where the breaks and fills are 2 bars each, it removed a third to a half
+    #: of every one of them: theme-intro-stop went from 15 hits to 6 at 40%
+    #: agreement. At 4 a hit in 3 of 4 survives and one in 1 of 4 does not,
+    #: which is a vote.
+    #:
+    #: Below the minimum a section is passed through untouched and reported, and
+    #: that is the right outcome: a 2-bar break is a one-off, and Stage 7 of
+    #: docs/drums-rebuild.md expects to place those by hand anyway.
+    min_repeats: int = 4
     #: 0 = work out whether the section repeats every bar or every two.
     unit_bars: int = 0
     #: Prefer the one-bar unit unless two bars explain the section this much
@@ -362,7 +376,7 @@ def consolidate(
         for unit in ((settings.unit_bars,) if settings.unit_bars else (1, 2)):
             reps = [rep for span in group
                     for rep in _repetitions(timeline, span, unit, settings.subdivision)]
-            if len(reps) < 2:
+            if len(reps) < max(settings.min_repeats, 2):
                 continue
             hits, coverage = _vote(reps, inside, settings)
             score = coverage - (settings.unit_margin if unit > 1 else 0.0)

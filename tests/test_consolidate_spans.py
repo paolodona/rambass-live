@@ -160,3 +160,49 @@ def test_pooled_sections_are_reported_together():
     chorus = [e for e in report["sections"] if e["name"] == "chorus"]
     assert len(chorus) == 1, "one entry for the pooled part, not two"
     assert chorus[0]["repeats"] == 8
+
+
+# ── how many repetitions is a vote ───────────────────────────────────────────
+
+
+def test_two_repetitions_is_not_enough_to_vote_on():
+    """With n=2 and a 0.55 threshold a hit must be in BOTH bars: 1 of 2 is 50%
+    and fails. That is unanimity, not agreement, and it deletes anything that
+    varies at all. Measured on Manlio's dry run it removed a third to a half of
+    every break and fill -- theme-intro-stop went 15 hits to 6 at 40%
+    agreement. Below the minimum, a section is passed through untouched, which
+    is what Stage 7 wants for a one-off anyway."""
+    hits = backbeat(1, 2)
+    hits.append(Hit("crash", at(1, 1.0), 100))       # in bar 1 only
+    out, report = consolidate(DrumPerformance(hits, TIMELINE), [("break", 1, 3)])
+    entry = report["sections"][0]
+    assert entry.get("skipped") == "too short to vote on"
+    assert len(out.hits) == len(hits), "passed through, not halved"
+    assert [h for h in out.hits if h.instrument == "crash"]
+
+
+def test_four_repetitions_is_enough():
+    hits = backbeat(1, 4)
+    hits.append(Hit("crash", at(1, 1.0), 100))
+    out, report = consolidate(DrumPerformance(hits, TIMELINE), [("verse", 1, 5)])
+    assert "skipped" not in report["sections"][0]
+    assert not [h for h in out.hits if h.instrument == "crash"]
+
+
+def test_the_minimum_is_adjustable():
+    hits = backbeat(1, 2)
+    hits.append(Hit("crash", at(1, 1.0), 100))
+    out, report = consolidate(DrumPerformance(hits, TIMELINE), [("break", 1, 3)],
+                              settings=ConsolidateSettings(min_repeats=2))
+    assert "skipped" not in report["sections"][0]
+
+
+def test_pooling_can_lift_a_short_section_over_the_minimum():
+    """Two 2-bar sections with the same name are four repetitions together --
+    which is the other reason identical names pool."""
+    hits = backbeat(1, 2) + backbeat(9, 2)
+    _, report = consolidate(DrumPerformance(hits, TIMELINE),
+                            [("break", 1, 3), ("break", 9, 11)])
+    entry = report["sections"][0]
+    assert "skipped" not in entry
+    assert entry["repeats"] == 4
