@@ -1275,6 +1275,54 @@ def parse_position(text: str) -> tuple[int, float]:
     return bar, beat
 
 
+def cmd_sections(args: argparse.Namespace) -> int:
+    """List the sections and review them. Suggests; never edits."""
+    from .midiio import read_drum_midi
+    from .reaper import reaper_position
+    from .sections import check_sections
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        ordered = sorted(song.sections, key=lambda s: s.position)
+        _say(f"── {song.title}: {len(ordered)} sections, {song.total_bars()} bars")
+        if not ordered:
+            _say("   none yet. `rambass section <song> <bar.beat> <name>` adds one.")
+            continue
+
+        timeline = song.timeline()
+        spans = song.consolidation_spans()
+        lengths = {(s.name, s.start_bar, s.start_beat): s for s in spans}
+        _say(f"   {'reaper':>8}{'bars':>7}   section")
+        for section in ordered:
+            span = lengths.get((section.name, section.bar, section.beat))
+            length = 0.0
+            if span is not None:
+                length = (timeline.bar_beat_to_seconds(span.end_bar, span.end_beat)
+                          - timeline.bar_beat_to_seconds(span.start_bar, span.start_beat)
+                          ) / timeline.bar_length_seconds(section.bar)
+            _say(f"   {reaper_position(song, section):>8}{length:>7.2f}   {section.name}")
+
+        performance = None
+        path = song.drum_midi_path(args.midi)
+        if path.exists():
+            performance = read_drum_midi(path, load_drum_map(song.drum_map, project))
+            performance.timeline = timeline
+        else:
+            _say(f"   (no {path.name} — the pattern checks need it)")
+
+        findings = check_sections(song, performance)
+        if not findings:
+            _say("   nothing to suggest.")
+            continue
+        _say()
+        for finding in findings:
+            _say(f"   {finding}")
+        _say()
+        _say("   suggestions only — nothing was changed. Sectioning is a musical")
+        _say("   judgement; this just says where the drums disagree with the list.")
+    return 0
+
+
 def cmd_section_add(args: argparse.Namespace) -> int:
     project = _project()
     song = load_song(project.find_song_dir(args.song))
@@ -1684,6 +1732,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the bar number as Reaper shows it, which counts the "
                         "count-in bars; this subtracts them")
     p.set_defaults(func=cmd_section_add)
+
+    p = sub.add_parser("sections", help="list a song's sections and review them")
+    _add_song_args(p)
+    p.add_argument("--midi", default="quantized",
+                   help="drum variant to review the sections against; the "
+                        "pattern checks are skipped if it is missing")
+    p.set_defaults(func=cmd_sections)
 
     return parser
 

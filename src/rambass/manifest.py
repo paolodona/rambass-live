@@ -601,32 +601,33 @@ class Song:
                 current = section
         return current
 
-    def consolidation_spans(self) -> list[tuple[str, int, int]]:
-        """``(name, first_bar, last_bar_exclusive)`` per section, whole bars only.
+    def consolidation_spans(self) -> list:
+        """The section list :func:`~rambass.quantize.consolidate` wants.
 
-        The shape :func:`~rambass.quantize.consolidate` wants. It votes over
-        whole-bar units, and a mid-bar boundary does **not** move the bar grid
-        the pattern repeats on — a one-bar drum figure still repeats every bar
-        whichever beat the section happened to start on. So the only question a
-        beat raises is which bars belong *wholly* to which section, and a
-        partial bar belongs to neither: Manlio's bar 20 is half break-1 and half
-        verse-2, and voting it into either mixes two patterns into one slot,
-        which is exactly the corruption Stage 6 exists to prevent.
+        Each section's **exact** extent, from its own bar and beat to the next
+        one's, as a :class:`~rambass.quantize.SectionSpan`. Not rounded to bar
+        lines: consolidate tiles the bar grid itself but judges each slot
+        against the repetitions it could have appeared in, so it consolidates
+        within the section wherever the section starts. Rounding here would
+        throw away the half-bars at either end *and* leave their hits
+        unconsolidated inside a consolidated section, which is the incoherence
+        Stage 6 exists to remove.
 
-        A section with no whole bar in it is left out rather than given a
-        fabricated span. consolidate then never claims those hits and passes
-        them through untouched, which is what Stage 7 wants for a one-off
-        anyway.
+        Sections sharing a name are pooled by consolidate, so this deliberately
+        preserves duplicate names rather than making them unique.
         """
+        from .quantize import SectionSpan
+
         ordered = sorted(self.sections, key=lambda s: s.position)
-        end_bar = self.total_bars() + 1
-        out: list[tuple[str, int, int]] = []
+        out: list = []
         for index, section in enumerate(ordered):
-            first = section.bar if section.beat == 1.0 else section.bar + 1
-            following = ordered[index + 1] if index + 1 < len(ordered) else None
-            last = following.bar if following is not None else end_bar
-            if last > first:
-                out.append((section.name, first, last))
+            if index + 1 < len(ordered):
+                following = ordered[index + 1]
+                end_bar, end_beat = following.bar, following.beat
+            else:
+                end_bar, end_beat = self.total_bars() + 1, 1.0
+            out.append(SectionSpan(section.name, section.bar, end_bar,
+                                   start_beat=section.beat, end_beat=end_beat))
         return out
 
     def progress(self) -> tuple[int, int]:

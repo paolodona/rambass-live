@@ -262,13 +262,36 @@ class ConsolidateSettings:
     unit_margin: float = 0.05
 
 
+@dataclass(frozen=True)
+class SectionSpan:
+    """A section's extent for :func:`consolidate`, bar lines optional.
+
+    ``end_bar`` is exclusive. The beats default to the downbeat, so a plain
+    ``(name, first_bar, last_bar)`` tuple still describes a section and every
+    existing caller keeps working — see :meth:`of`.
+    """
+
+    name: str
+    start_bar: int
+    end_bar: int
+    start_beat: float = 1.0
+    end_beat: float = 1.0
+
+    @classmethod
+    def of(cls, item: SectionSpan | tuple) -> SectionSpan:
+        if isinstance(item, SectionSpan):
+            return item
+        name, first, last = item
+        return cls(str(name), int(first), int(last))
+
+
 def consolidate(
     performance: DrumPerformance,
-    sections: list[tuple[str, int, int]],
+    sections,
     *,
     settings: ConsolidateSettings | None = None,
 ) -> tuple[DrumPerformance, dict]:
-    """Replace each section with the pattern its bars agree on.
+    """Replace each section with the pattern its repetitions agree on.
 
     This is Stage 6 of docs/drums-rebuild.md, and it is what decides whether the
     result sounds programmed or transcribed. Quantising fixes *when* a hit
@@ -281,7 +304,31 @@ def consolidate(
     where enough repetitions agree, at the modal slot and the median velocity of
     its group, and stamp that across the section.
 
-    *sections* is ``(name, first_bar, last_bar)`` with *last_bar* exclusive.
+    *sections* is a list of :class:`SectionSpan`, or of plain
+    ``(name, first_bar, last_bar)`` tuples for a section that begins and ends on
+    a bar line. **A span need not do either**, and Paolo's point about that is
+    the governing one: "it is important that consolidate consolidates within the
+    section, regardless of where it starts (with odd timing we will rarely fit
+    into a .1 start of section generally)".
+
+    The repetitions still tile the **bar** grid — a one-bar drum figure repeats
+    every bar whichever beat the section began on, because the bar line is where
+    beat 1 is and a section boundary does not move it — but the section's own
+    edges decide which slots exist in the first and last repetition. A slot is
+    therefore judged against the repetitions it *could* have appeared in rather
+    than against the total, so the half-bars at either end are voted on like
+    everything else instead of being rounded away and left unconsolidated inside
+    a consolidated section.
+
+    **Sections sharing a name are pooled**, which is Paolo's other convention:
+    "if the sections are named exactly the same, use exactly the same part, if
+    they are the same name pattern (eg: verse-2 vs verse-3) check the structure
+    but should not match exactly." Two sections both called ``chorus`` vote as
+    one and come out identical; ``verse-2`` and ``verse-3`` vote separately and
+    are free to differ, because they are structurally alike but the later one
+    adds hits for the dynamics of the song. Pooling is on the exact name and
+    never on a prefix family.
+
     Hits outside every section are passed through untouched — as are sections
     too short to vote on, which are reported rather than silently mangled.
 
@@ -293,26 +340,34 @@ def consolidate(
     timeline = performance.timeline
     report: dict = {"sections": [], "hits_before": len(performance.hits), "untouched": 0}
 
+    grouped: dict[str, list[SectionSpan]] = {}
+    for item in sections:
+        span = SectionSpan.of(item)
+        grouped.setdefault(span.name, []).append(span)
+
     claimed: list[tuple[float, float]] = []
     produced: list[Hit] = []
 
-    for name, first_bar, last_bar in sections:
-        start = timeline.bar_beat_to_seconds(first_bar, 1.0)
-        end = timeline.bar_beat_to_seconds(last_bar, 1.0)
-        inside = [h for h in performance.hits if start - 1e-9 <= h.time < end - 1e-9]
-        entry = {"name": name, "bars": (first_bar, last_bar), "hits_before": len(inside)}
+    for name, group in grouped.items():
+        extents = [(timeline.bar_beat_to_seconds(s.start_bar, s.start_beat),
+                    timeline.bar_beat_to_seconds(s.end_bar, s.end_beat))
+                   for s in group]
+        inside = [h for h in performance.hits
+                  if any(lo - 1e-9 <= h.time < hi - 1e-9 for lo, hi in extents)]
+        entry: dict = {"name": name, "spans": len(group),
+                       "bars": (group[0].start_bar, group[0].end_bar),
+                       "hits_before": len(inside)}
 
         best = None
         for unit in ((settings.unit_bars,) if settings.unit_bars else (1, 2)):
-            repeats = (last_bar - first_bar) // unit
-            if repeats < 2:
+            reps = [rep for span in group
+                    for rep in _repetitions(timeline, span, unit, settings.subdivision)]
+            if len(reps) < 2:
                 continue
-            hits, coverage = _vote_section(
-                timeline, inside, first_bar, unit, repeats, settings
-            )
+            hits, coverage = _vote(reps, inside, settings)
             score = coverage - (settings.unit_margin if unit > 1 else 0.0)
             if best is None or score > best[0]:
-                best = (score, unit, repeats, hits, coverage)
+                best = (score, unit, len(reps), hits, coverage)
 
         if best is None:
             entry["skipped"] = "too short to vote on"
@@ -320,10 +375,10 @@ def consolidate(
             report["untouched"] += len(inside)
             continue
 
-        _, unit, repeats, hits, coverage = best
-        claimed.append((start, timeline.bar_beat_to_seconds(first_bar + unit * repeats, 1.0)))
+        _, unit, reps_used, hits, coverage = best
+        claimed.extend(extents)
         produced.extend(hits)
-        entry.update(unit_bars=unit, repeats=repeats, hits_after=len(hits),
+        entry.update(unit_bars=unit, repeats=reps_used, hits_after=len(hits),
                      coverage=round(coverage, 3))
         report["sections"].append(entry)
 
@@ -335,37 +390,70 @@ def consolidate(
     return DrumPerformance(hits, timeline, performance.name), report
 
 
-def _vote_section(
+@dataclass(frozen=True)
+class _Repetition:
+    """One turn of the repeating unit: its grid, and which slots are in bounds."""
+
+    grid: tuple[float, ...]
+    eligible: tuple[bool, ...]
+    low: float
+    high: float
+
+
+def _repetitions(
     timeline: Timeline,
-    hits: list[Hit],
-    first_bar: int,
+    span: SectionSpan,
     unit: int,
-    repeats: int,
+    subdivision: int,
+) -> list[_Repetition]:
+    """Tile *span* with bar-aligned units of *unit* bars.
+
+    The tiling starts at the bar **containing** the section start, so the first
+    and last repetitions may lie partly outside it. Which of their slots are
+    really in the section is recorded per slot rather than trimmed away, because
+    those slots are part of the pattern and the section's hits live in them.
+    """
+    start = timeline.bar_beat_to_seconds(span.start_bar, span.start_beat)
+    end = timeline.bar_beat_to_seconds(span.end_bar, span.end_beat)
+    whole = span.end_bar - span.start_bar + (1 if span.end_beat > 1.0 else 0)
+    count = -(-whole // unit)                      # ceil: tile past the end
+    out: list[_Repetition] = []
+    for index in range(max(count, 0)):
+        first = span.start_bar + index * unit
+        grid = timeline.grid_seconds(subdivision, first, first + unit)
+        eligible = tuple(start - 1e-9 <= g < end - 1e-9 for g in grid)
+        if not any(eligible):
+            continue
+        out.append(_Repetition(
+            tuple(grid), eligible,
+            timeline.bar_beat_to_seconds(first, 1.0),
+            timeline.bar_beat_to_seconds(first + unit, 1.0),
+        ))
+    return out
+
+
+def _vote(
+    reps: list[_Repetition],
+    hits: list[Hit],
     settings: ConsolidateSettings,
 ) -> tuple[list[Hit], float]:
-    """Overlay the repetitions of one unit and keep what they agree on."""
-    grids = [
-        timeline.grid_seconds(
-            settings.subdivision, first_bar + r * unit, first_bar + (r + 1) * unit
-        )
-        for r in range(repeats)
-    ]
-    slots = min(len(g) for g in grids)
-    # Each repetition owns the span from its own first grid line to the next
-    # repetition's — stated rather than derived, because an off-by-one here
-    # silently votes a hit into the neighbouring bar.
-    bounds = [
-        timeline.bar_beat_to_seconds(first_bar + r * unit, 1.0)
-        for r in range(repeats + 1)
-    ]
+    """Overlay the repetitions and keep the slots enough of them agree on."""
+    slots = min(len(rep.grid) for rep in reps)
+    # How many repetitions each slot could have appeared in. A slot at the edge
+    # of a mid-bar section exists in fewer of them, and holding it to the same
+    # share as a slot in the middle would delete it for being where it is.
+    chances = [sum(1 for rep in reps if rep.eligible[i]) for i in range(slots)]
+
     votes: dict[tuple[str, int], list[Hit]] = {}
     placed = 0
-    for r, grid in enumerate(grids):
-        lo, hi = bounds[r], bounds[r + 1]
+    for rep in reps:
+        allowed = [i for i in range(slots) if rep.eligible[i]]
+        if not allowed:
+            continue
         for hit in hits:
-            if not (lo - 1e-9 <= hit.time < hi - 1e-9):
+            if not (rep.low - 1e-9 <= hit.time < rep.high - 1e-9):
                 continue
-            slot = min(range(slots), key=lambda i: abs(grid[i] - hit.time))
+            slot = min(allowed, key=lambda i: abs(rep.grid[i] - hit.time))
             votes.setdefault((hit.instrument, slot), []).append(hit)
             placed += 1
 
@@ -374,13 +462,13 @@ def _vote_section(
     for (instrument, slot), group in sorted(votes.items()):
         # One repetition can hit the same slot twice (a flam the de-flam missed);
         # agreement is about how many *repetitions* played it, not how many hits.
-        share = len(group) / repeats
-        if share < settings.threshold:
+        if not chances[slot] or len(group) / chances[slot] < settings.threshold:
             continue
         agreed += len(group)
         velocity = sorted(h.velocity for h in group)[len(group) // 2]
-        for grid in grids:
-            out.append(Hit(instrument, grid[slot], velocity))
+        for rep in reps:
+            if rep.eligible[slot]:
+                out.append(Hit(instrument, rep.grid[slot], velocity))
     coverage = agreed / placed if placed else 0.0
     return out, coverage
 

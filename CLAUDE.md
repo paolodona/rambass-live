@@ -237,6 +237,35 @@ denominators measure the show; and a practice track is allowed to be imperfect
 where a base is not. The gig session and the rebuilt drums are the deliverable
 that has to be right.
 
+**Section names carry meaning, and the rule is Paolo's.** *"If the sections are
+named exactly the same, use exactly the same part. If they are the same name
+pattern (eg: verse-2 vs verse-3) check the structure but should not match
+exactly."* So:
+
+* **Identical names are one part.** `consolidate` pools every section sharing a
+  name into a single vote and stamps the result across all of them, so they come
+  out bit-identical. Give two sections the same name only when you mean that.
+* **A name *family* is not a pooling key.** `verse-1`, `verse-2` and `verse-3`
+  vote separately and are free to differ, because they are structurally alike
+  but the later ones add hits and swap hits for the dynamics of the song.
+  Measured on Manlio: all three verses put the snare in at their own bar 9, but
+  verse-2 and verse-3 also thin the closed hats from ~11 a bar to 6 where
+  verse-1 keeps them. Same shape, different part. Never pool on a prefix.
+* A section that steps up inside itself gets its own name (`verse-2-lift`),
+  because a pattern present in 4 of 12 bars is 33% against a 0.55 threshold and
+  Stage 6 would delete it and stamp the quiet pattern over the lift.
+
+**Sections need not start on a bar line, and `consolidate` handles that itself.**
+Paolo: *"with odd timing we will rarely fit into a .1 start of section
+generally"*. Manlio's verse-2 runs from bar 20 beat 3 to bar 32 beat 3. The
+repetitions still tile the **bar** grid — a one-bar figure repeats every bar
+whichever beat the section began on, because a section boundary does not move
+where beat 1 is — but each slot is judged against the repetitions it *could*
+have appeared in, so the half-bars at either end are voted on like everything
+else. Do not "simplify" this by rounding spans to whole bars: that throws away
+evidence *and* leaves those half-bars unconsolidated inside a consolidated
+section, which is the exact incoherence Stage 6 exists to remove.
+
 `arrange.py` deliberately **does not generate** a running order. Sequencing is a
 musical judgement; what a tool can usefully do is catch what a human misses in
 their own list. Don't add an auto-sequencer — add checks.
