@@ -53,7 +53,11 @@ the median (37.2 before), and the warped backbeats land at p90 34.7 ms against
 window. Do not "simplify" it back to interpolation, and do not reach for a phase
 vocoder (smears the transients that are the whole signal here) or ffmpeg
 `atempo` (one fixed rate per instance, so 308 invocations, and it drags the
-render out of the pure-numpy tier). See `docs/practice-tracks.md`.
+render out of the pure-numpy tier). Checked on a second song of the album, as
+the rule below requires: Tutti in Fila stretches three times as hard (rates
+0.808-1.213, 7.02 semitones of swing if resampled) and lands 0.3 cents / p90
+2.3 cents off the source with backbeats at p90 23.0 ms against 19.1.
+See `docs/practice-tracks.md`.
 
 **Bar numbers spoken out loud are Reaper ruler readings; bar numbers in
 `song.yaml` are musical.** Paolo works from Reaper's ruler, where bar 1 is the

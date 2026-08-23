@@ -1,19 +1,568 @@
 # Where this song's musical grid sits inside the original recording.
 #
-# The second deliberate exception to "positions are in bars, never seconds"
-# (CLAUDE.md, docs/practice-tracks.md): these seconds describe an immutable
-# audio file, not a position in the musical grid. Only the SOURCE side is
-# stored — the target side is computed from Timeline at build time, so a BPM
-# edit re-warps everything correctly.
+# The second deliberate exception to "positions are in bars, never
+# seconds" (CLAUDE.md, docs/practice-tracks.md): these seconds describe
+# an immutable audio file, not a position in the musical grid. Only the
+# SOURCE side is stored -- the target side is computed from Timeline at
+# build time, so a BPM edit re-warps everything correctly.
 source: "03 Tutti In Fila.wav"
 detected_bpm: 116.03
-mode: offset             # offset | linear | piecewise
+mode: piecewise             # none | offset | piecewise
 anchors:                 # bar -> seconds into the ORIGINAL file
   - {bar: 1, at: 0.352}
-# Honest limits. 'offset' is not good enough for deliverable 1: measured
-# against the drum stem, the band's pulse drifts -74..310 ms across the
-# song, so a single offset leaves a residual far over the 50 ms that
-# practice-tracks.md sets as the limit. Piecewise anchors from detected beat
-# times are what this file needs next; the measurement exists already in
-# analyze.pulse_wander.
-residual_ms: {max: null, mean: null, note: "offset only — piecewise not yet fitted"}
+  - {bar: 9, beat: 2, at: 17.531}
+  - {bar: 9, beat: 3, at: 17.972}
+  - {bar: 9, beat: 4, at: 18.460}
+  - {bar: 10, at: 18.971}
+  - {bar: 10, beat: 2, at: 19.482}
+  - {bar: 10, beat: 3, at: 20.016}
+  - {bar: 10, beat: 4, at: 20.503}
+  - {bar: 11, at: 21.014}
+  - {bar: 11, beat: 2, at: 21.525}
+  - {bar: 11, beat: 3, at: 22.036}
+  - {bar: 11, beat: 4, at: 22.547}
+  - {bar: 12, at: 23.081}
+  - {bar: 12, beat: 2, at: 23.591}
+  - {bar: 12, beat: 3, at: 24.102}
+  - {bar: 12, beat: 4, at: 24.613}
+  - {bar: 13, at: 25.147}
+  - {bar: 13, beat: 2, at: 25.658}
+  - {bar: 13, beat: 3, at: 26.192}
+  - {bar: 13, beat: 4, at: 26.703}
+  - {bar: 14, at: 27.237}
+  - {bar: 14, beat: 2, at: 27.748}
+  - {bar: 14, beat: 3, at: 28.282}
+  - {bar: 14, beat: 4, at: 28.770}
+  - {bar: 15, at: 29.304}
+  - {bar: 15, beat: 2, at: 29.838}
+  - {bar: 15, beat: 3, at: 30.348}
+  - {bar: 15, beat: 4, at: 30.883}
+  - {bar: 16, at: 31.393}
+  - {bar: 16, beat: 2, at: 31.927}
+  - {bar: 16, beat: 3, at: 32.461}
+  - {bar: 16, beat: 4, at: 32.972}
+  - {bar: 17, at: 33.483}
+  - {bar: 17, beat: 2, at: 33.994}
+  - {bar: 17, beat: 3, at: 34.505}
+  - {bar: 17, beat: 4, at: 34.992}
+  - {bar: 18, at: 35.503}
+  - {bar: 18, beat: 2, at: 35.991}
+  - {bar: 18, beat: 3, at: 36.502}
+  - {bar: 18, beat: 4, at: 37.036}
+  - {bar: 19, at: 37.547}
+  - {bar: 19, beat: 2, at: 38.034}
+  - {bar: 19, beat: 3, at: 38.545}
+  - {bar: 19, beat: 4, at: 39.056}
+  - {bar: 20, at: 39.590}
+  - {bar: 20, beat: 2, at: 40.078}
+  - {bar: 20, beat: 3, at: 40.588}
+  - {bar: 20, beat: 4, at: 41.099}
+  - {bar: 21, at: 41.657}
+  - {bar: 21, beat: 2, at: 42.167}
+  - {bar: 21, beat: 3, at: 42.701}
+  - {bar: 21, beat: 4, at: 43.189}
+  - {bar: 22, at: 43.746}
+  - {bar: 22, beat: 2, at: 44.234}
+  - {bar: 22, beat: 3, at: 44.768}
+  - {bar: 22, beat: 4, at: 45.279}
+  - {bar: 23, at: 45.813}
+  - {bar: 23, beat: 2, at: 46.324}
+  - {bar: 23, beat: 3, at: 46.858}
+  - {bar: 23, beat: 4, at: 47.369}
+  - {bar: 24, at: 47.880}
+  - {bar: 24, beat: 2, at: 48.414}
+  - {bar: 24, beat: 3, at: 48.948}
+  - {bar: 24, beat: 4, at: 49.459}
+  - {bar: 25, at: 49.969}
+  - {bar: 25, beat: 2, at: 50.527}
+  - {bar: 25, beat: 3, at: 51.061}
+  - {bar: 25, beat: 4, at: 51.572}
+  - {bar: 26, at: 52.082}
+  - {bar: 26, beat: 2, at: 52.616}
+  - {bar: 26, beat: 3, at: 53.127}
+  - {bar: 26, beat: 4, at: 53.661}
+  - {bar: 27, at: 54.172}
+  - {bar: 27, beat: 2, at: 54.683}
+  - {bar: 27, beat: 3, at: 55.217}
+  - {bar: 27, beat: 4, at: 55.728}
+  - {bar: 28, at: 56.262}
+  - {bar: 28, beat: 2, at: 56.773}
+  - {bar: 28, beat: 3, at: 57.307}
+  - {bar: 28, beat: 4, at: 57.818}
+  - {bar: 29, at: 58.375}
+  - {bar: 29, beat: 2, at: 58.886}
+  - {bar: 29, beat: 3, at: 59.373}
+  - {bar: 29, beat: 4, at: 59.884}
+  - {bar: 30, at: 60.418}
+  - {bar: 30, beat: 2, at: 60.906}
+  - {bar: 30, beat: 3, at: 61.440}
+  - {bar: 30, beat: 4, at: 61.951}
+  - {bar: 31, at: 62.462}
+  - {bar: 31, beat: 2, at: 62.973}
+  - {bar: 31, beat: 3, at: 63.507}
+  - {bar: 31, beat: 4, at: 64.017}
+  - {bar: 32, at: 64.528}
+  - {bar: 32, beat: 2, at: 65.039}
+  - {bar: 32, beat: 3, at: 65.573}
+  - {bar: 32, beat: 4, at: 66.084}
+  - {bar: 33, at: 66.618}
+  - {bar: 33, beat: 2, at: 67.106}
+  - {bar: 33, beat: 3, at: 67.593}
+  - {bar: 33, beat: 4, at: 68.104}
+  - {bar: 34, at: 68.615}
+  - {bar: 34, beat: 2, at: 69.126}
+  - {bar: 34, beat: 3, at: 69.637}
+  - {bar: 34, beat: 4, at: 70.147}
+  - {bar: 35, at: 70.682}
+  - {bar: 35, beat: 2, at: 71.192}
+  - {bar: 35, beat: 3, at: 71.726}
+  - {bar: 35, beat: 4, at: 72.237}
+  - {bar: 36, at: 72.771}
+  - {bar: 36, beat: 2, at: 73.282}
+  - {bar: 36, beat: 3, at: 73.816}
+  - {bar: 36, beat: 4, at: 74.327}
+  - {bar: 37, at: 74.861}
+  - {bar: 37, beat: 2, at: 75.372}
+  - {bar: 37, beat: 3, at: 75.883}
+  - {bar: 37, beat: 4, at: 76.417}
+  - {bar: 38, at: 76.951}
+  - {bar: 38, beat: 2, at: 77.462}
+  - {bar: 38, beat: 3, at: 77.973}
+  - {bar: 38, beat: 4, at: 78.483}
+  - {bar: 39, at: 78.994}
+  - {bar: 39, beat: 2, at: 79.505}
+  - {bar: 39, beat: 3, at: 80.039}
+  - {bar: 39, beat: 4, at: 80.550}
+  - {bar: 40, at: 81.061}
+  - {bar: 40, beat: 2, at: 81.572}
+  - {bar: 40, beat: 3, at: 82.106}
+  - {bar: 40, beat: 4, at: 82.617}
+  - {bar: 41, at: 83.127}
+  - {bar: 41, beat: 2, at: 83.661}
+  - {bar: 41, beat: 3, at: 84.149}
+  - {bar: 41, beat: 4, at: 84.637}
+  - {bar: 42, at: 85.171}
+  - {bar: 42, beat: 2, at: 85.658}
+  - {bar: 42, beat: 3, at: 86.169}
+  - {bar: 42, beat: 4, at: 86.680}
+  - {bar: 43, at: 87.214}
+  - {bar: 43, beat: 2, at: 87.702}
+  - {bar: 43, beat: 3, at: 88.213}
+  - {bar: 43, beat: 4, at: 88.723}
+  - {bar: 44, at: 89.258}
+  - {bar: 44, beat: 2, at: 89.768}
+  - {bar: 44, beat: 3, at: 90.302}
+  - {bar: 44, beat: 4, at: 90.813}
+  - {bar: 45, at: 91.371}
+  - {bar: 45, beat: 2, at: 91.858}
+  - {bar: 45, beat: 3, at: 92.369}
+  - {bar: 45, beat: 4, at: 92.880}
+  - {bar: 46, at: 93.437}
+  - {bar: 46, beat: 2, at: 93.925}
+  - {bar: 46, beat: 3, at: 94.459}
+  - {bar: 46, beat: 4, at: 94.970}
+  - {bar: 47, at: 95.504}
+  - {bar: 47, beat: 2, at: 96.015}
+  - {bar: 47, beat: 3, at: 96.525}
+  - {bar: 47, beat: 4, at: 97.036}
+  - {bar: 48, at: 97.547}
+  - {bar: 48, beat: 2, at: 98.058}
+  - {bar: 48, beat: 3, at: 98.569}
+  - {bar: 48, beat: 4, at: 99.103}
+  - {bar: 49, at: 99.637}
+  - {bar: 49, beat: 2, at: 100.171}
+  - {bar: 49, beat: 3, at: 100.705}
+  - {bar: 49, beat: 4, at: 101.216}
+  - {bar: 50, at: 101.750}
+  - {bar: 50, beat: 2, at: 102.261}
+  - {bar: 50, beat: 3, at: 102.795}
+  - {bar: 50, beat: 4, at: 103.306}
+  - {bar: 51, at: 103.816}
+  - {bar: 51, beat: 2, at: 104.327}
+  - {bar: 51, beat: 3, at: 104.861}
+  - {bar: 51, beat: 4, at: 105.372}
+  - {bar: 52, at: 105.906}
+  - {bar: 52, beat: 2, at: 106.394}
+  - {bar: 52, beat: 3, at: 106.951}
+  - {bar: 52, beat: 4, at: 107.439}
+  - {bar: 53, at: 107.973}
+  - {bar: 53, beat: 2, at: 108.484}
+  - {bar: 53, beat: 3, at: 108.994}
+  - {bar: 53, beat: 4, at: 109.505}
+  - {bar: 54, at: 110.016}
+  - {bar: 54, beat: 2, at: 110.527}
+  - {bar: 54, beat: 3, at: 111.061}
+  - {bar: 54, beat: 4, at: 111.572}
+  - {bar: 55, at: 112.083}
+  - {bar: 55, beat: 2, at: 112.570}
+  - {bar: 55, beat: 3, at: 113.128}
+  - {bar: 55, beat: 4, at: 113.615}
+  - {bar: 56, at: 114.149}
+  - {bar: 56, beat: 2, at: 114.683}
+  - {bar: 56, beat: 3, at: 115.217}
+  - {bar: 56, beat: 4, at: 115.728}
+  - {bar: 57, at: 116.262}
+  - {bar: 57, beat: 2, at: 116.750}
+  - {bar: 57, beat: 3, at: 117.261}
+  - {bar: 57, beat: 4, at: 117.772}
+  - {bar: 58, at: 118.282}
+  - {bar: 58, beat: 2, at: 118.817}
+  - {bar: 58, beat: 3, at: 119.327}
+  - {bar: 58, beat: 4, at: 119.838}
+  - {bar: 59, at: 120.372}
+  - {bar: 59, beat: 2, at: 120.860}
+  - {bar: 59, beat: 3, at: 121.394}
+  - {bar: 59, beat: 4, at: 121.928}
+  - {bar: 60, at: 122.439}
+  - {bar: 60, beat: 2, at: 122.973}
+  - {bar: 60, beat: 3, at: 123.507}
+  - {bar: 60, beat: 4, at: 123.995}
+  - {bar: 61, at: 124.529}
+  - {bar: 61, beat: 2, at: 125.039}
+  - {bar: 61, beat: 3, at: 125.550}
+  - {bar: 61, beat: 4, at: 126.061}
+  - {bar: 62, at: 126.595}
+  - {bar: 62, beat: 2, at: 127.106}
+  - {bar: 62, beat: 3, at: 127.617}
+  - {bar: 62, beat: 4, at: 128.104}
+  - {bar: 63, at: 128.639}
+  - {bar: 63, beat: 2, at: 129.126}
+  - {bar: 63, beat: 3, at: 129.660}
+  - {bar: 63, beat: 4, at: 130.148}
+  - {bar: 64, at: 130.659}
+  - {bar: 64, beat: 2, at: 131.170}
+  - {bar: 64, beat: 3, at: 131.704}
+  - {bar: 64, beat: 4, at: 132.214}
+  - {bar: 65, at: 132.748}
+  - {bar: 65, beat: 2, at: 133.283}
+  - {bar: 65, beat: 3, at: 133.793}
+  - {bar: 65, beat: 4, at: 134.327}
+  - {bar: 66, at: 134.861}
+  - {bar: 66, beat: 2, at: 135.349}
+  - {bar: 66, beat: 3, at: 135.883}
+  - {bar: 66, beat: 4, at: 136.394}
+  - {bar: 67, at: 136.905}
+  - {bar: 67, beat: 2, at: 137.392}
+  - {bar: 67, beat: 3, at: 137.927}
+  - {bar: 67, beat: 4, at: 138.461}
+  - {bar: 68, at: 138.971}
+  - {bar: 68, beat: 2, at: 139.459}
+  - {bar: 68, beat: 3, at: 139.970}
+  - {bar: 68, beat: 4, at: 140.481}
+  - {bar: 69, at: 140.968}
+  - {bar: 69, beat: 2, at: 141.456}
+  - {bar: 69, beat: 3, at: 142.013}
+  - {bar: 69, beat: 4, at: 142.571}
+  - {bar: 70, at: 143.105}
+  - {bar: 70, beat: 2, at: 143.639}
+  - {bar: 70, beat: 3, at: 144.173}
+  - {bar: 70, beat: 4, at: 144.707}
+  - {bar: 71, at: 145.218}
+  - {bar: 71, beat: 2, at: 145.728}
+  - {bar: 71, beat: 3, at: 146.239}
+  - {bar: 71, beat: 4, at: 146.773}
+  - {bar: 72, at: 147.307}
+  - {bar: 72, beat: 2, at: 147.795}
+  - {bar: 72, beat: 3, at: 148.306}
+  - {bar: 72, beat: 4, at: 148.817}
+  - {bar: 73, at: 149.328}
+  - {bar: 73, beat: 2, at: 149.862}
+  - {bar: 73, beat: 3, at: 150.396}
+  - {bar: 73, beat: 4, at: 150.906}
+  - {bar: 74, at: 151.417}
+  - {bar: 74, beat: 2, at: 151.905}
+  - {bar: 74, beat: 3, at: 152.439}
+  - {bar: 74, beat: 4, at: 152.950}
+  - {bar: 75, at: 153.484}
+  - {bar: 75, beat: 2, at: 153.995}
+  - {bar: 75, beat: 3, at: 154.529}
+  - {bar: 75, beat: 4, at: 155.040}
+  - {bar: 76, at: 155.550}
+  - {bar: 76, beat: 2, at: 156.061}
+  - {bar: 76, beat: 3, at: 156.595}
+  - {bar: 76, beat: 4, at: 157.106}
+  - {bar: 77, at: 157.617}
+  - {bar: 77, beat: 2, at: 158.128}
+  - {bar: 77, beat: 3, at: 158.662}
+  - {bar: 77, beat: 4, at: 159.150}
+  - {bar: 78, at: 159.684}
+  - {bar: 78, beat: 2, at: 160.171}
+  - {bar: 78, beat: 3, at: 160.705}
+  - {bar: 78, beat: 4, at: 161.216}
+  - {bar: 79, at: 161.750}
+  - {bar: 79, beat: 2, at: 162.261}
+  - {bar: 79, beat: 3, at: 162.772}
+  - {bar: 79, beat: 4, at: 163.260}
+  - {bar: 80, at: 163.794}
+  - {bar: 80, beat: 2, at: 164.328}
+  - {bar: 80, beat: 3, at: 164.838}
+  - {bar: 80, beat: 4, at: 165.373}
+  - {bar: 81, at: 165.883}
+  - {bar: 81, beat: 2, at: 166.394}
+  - {bar: 81, beat: 3, at: 166.928}
+  - {bar: 81, beat: 4, at: 167.439}
+  - {bar: 82, at: 167.973}
+  - {bar: 82, beat: 2, at: 168.461}
+  - {bar: 82, beat: 3, at: 168.995}
+  - {bar: 82, beat: 4, at: 169.506}
+  - {bar: 83, at: 170.040}
+  - {bar: 83, beat: 2, at: 170.527}
+  - {bar: 83, beat: 3, at: 171.061}
+  - {bar: 83, beat: 4, at: 171.572}
+  - {bar: 84, at: 172.106}
+  - {bar: 84, beat: 2, at: 172.617}
+  - {bar: 84, beat: 3, at: 173.151}
+  - {bar: 84, beat: 4, at: 173.639}
+  - {bar: 85, at: 174.150}
+  - {bar: 85, beat: 2, at: 174.660}
+  - {bar: 85, beat: 3, at: 175.195}
+  - {bar: 85, beat: 4, at: 175.682}
+  - {bar: 86, at: 176.216}
+  - {bar: 86, beat: 2, at: 176.727}
+  - {bar: 86, beat: 3, at: 177.261}
+  - {bar: 86, beat: 4, at: 177.749}
+  - {bar: 87, at: 178.260}
+  - {bar: 87, beat: 2, at: 178.770}
+  - {bar: 87, beat: 3, at: 179.328}
+  - {bar: 87, beat: 4, at: 179.839}
+  - {bar: 88, at: 180.349}
+  - {bar: 88, beat: 2, at: 180.860}
+  - {bar: 88, beat: 3, at: 181.394}
+  - {bar: 88, beat: 4, at: 181.905}
+  - {bar: 89, at: 182.416}
+  - {bar: 89, beat: 2, at: 182.904}
+  - {bar: 89, beat: 3, at: 183.438}
+  - {bar: 89, beat: 4, at: 183.925}
+  - {bar: 90, at: 184.483}
+  - {bar: 90, beat: 2, at: 184.970}
+  - {bar: 90, beat: 3, at: 185.504}
+  - {bar: 90, beat: 4, at: 185.992}
+  - {bar: 91, at: 186.410}
+  - {bar: 91, beat: 2, at: 186.921}
+  - {bar: 91, beat: 3, at: 187.431}
+  - {bar: 91, beat: 4, at: 187.942}
+  - {bar: 92, at: 188.476}
+  - {bar: 92, beat: 2, at: 189.010}
+  - {bar: 92, beat: 3, at: 189.544}
+  - {bar: 92, beat: 4, at: 190.032}
+  - {bar: 93, at: 190.543}
+  - {bar: 93, beat: 2, at: 191.100}
+  - {bar: 93, beat: 3, at: 191.611}
+  - {bar: 93, beat: 4, at: 192.145}
+  - {bar: 94, at: 192.656}
+  - {bar: 94, beat: 2, at: 193.190}
+  - {bar: 94, beat: 3, at: 193.701}
+  - {bar: 94, beat: 4, at: 194.235}
+  - {bar: 95, at: 194.746}
+  - {bar: 95, beat: 2, at: 195.257}
+  - {bar: 95, beat: 3, at: 195.744}
+  - {bar: 95, beat: 4, at: 196.255}
+  - {bar: 96, at: 196.789}
+  - {bar: 96, beat: 2, at: 197.323}
+  - {bar: 96, beat: 3, at: 197.834}
+  - {bar: 96, beat: 4, at: 198.368}
+  - {bar: 97, at: 198.902}
+  - {bar: 97, beat: 2, at: 199.529}
+  - {bar: 97, beat: 3, at: 200.063}
+  - {bar: 97, beat: 4, at: 200.574}
+  - {bar: 98, at: 201.085}
+  - {bar: 98, beat: 2, at: 201.619}
+  - {bar: 98, beat: 3, at: 202.130}
+  - {bar: 98, beat: 4, at: 202.617}
+  - {bar: 99, at: 203.128}
+  - {bar: 99, beat: 2, at: 203.639}
+  - {bar: 99, beat: 3, at: 204.150}
+  - {bar: 99, beat: 4, at: 204.661}
+  - {bar: 100, at: 205.195}
+  - {bar: 100, beat: 2, at: 205.706}
+  - {bar: 100, beat: 3, at: 206.216}
+  - {bar: 100, beat: 4, at: 206.704}
+  - {bar: 101, at: 207.215}
+  - {bar: 101, beat: 2, at: 207.749}
+  - {bar: 101, beat: 3, at: 208.260}
+  - {bar: 101, beat: 4, at: 208.794}
+  - {bar: 102, at: 209.281}
+  - {bar: 102, beat: 2, at: 209.816}
+  - {bar: 102, beat: 3, at: 210.326}
+  - {bar: 102, beat: 4, at: 210.860}
+  - {bar: 103, at: 211.371}
+  - {bar: 103, beat: 2, at: 211.882}
+  - {bar: 103, beat: 3, at: 212.393}
+  - {bar: 103, beat: 4, at: 212.881}
+  - {bar: 104, at: 213.391}
+  - {bar: 104, beat: 2, at: 213.902}
+  - {bar: 104, beat: 3, at: 214.413}
+  - {bar: 104, beat: 4, at: 214.924}
+  - {bar: 105, at: 215.458}
+  - {bar: 105, beat: 2, at: 215.969}
+  - {bar: 105, beat: 3, at: 216.503}
+  - {bar: 105, beat: 4, at: 217.037}
+  - {bar: 106, at: 217.548}
+  - {bar: 106, beat: 2, at: 218.082}
+  - {bar: 106, beat: 3, at: 218.616}
+  - {bar: 106, beat: 4, at: 219.150}
+  - {bar: 107, at: 219.661}
+  - {bar: 107, beat: 2, at: 220.195}
+  - {bar: 107, beat: 3, at: 220.729}
+  - {bar: 107, beat: 4, at: 221.240}
+  - {bar: 108, at: 221.751}
+  - {bar: 108, beat: 2, at: 222.261}
+  - {bar: 108, beat: 3, at: 222.795}
+  - {bar: 108, beat: 4, at: 223.306}
+  - {bar: 109, at: 223.840}
+  - {bar: 109, beat: 2, at: 224.328}
+  - {bar: 109, beat: 3, at: 224.862}
+  - {bar: 109, beat: 4, at: 225.350}
+  - {bar: 110, at: 225.884}
+  - {bar: 110, beat: 2, at: 226.418}
+  - {bar: 110, beat: 3, at: 226.929}
+  - {bar: 110, beat: 4, at: 227.439}
+  - {bar: 111, at: 227.950}
+  - {bar: 111, beat: 2, at: 228.438}
+  - {bar: 111, beat: 3, at: 228.972}
+  - {bar: 111, beat: 4, at: 229.483}
+  - {bar: 112, at: 229.994}
+  - {bar: 112, beat: 2, at: 230.504}
+  - {bar: 112, beat: 3, at: 231.039}
+  - {bar: 112, beat: 4, at: 231.549}
+  - {bar: 113, at: 232.083}
+  - {bar: 113, beat: 2, at: 232.641}
+  - {bar: 113, beat: 3, at: 233.152}
+  - {bar: 113, beat: 4, at: 233.662}
+  - {bar: 114, at: 234.173}
+  - {bar: 114, beat: 2, at: 234.684}
+  - {bar: 114, beat: 3, at: 235.195}
+  - {bar: 114, beat: 4, at: 235.706}
+  - {bar: 115, at: 236.217}
+  - {bar: 115, beat: 2, at: 236.727}
+  - {bar: 115, beat: 3, at: 237.238}
+  - {bar: 115, beat: 4, at: 237.749}
+  - {bar: 116, at: 238.260}
+  - {bar: 116, beat: 2, at: 238.771}
+  - {bar: 116, beat: 3, at: 239.282}
+  - {bar: 116, beat: 4, at: 239.816}
+  - {bar: 117, at: 240.350}
+  - {bar: 117, beat: 2, at: 240.861}
+  - {bar: 117, beat: 3, at: 241.371}
+  - {bar: 117, beat: 4, at: 241.882}
+  - {bar: 118, at: 242.393}
+  - {bar: 118, beat: 2, at: 242.927}
+  - {bar: 118, beat: 3, at: 243.461}
+  - {bar: 118, beat: 4, at: 243.972}
+  - {bar: 119, at: 244.460}
+  - {bar: 119, beat: 2, at: 244.994}
+  - {bar: 119, beat: 3, at: 245.528}
+  - {bar: 119, beat: 4, at: 246.015}
+  - {bar: 120, at: 246.526}
+  - {bar: 120, beat: 2, at: 247.060}
+  - {bar: 120, beat: 3, at: 247.571}
+  - {bar: 120, beat: 4, at: 248.082}
+  - {bar: 121, at: 248.616}
+  - {bar: 121, beat: 2, at: 249.127}
+  - {bar: 121, beat: 3, at: 249.661}
+  - {bar: 121, beat: 4, at: 250.172}
+  - {bar: 122, at: 250.659}
+  - {bar: 122, beat: 2, at: 251.170}
+  - {bar: 122, beat: 3, at: 251.704}
+  - {bar: 122, beat: 4, at: 252.238}
+  - {bar: 123, at: 252.749}
+  - {bar: 123, beat: 2, at: 253.260}
+  - {bar: 123, beat: 3, at: 253.794}
+  - {bar: 123, beat: 4, at: 254.282}
+  - {bar: 124, at: 254.793}
+  - {bar: 124, beat: 2, at: 255.303}
+  - {bar: 124, beat: 3, at: 255.814}
+  - {bar: 124, beat: 4, at: 256.325}
+  - {bar: 125, at: 256.836}
+  - {bar: 125, beat: 2, at: 257.347}
+  - {bar: 125, beat: 3, at: 257.881}
+  - {bar: 125, beat: 4, at: 258.392}
+  - {bar: 126, at: 258.926}
+  - {bar: 126, beat: 2, at: 259.460}
+  - {bar: 126, beat: 3, at: 259.994}
+  - {bar: 126, beat: 4, at: 260.528}
+  - {bar: 127, at: 261.039}
+  - {bar: 127, beat: 2, at: 261.550}
+  - {bar: 127, beat: 3, at: 262.107}
+  - {bar: 127, beat: 4, at: 262.594}
+  - {bar: 128, at: 263.105}
+  - {bar: 128, beat: 2, at: 263.616}
+  - {bar: 128, beat: 3, at: 264.150}
+  - {bar: 128, beat: 4, at: 264.684}
+  - {bar: 129, at: 265.172}
+  - {bar: 129, beat: 2, at: 265.660}
+  - {bar: 129, beat: 3, at: 266.217}
+  - {bar: 129, beat: 4, at: 266.704}
+  - {bar: 130, at: 267.238}
+  - {bar: 130, beat: 2, at: 267.726}
+  - {bar: 130, beat: 3, at: 268.237}
+  - {bar: 130, beat: 4, at: 268.748}
+  - {bar: 131, at: 269.259}
+  - {bar: 131, beat: 2, at: 269.769}
+  - {bar: 131, beat: 3, at: 270.280}
+  - {bar: 131, beat: 4, at: 270.791}
+  - {bar: 132, at: 271.325}
+  - {bar: 132, beat: 2, at: 271.836}
+  - {bar: 132, beat: 3, at: 272.393}
+  - {bar: 132, beat: 4, at: 272.904}
+  - {bar: 133, at: 273.392}
+  - {bar: 133, beat: 2, at: 273.879}
+  - {bar: 133, beat: 3, at: 274.390}
+  - {bar: 133, beat: 4, at: 274.924}
+  - {bar: 134, at: 275.458}
+  - {bar: 134, beat: 2, at: 275.969}
+  - {bar: 134, beat: 3, at: 276.503}
+  - {bar: 134, beat: 4, at: 277.037}
+  - {bar: 135, at: 277.595}
+  - {bar: 135, beat: 2, at: 278.129}
+  - {bar: 135, beat: 3, at: 278.639}
+  - {bar: 135, beat: 4, at: 279.127}
+  - {bar: 136, at: 279.638}
+  - {bar: 136, beat: 2, at: 280.149}
+  - {bar: 136, beat: 3, at: 280.660}
+  - {bar: 136, beat: 4, at: 281.147}
+  - {bar: 137, at: 281.658}
+  - {bar: 137, beat: 2, at: 282.169}
+  - {bar: 137, beat: 3, at: 282.680}
+  - {bar: 137, beat: 4, at: 283.191}
+  - {bar: 138, at: 283.701}
+  - {bar: 138, beat: 2, at: 284.212}
+  - {bar: 138, beat: 3, at: 284.746}
+  - {bar: 138, beat: 4, at: 285.257}
+  - {bar: 139, at: 285.768}
+  - {bar: 139, beat: 2, at: 286.279}
+  - {bar: 139, beat: 3, at: 286.790}
+  - {bar: 139, beat: 4, at: 287.300}
+  - {bar: 140, at: 287.811}
+  - {bar: 140, beat: 2, at: 288.322}
+  - {bar: 140, beat: 3, at: 288.833}
+  - {bar: 140, beat: 4, at: 289.344}
+  - {bar: 141, at: 289.878}
+  - {bar: 141, beat: 2, at: 290.412}
+  - {bar: 141, beat: 3, at: 290.946}
+  - {bar: 141, beat: 4, at: 291.480}
+  - {bar: 142, at: 291.991}
+  - {bar: 142, beat: 2, at: 292.502}
+  - {bar: 142, beat: 3, at: 293.013}
+  - {bar: 142, beat: 4, at: 293.523}
+  - {bar: 143, at: 293.941}
+  - {bar: 143, beat: 2, at: 294.475}
+  - {bar: 143, beat: 3, at: 295.010}
+  - {bar: 143, beat: 4, at: 295.544}
+  - {bar: 144, at: 296.031}
+  - {bar: 144, beat: 2, at: 296.542}
+  - {bar: 144, beat: 3, at: 297.053}
+  - {bar: 144, beat: 4, at: 297.564}
+  - {bar: 145, at: 298.075}
+  - {bar: 145, beat: 2, at: 298.585}
+  - {bar: 145, beat: 3, at: 299.073}
+  - {bar: 145, beat: 4, at: 299.561}
+  - {bar: 146, at: 300.048}
+  - {bar: 146, beat: 2, at: 300.536}
+  - {bar: 146, beat: 3, at: 301.023}
+  - {bar: 146, beat: 4, at: 301.511}
+  - {bar: 147, at: 301.999}
+  - {bar: 147, beat: 2, at: 302.533}
+  - {bar: 147, beat: 3, at: 303.067}
+  - {bar: 147, beat: 4, at: 303.601}
+residual_ms: {max: 77.1, mean: 10.2, note: "leave-one-out over the anchors -- the gap between them is the only thing interpolation can get wrong"}

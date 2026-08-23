@@ -1,0 +1,27 @@
+# What produced each derived file here, and what it was made from.
+# `rambass stale` compares this with the files on disk. Written by the
+# producing commands -- do not hand-edit; delete a block to force a
+# rebuild.
+practice/align.yaml:
+  code: 47ce33127b6b38f7
+  inputs:
+    stems/drums.wav: 2c130f8a08408c01
+  manifest:
+    bars: 59777047e4217cd1
+    tempo: db810ec86509ad73
+  scalars: {}
+  self: 32e6104bd1555694
+  step: align fit
+  version: 0.1.0
+practice/no_drums-aligned.wav:
+  code: 1390546925a9983a
+  inputs:
+    practice/align.yaml: 32e6104bd1555694
+    stems/no_drums.wav: fdb78b0332367303
+  manifest:
+    bars: 59777047e4217cd1
+    tempo: db810ec86509ad73
+  scalars: {}
+  self: 28b49c365a8feea5
+  step: align warp
+  version: 0.1.0

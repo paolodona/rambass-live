@@ -56,6 +56,21 @@ Three things that were measured rather than assumed, so nobody re-litigates them
   warped backbeats measure p90 **34.7 ms** against 30.4 ms for resampling —
   4.3 ms worse, and still inside the 50 ms below.
 
+  Confirmed on a second song of the album, as CLAUDE.md asks: **Tutti in Fila**,
+  556 per-beat anchors, and a much worse case than Manlio — its segment rates
+  span **0.808–1.213**, which resampling would have swung **7.02 semitones peak
+  to peak** (100 of the 556 segments are outside ±5%, against 11 of 308 on
+  Manlio). Warped, its fundamental sits **0.3 cents** off the source at the
+  median and 2.3 at p90, against 23.0 and 100.7 for resampling; its backbeats
+  land at p90 **23.0 ms** against 19.1 — the same ~4 ms of transient movement,
+  on a song that stretches three times as hard. Its map is `piecewise` now
+  rather than `offset`, and its leave-one-out residual is 77 ms worst / 10 ms
+  mean, in line with Manlio's 70/13.
+
+  Both fits skip the beats the tracker never saw rather than inventing anchors —
+  Tutti in Fila has no drums until bar 9 beat 2, so the intro is one interpolated
+  segment at rate 1.007, which is an offset, correctly.
+
 Only the **source** side is stored, per CLAUDE.md: the target side comes from
 `Timeline` at build time, so a BPM edit re-warps instead of silently stopping.
 hides a lot; the same part inside the real song, with the real vocal on top, does
