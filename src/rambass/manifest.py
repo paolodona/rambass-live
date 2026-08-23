@@ -232,6 +232,71 @@ class Character:
         return out
 
 
+@dataclass(frozen=True)
+class Addition:
+    """A hit put back by hand at Stage 7, bar-anchored so a re-run keeps it.
+
+    Lives here rather than in ``restore.py`` because it is manifest schema, and
+    ``manifest.py`` must not import anything that pulls in mido.
+    """
+
+    bar: int
+    beat: float = 1.0
+    instrument: str = "crash"
+    velocity: int = 0
+    note: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Addition:
+        return cls(
+            bar=int(data["bar"]),
+            beat=float(data.get("beat", 1.0)),
+            instrument=str(data.get("instrument", "crash")),
+            velocity=int(data.get("velocity", 0) or 0),
+            note=str(data.get("note", "")),
+        )
+
+    def to_dict(self) -> dict:
+        out: dict = {"bar": self.bar}
+        if self.beat != 1.0:
+            out["beat"] = self.beat
+        out["instrument"] = self.instrument
+        if self.velocity:
+            out["velocity"] = self.velocity
+        if self.note:
+            out["note"] = self.note
+        return out
+
+
+@dataclass(frozen=True)
+class Removal:
+    """A hit taken out by hand at Stage 7. An empty instrument clears the slot."""
+
+    bar: int
+    beat: float = 1.0
+    instrument: str = ""
+    note: str = ""
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Removal:
+        return cls(
+            bar=int(data["bar"]),
+            beat=float(data.get("beat", 1.0)),
+            instrument=str(data.get("instrument", "") or ""),
+            note=str(data.get("note", "")),
+        )
+
+    def to_dict(self) -> dict:
+        out: dict = {"bar": self.bar}
+        if self.beat != 1.0:
+            out["beat"] = self.beat
+        if self.instrument:
+            out["instrument"] = self.instrument
+        if self.note:
+            out["note"] = self.note
+        return out
+
+
 @dataclass
 class Song:
     """A parsed ``song.yaml`` plus the directory it came from."""
@@ -264,6 +329,15 @@ class Song:
     #: Grid per beat for the crash family, which is never snapped as tight as
     #: the rest of the kit -- a crash is heard as an event, not a subdivision.
     drum_cymbal_subdivision: int = 2
+    #: Stage 7's hand edits, bar-anchored so they survive a re-transcription.
+    #:
+    #: A crash drawn into the Reaper MIDI item is gone the next time
+    #: ``drums transcribe`` runs. Declared here it is reapplied every time, it is
+    #: in git, and ``rambass drums missing`` can tick it off the checklist -- so
+    #: there is a record of how far through Stage 7 a song actually is.
+    #: :class:`~rambass.restore.Addition` / :class:`~rambass.restore.Removal`.
+    drum_additions: list = field(default_factory=list)
+    drum_removals: list = field(default_factory=list)
     source_audio: str = ""
     source_url: str = ""      # where the original came from (Drive link, etc.)
     backing_track: str = ""   # a finished base, relative to render/
@@ -329,6 +403,10 @@ class Song:
             drum_map=str(drums.get("map", "general-midi")),
             drum_subdivision=int(drums.get("subdivision", 4) or 4),
             drum_cymbal_subdivision=int(drums.get("cymbal_subdivision", 2) or 2),
+            drum_additions=[Addition.from_dict(a)
+                            for a in _as_list(drums.get("additions"))],
+            drum_removals=[Removal.from_dict(r)
+                           for r in _as_list(drums.get("removals"))],
             source_audio=str(source.get("audio", "")),
             source_url=str(source.get("url", "")),
             backing_track=str(source.get("backing_track", "")),
@@ -372,6 +450,10 @@ class Song:
                 "map": self.drum_map,
                 "subdivision": self.drum_subdivision,
                 "cymbal_subdivision": self.drum_cymbal_subdivision,
+                **({"additions": [a.to_dict() for a in self.drum_additions]}
+                   if self.drum_additions else {}),
+                **({"removals": [r.to_dict() for r in self.drum_removals]}
+                   if self.drum_removals else {}),
             },
             "source": {
                 "audio": self.source_audio,
@@ -444,6 +526,26 @@ class Song:
                     f"drums.{name} is {value}; expected a musical grid "
                     "(1, 2, 3, 4, 6, 8, 12 or 16 per beat)"
                 )
+        # Stage 7's edits. A bad one is worth catching here rather than at the
+        # moment `drums restore` runs, because the list is hand-written and the
+        # command is run near the end of a long session.
+        from .drummap import CANONICAL
+
+        for kind, edits in (("additions", self.drum_additions),
+                            ("removals", self.drum_removals)):
+            for edit in edits:
+                if edit.bar < 1:
+                    out.append(
+                        f"drums.{kind} has an entry at bar {edit.bar}; bars are "
+                        f"1-based and the count-in is not one of them"
+                    )
+                if edit.instrument and edit.instrument not in CANONICAL:
+                    out.append(
+                        f"drums.{kind} names {edit.instrument!r}, which is not a "
+                        f"drum instrument (see drummap.CANONICAL)"
+                    )
+                if kind == "additions" and not edit.instrument:
+                    out.append("drums.additions needs an instrument on every entry")
         if not 1 <= self.gx100_channel <= 16:
             out.append(f"gx100.channel must be 1-16, got {self.gx100_channel}")
         for change in self.patch_changes:

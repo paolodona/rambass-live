@@ -515,6 +515,116 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_drums_missing(args: argparse.Namespace) -> int:
+    """The ledger: everything the pipeline removed or never named.
+
+    Paolo: "There needs to be a clear list of missing hits so I dont mistakenly
+    forget some in the process." Every deliberate omission upstream is knowable,
+    so this writes them down in Reaper bar numbers and ticks off the ones already
+    covered by `drums.additions`.
+    """
+    from .midiio import read_drum_midi
+    from .restore import (
+        NOTICEABLE, checklist, crash_candidates, group_missing, missing_hits,
+    )
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        before_path = song.drum_midi_path(args.before)
+        after_path = song.drum_midi_path(args.after)
+        for path in (before_path, after_path):
+            if not path.exists():
+                _say(f"{song.slug}: no {path.name} — run the earlier stages first")
+                break
+        else:
+            drum_map = load_drum_map(song.drum_map, project)
+            before = read_drum_midi(before_path, drum_map)
+            after = read_drum_midi(after_path, drum_map)
+            before.timeline = after.timeline = song.timeline()
+            end_bar = (song.bars or song.total_bars()) + 1
+            items = missing_hits(
+                before, after, song.sections, end_bar=end_bar,
+                subdivision=song.drum_subdivision,
+                instruments=None if args.everything else NOTICEABLE,
+                reason=f"in {before_path.name}, gone from {after_path.name}")
+            if not args.no_crashes:
+                items = sorted(
+                    items + crash_candidates(after, song.sections, end_bar=end_bar),
+                    key=lambda item: item.position)
+
+            groups = group_missing(items)
+            _say(f"── {song.title}: {len(groups)} things to put back, "
+                 f"{len(items)} hits ({before_path.name} → {after_path.name})")
+            _say(f"   {'reaper':>8}  {'instrument':<16}{'section':<18}why")
+            for group in groups:
+                many = f" x{group.count}" if group.count > 1 else ""
+                _say(f"   {group.bar + song.count_in_bars:>5}.{group.beat:<3g}  "
+                     f"{group.instrument + many:<16}{group.section:<18}{group.reason}")
+            counts: dict[str, int] = {}
+            for item in items:
+                counts[item.instrument] = counts.get(item.instrument, 0) + 1
+            if counts:
+                _say("   " + ", ".join(f"{n} {k}" for k, n in
+                                       sorted(counts.items(), key=lambda kv: -kv[1])))
+
+            target = song.path("qa", "missing-hits.md")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(
+                checklist(song.title, items, count_in_bars=song.count_in_bars,
+                          additions=song.drum_additions),
+                encoding="utf-8")
+            _say(f"→  {target}")
+    _say()
+    return 0
+
+
+def cmd_drums_restore(args: argparse.Namespace) -> int:
+    """Stage 7: reapply the hand edits declared in ``song.yaml``.
+
+    Its own variant on purpose, the same argument `drums consolidate` makes: the
+    unrestored part stays on disk so the two can be A/B'd, and a re-run of the
+    whole pipeline reproduces the restored file rather than losing it.
+    """
+    from .midiio import read_drum_midi, write_drum_midi
+    from .restore import apply_edits
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        source = song.drum_midi_path(args.input)
+        if not source.exists():
+            _say(f"{song.slug}: no {source.name} — consolidate it first")
+            continue
+        if not song.drum_additions and not song.drum_removals:
+            _say(f"{song.slug}: no drums.additions or drums.removals in "
+                 f"song.yaml. `rambass drums missing {song.slug}` lists what "
+                 f"Stage 7 has to put back.")
+            continue
+        drum_map = load_drum_map(song.drum_map, project)
+        performance = read_drum_midi(source, drum_map)
+        performance.timeline = song.timeline()
+        performance, report = apply_edits(
+            performance,
+            additions=song.drum_additions, removals=song.drum_removals)
+        _say(f"── {song.title}: {len(performance.hits)} hits from {source.name}")
+        _say(f"   restore       +{report['added']} added, "
+             f"-{report['removed']} removed, "
+             f"{report['already_there']} already there"
+             + (f", {report['velocity_from_median']} took the instrument's "
+                f"median velocity" if report["velocity_from_median"] else ""))
+        for bar, beat, instrument in report["stale_removals"]:
+            _say(f"   ! stale removal at bar {bar} beat {beat:g}"
+                 f"{' for ' + instrument if instrument else ''} matched nothing — "
+                 f"the hit it names is already gone, so drop the line")
+        if args.dry_run:
+            _say("   dry run — nothing written.")
+            continue
+        target = song.drum_midi_path(args.output)
+        write_drum_midi(target, performance, drum_map)
+        _say(f"→  {target}")
+    _say()
+    return 0
+
+
 def cmd_drums_consolidate(args: argparse.Namespace) -> int:
     """Stage 6: replace each section with the pattern its bars agree on.
 
@@ -1612,6 +1722,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true",
                    help="report what it would do and write nothing")
     p.set_defaults(func=cmd_drums_consolidate)
+
+    p = drums_sub.add_parser(
+        "missing",
+        help="Stage 7: list every hit the pipeline removed or never named",
+    )
+    _add_song_args(p)
+    p.add_argument("--before", default="quantized",
+                   help="the fuller variant (default: quantized)")
+    p.add_argument("--after", default="consolidated",
+                   help="the variant to check against it (default: consolidated)")
+    p.add_argument("--no-crashes", action="store_true",
+                   help="skip the section-boundary crash candidates")
+    p.add_argument("--everything", action="store_true",
+                   help="include the groove too (hats, kick, snare, side-stick), "
+                        "which the vote is supposed to regularise")
+    p.set_defaults(func=cmd_drums_missing)
+
+    p = drums_sub.add_parser(
+        "restore",
+        help="Stage 7: reapply drums.additions and drums.removals from song.yaml",
+    )
+    _add_song_args(p)
+    p.add_argument("--input", default="consolidated",
+                   help="input variant (default: consolidated)")
+    p.add_argument("--output", default="restored", help="output variant")
+    p.add_argument("--dry-run", action="store_true",
+                   help="report what it would do and write nothing")
+    p.set_defaults(func=cmd_drums_restore)
 
     p = drums_sub.add_parser("remap", help="move a drum MIDI onto another kit's mapping")
     p.add_argument("song")
