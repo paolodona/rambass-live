@@ -40,6 +40,18 @@ you implement it, store **only the source side** in seconds; the target side is
 computed from `Timeline` at build time, or a BPM edit silently stops re-warping.
 See `docs/practice-tracks.md`.
 
+**Bar numbers spoken out loud are Reaper ruler readings; bar numbers in
+`song.yaml` are musical.** Paolo works from Reaper's ruler, where bar 1 is the
+first count-in bar, so when he says a section starts at `22.3` he means Reaper
+bar 22 beat 3 — musical bar 20 with a 2-bar count-in. Subtract
+`count_in.bars` before writing anything down, echo both numbers back when
+confirming, and never store the ruler number: `count_in.bars` is an editable
+setting, so a stored screen position slides every section the day it changes.
+The one place the ruler number belongs is a **Reaper marker label**, which is
+numbered `section.bar + count_in.bars` so the marker list matches the ruler
+underneath it. Same split as everything below — one clock for the music, one
+for the screen, converted at the boundary and nowhere else.
+
 `Timeline` distinguishes two clocks and so must you:
 
 * `bar_beat_to_seconds()` — from the **musical** zero (bar 1 beat 1); the

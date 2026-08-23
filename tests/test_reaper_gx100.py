@@ -37,7 +37,37 @@ def test_build_script_places_markers_in_audio_time(song):
     script = build_song_script(song)
     markers = {r[2]: float(r[1]) for r in _records(script, "MARKER")}
     assert markers["BAR 1"] == pytest.approx(4.0)      # two bars of count-in
-    assert markers["9. verse"] == pytest.approx(4.0 + 16.0)
+    assert markers["11.1 verse"] == pytest.approx(4.0 + 16.0)
+
+
+def test_marker_labels_use_the_reaper_bar_not_the_musical_one(song):
+    """The marker sits in Reaper's timeline, so it is numbered in Reaper's
+    bars: musical bar + count_in.bars. A marker reading "9. verse" parked at
+    ruler position 11 is exactly the confusion this numbering exists to stop --
+    Paolo reads the ruler, so the marker list has to match it."""
+    assert song.count_in_bars == 2
+    labels = [r[2] for r in _records(build_song_script(song), "MARKER")]
+    assert "11.1 verse" in labels         # section at musical bar 9
+    assert "3.1 intro" in labels          # section at musical bar 1
+    assert "19.1 chorus" in labels        # section at musical bar 17
+    assert not [x for x in labels if x.startswith(("9.", "1.", "17."))]
+
+
+def test_marker_labels_follow_a_changed_count_in(song, project):
+    """Storage is musical, so the label moves with count_in and the section
+    does not. Storing the ruler number instead would slide the music."""
+    song.count_in_bars = 4
+    save_song(song, song.dir)
+    labels = [r[2] for r in _records(build_song_script(load_song(song.dir)), "MARKER")]
+    assert "13.1 verse" in labels         # still musical bar 9
+    assert "5.1 intro" in labels
+
+
+def test_regions_are_named_without_a_bar_number(song):
+    """Regions carry the name only -- the region playlist is navigated by
+    name, and a number there would be a second thing to keep in step."""
+    regions = [r[3] for r in _records(build_song_script(song), "REGION")]
+    assert regions == ["intro", "verse", "chorus"]
 
 
 def test_build_script_regions_span_to_the_next_section(song):

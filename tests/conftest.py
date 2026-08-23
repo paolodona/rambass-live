@@ -48,3 +48,10 @@ def song(project: Project) -> Song:
     )
     save_song(item, directory)
     return item
+
+
+@pytest.fixture
+def cwd_song(song, project, monkeypatch):
+    """The standard song, with the CLI's working directory inside the project."""
+    monkeypatch.chdir(project.root)
+    return song

@@ -85,18 +85,44 @@ def _as_list(value: Any) -> list:
 
 @dataclass
 class Section:
-    """A named part of the arrangement, anchored to a bar."""
+    """A named part of the arrangement, anchored to a bar and a beat.
+
+    ``beat`` is 1-based and defaults to the downbeat, so every section written
+    before it existed keeps working and nothing gains a redundant ``beat: 1.0``.
+    It exists because the arrangements really do this: Manlio has a 2.5-bar
+    break, which puts the verse after it on beat 3 of a bar. Paolo: "we use odd
+    measures and sections do not always fall on the bar."
+
+    Fractional beats are legal — 3.5 is the second eighth of beat 3 — because a
+    12/8 shuffle has somewhere to be that a whole beat cannot name.
+
+    Musical bars, never Reaper's. See CLAUDE.md: the ruler number belongs on a
+    marker label and nowhere else, because ``count_in.bars`` can change.
+    """
 
     name: str
     bar: int
+    beat: float = 1.0
     note: str = ""
+
+    @property
+    def position(self) -> tuple[int, float]:
+        """Sort key. Two sections can share a bar, so the bar alone is not one."""
+        return (self.bar, self.beat)
 
     @classmethod
     def from_dict(cls, data: dict) -> Section:
-        return cls(name=str(data["name"]), bar=int(data["bar"]), note=str(data.get("note", "")))
+        return cls(
+            name=str(data["name"]),
+            bar=int(data["bar"]),
+            beat=float(data.get("beat", 1.0)),
+            note=str(data.get("note", "")),
+        )
 
     def to_dict(self) -> dict:
         out: dict = {"name": self.name, "bar": self.bar}
+        if self.beat != 1.0:
+            out["beat"] = self.beat
         if self.note:
             out["note"] = self.note
         return out
@@ -361,16 +387,26 @@ class Song:
             out.append(f"implausible bpm {self.bpm}")
         if self.count_in_bars < 0:
             out.append("count_in.bars cannot be negative")
-        seen_bars: dict[int, str] = {}
+        seen: dict[tuple[int, float], str] = {}
         for section in self.sections:
             if section.bar < 1:
                 out.append(f"section {section.name!r} is at bar {section.bar} (<1)")
-            if section.bar in seen_bars:
+            beats_per_bar = self.time_signature[0]
+            for change in self.tempo_changes:
+                if change.bar <= section.bar and change.time_signature:
+                    beats_per_bar = change.time_signature[0]
+            if not 1.0 <= section.beat < beats_per_bar + 1:
                 out.append(
-                    f"sections {seen_bars[section.bar]!r} and {section.name!r} "
-                    f"are both at bar {section.bar}"
+                    f"section {section.name!r} is at beat {section.beat:g} of a "
+                    f"{beats_per_bar}-beat bar; beats are 1-based, so the last "
+                    f"one is under {beats_per_bar + 1}"
                 )
-            seen_bars[section.bar] = section.name
+            if section.position in seen:
+                out.append(
+                    f"sections {seen[section.position]!r} and {section.name!r} "
+                    f"are both at bar {section.bar} beat {section.beat:g}"
+                )
+            seen[section.position] = section.name
         if self.bars and any(s.bar > self.bars for s in self.sections):
             out.append("a section starts after the last bar of the song")
         for name, value in (("subdivision", self.drum_subdivision),
@@ -551,12 +587,47 @@ class Song:
             return max(s.bar for s in self.sections) + 8
         return 64
 
-    def section_at(self, bar: int) -> Section | None:
+    def section_at(self, bar: int, beat: float = 1.0) -> Section | None:
+        """The section sounding at this position, or None before the first one.
+
+        Takes a *beat* because a section can start mid-bar: on Manlio the
+        downbeat of bar 20 is still the break, and the verse only starts on
+        beat 3 of it. Defaulting to the downbeat keeps every existing caller
+        asking the question it was already asking.
+        """
         current = None
-        for section in sorted(self.sections, key=lambda s: s.bar):
-            if section.bar <= bar:
+        for section in sorted(self.sections, key=lambda s: s.position):
+            if section.position <= (bar, beat):
                 current = section
         return current
+
+    def consolidation_spans(self) -> list[tuple[str, int, int]]:
+        """``(name, first_bar, last_bar_exclusive)`` per section, whole bars only.
+
+        The shape :func:`~rambass.quantize.consolidate` wants. It votes over
+        whole-bar units, and a mid-bar boundary does **not** move the bar grid
+        the pattern repeats on — a one-bar drum figure still repeats every bar
+        whichever beat the section happened to start on. So the only question a
+        beat raises is which bars belong *wholly* to which section, and a
+        partial bar belongs to neither: Manlio's bar 20 is half break-1 and half
+        verse-2, and voting it into either mixes two patterns into one slot,
+        which is exactly the corruption Stage 6 exists to prevent.
+
+        A section with no whole bar in it is left out rather than given a
+        fabricated span. consolidate then never claims those hits and passes
+        them through untouched, which is what Stage 7 wants for a one-off
+        anyway.
+        """
+        ordered = sorted(self.sections, key=lambda s: s.position)
+        end_bar = self.total_bars() + 1
+        out: list[tuple[str, int, int]] = []
+        for index, section in enumerate(ordered):
+            first = section.bar if section.beat == 1.0 else section.bar + 1
+            following = ordered[index + 1] if index + 1 < len(ordered) else None
+            last = following.bar if following is not None else end_bar
+            if last > first:
+                out.append((section.name, first, last))
+        return out
 
     def progress(self) -> tuple[int, int]:
         """``(done, applicable)`` across the pipeline stages.

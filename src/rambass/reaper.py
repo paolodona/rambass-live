@@ -108,6 +108,19 @@ def _field(value: object) -> str:
     return text
 
 
+def reaper_position(song: Song, section: Section) -> str:
+    """``bar.beat`` as Reaper's ruler shows it, for a label a human reads.
+
+    The only place a Reaper bar number is allowed to appear — everything stored
+    is musical. Reaper's bar 1 is the first count-in bar, so its numbering runs
+    ``count_in.bars`` ahead of the manifest's, and this is written the way
+    Reaper's own transport writes a position so it can be compared to the screen
+    without arithmetic.
+    """
+    beat = f"{section.beat:g}"
+    return f"{section.bar + song.count_in_bars}.{beat}"
+
+
 def build_song_script(
     song: Song,
     *,
@@ -183,13 +196,27 @@ def build_song_script(
 
     # Section markers, and a region per section so the arrangement is navigable
     # with the region playlist during rehearsal.
-    ordered = sorted(song.sections, key=lambda s: s.bar)
+    ordered = sorted(song.sections, key=lambda s: s.position)
     last_bar = song.total_bars() + 1
     for index, section in enumerate(ordered):
-        start = timeline.audio_time(section.bar, 1.0)
-        end_bar = ordered[index + 1].bar if index + 1 < len(ordered) else last_bar
-        end = timeline.audio_time(end_bar, 1.0)
-        script.add("MARKER", start, f"{section.bar}. {section.name}")
+        start = timeline.audio_time(section.bar, section.beat)
+        # A section can start mid-bar, so a region's end is the *next section's
+        # position*, not the top of its bar: Manlio's break is 2.5 bars long and
+        # rounding that to 3 would overlap the verse by half a bar.
+        if index + 1 < len(ordered):
+            following = ordered[index + 1]
+            end = timeline.audio_time(following.bar, following.beat)
+        else:
+            end = timeline.audio_time(last_bar, 1.0)
+        # Numbered in **Reaper's** bars, not the manifest's, and written the way
+        # Reaper's own transport writes a position: `bar.beat`. The marker lives
+        # in Reaper's timeline where bar 1 is the first count-in bar, so a marker
+        # reading "9. verse" parked at ruler position 11 is a trap: Paolo reads
+        # the ruler and quotes it back, and the two numbering schemes then differ
+        # by exactly the count-in with nothing on screen to say so. Storage stays
+        # musical (see Section) precisely so this label follows a changed
+        # count_in.bars while the music does not move.
+        script.add("MARKER", start, f"{reaper_position(song, section)} {section.name}")
         script.add("REGION", start, end, section.name)
 
     if song.count_in_bars:
@@ -468,9 +495,10 @@ def describe(timeline: Timeline, song: Song) -> str:
         )
     if song.sections:
         lines.append("  sections")
-        for section in sorted(song.sections, key=lambda s: s.bar):
+        for section in sorted(song.sections, key=lambda s: s.position):
             lines.append(
-                f"    bar {section.bar:>4}  {timeline.audio_time(section.bar):7.2f}s  "
+                f"    {reaper_position(song, section):>8}  "
+                f"{timeline.audio_time(section.bar, section.beat):7.2f}s  "
                 f"{section.name}"
             )
     if song.patch_changes:

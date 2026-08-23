@@ -1232,6 +1232,34 @@ def cmd_patch_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def parse_position(text: str) -> tuple[int, float]:
+    """``"22.3"`` -> ``(22, 3.0)``. Reaper's own notation for a position.
+
+    Beats are 1-based, so a bare ``"20"`` means bar 20 beat 1. A third part is a
+    fraction of a beat — ``"22.3.5"`` is the second eighth of beat 3 — which a
+    12/8 shuffle needs and a whole beat cannot name.
+    """
+    parts = str(text).strip().split(".")
+    if not 1 <= len(parts) <= 3 or not all(parts):
+        raise ProjectError(
+            f"{text!r} is not a position; write it as Reaper does, bar.beat "
+            f"(for example 22.3), or just the bar"
+        )
+    try:
+        bar = int(parts[0])
+        beat = float(parts[1]) if len(parts) > 1 else 1.0
+        if len(parts) == 3:
+            beat += float(f"0.{parts[2]}")
+    except ValueError:
+        raise ProjectError(
+            f"{text!r} is not a position; write it as Reaper does, bar.beat "
+            f"(for example 22.3), or just the bar"
+        ) from None
+    if bar < 1 or beat < 1:
+        raise ProjectError(f"{text!r}: bars and beats are 1-based")
+    return bar, beat
+
+
 def cmd_section_add(args: argparse.Namespace) -> int:
     project = _project()
     song = load_song(project.find_song_dir(args.song))
@@ -1241,24 +1269,27 @@ def cmd_section_add(args: argparse.Namespace) -> int:
     # typing it straight in puts every section two bars late. --reaper-bar does
     # the subtraction, because doing it in your head every time is the kind of
     # arithmetic that is right nine times and wrong once.
-    bar = args.bar
+    bar, beat = parse_position(args.bar)
+    quoted = f"{bar}.{beat:g}"
     if args.reaper_bar:
-        bar = args.bar - song.count_in_bars
+        bar -= song.count_in_bars
         if bar < 1:
             raise ProjectError(
-                f"Reaper bar {args.bar} is inside the {song.count_in_bars}-bar "
+                f"Reaper bar {quoted} is inside the {song.count_in_bars}-bar "
                 f"count-in, so it is before the music starts"
             )
 
-    song.sections = [s for s in song.sections if s.bar != bar]
-    song.sections.append(Section(name=args.name, bar=bar))
-    song.sections.sort(key=lambda s: s.bar)
+    # Matched on bar *and* beat: a 2.5-bar break puts two sections in one bar,
+    # and replacing by bar alone would silently delete the one already there.
+    song.sections = [s for s in song.sections if (s.bar, s.beat) != (bar, beat)]
+    song.sections.append(Section(name=args.name, bar=bar, beat=beat))
+    song.sections.sort(key=lambda s: s.position)
     song.validate()
     save_song(song)
-    where = f" (Reaper bar {args.bar})" if args.reaper_bar else ""
+    where = f" (Reaper {quoted})" if args.reaper_bar else ""
     timeline = song.timeline()
-    _say(f"{song.title}: bar {bar}{where} at {timeline.audio_time(bar, 1.0):.2f}s "
-         f"-> {args.name}")
+    _say(f"{song.title}: bar {bar} beat {beat:g}{where} at "
+         f"{timeline.audio_time(bar, beat):.2f}s -> {args.name}")
     return 0
 
 
@@ -1631,7 +1662,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("section", help="add or replace a section marker")
     p.add_argument("song")
-    p.add_argument("bar", type=int)
+    p.add_argument("bar", metavar="POSITION",
+                   help="bar, or bar.beat as Reaper writes it (e.g. 22.3)")
     p.add_argument("name")
     p.add_argument("--reaper-bar", action="store_true",
                    help="the bar number as Reaper shows it, which counts the "
