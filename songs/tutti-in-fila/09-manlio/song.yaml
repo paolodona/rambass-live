@@ -18,6 +18,54 @@ drums:
   map: general-midi
   subdivision: 3
   cymbal_subdivision: 3
+  additions:
+  - bar: 1
+    instrument: crash
+    velocity: 100
+    note: proposed by drums missing (theme-intro) - check by ear
+  - bar: 9
+    beat: 4.667
+    instrument: crash
+    velocity: 104
+    note: proposed by drums missing (verse-1) - check by ear
+  - bar: 14
+    instrument: crash
+    velocity: 95
+    note: proposed by drums missing (verse-1-lift) - check by ear
+  - bar: 20
+    beat: 3.0
+    instrument: crash
+    velocity: 73
+    note: proposed by drums missing (verse-2) - check by ear
+  - bar: 28
+    beat: 3.0
+    instrument: crash
+    velocity: 89
+    note: proposed by drums missing (verse-2-lift) - check by ear
+  - bar: 32
+    beat: 3.0
+    instrument: crash
+    velocity: 103
+    note: proposed by drums missing (chorus-1) - check by ear
+  - bar: 44
+    beat: 2.667
+    instrument: crash
+    velocity: 77
+    note: proposed by drums missing (verse-3) - check by ear
+  - bar: 46
+    beat: 4.667
+    instrument: crash
+    velocity: 86
+    note: proposed by drums missing (verse-3) - check by ear
+  - bar: 55
+    instrument: crash
+    velocity: 100
+    note: proposed by drums missing (chorus-2) - check by ear
+  - bar: 65
+    beat: 3.0
+    instrument: crash
+    velocity: 111
+    note: proposed by drums missing (theme-finale) - check by ear
 source:
   audio: 09 Manlio.wav
   url: https://drive.google.com/file/d/1kDxz8I6egN0FwbGrWVPuxGJcFnvUn9rI/view

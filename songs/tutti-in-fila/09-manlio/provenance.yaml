@@ -8,19 +8,22 @@ midi/drums-consolidated.mid:
     midi/drums-quantized.mid: 10bd353a54c8cedc
   manifest:
     bars: 282b639f9f9d4d15
-    drums: f07b529eed41c5d3
+    drums/map: c253d20d4554684f
+    drums/subdivision: ae1949f77bd48bdc
     sections: 5af6519e9d267cbe
     tempo: 72321402045f8010
   self: 1fc31a584012b08f
   step: drums consolidate
   version: 0.1.0
 midi/drums-quantized.mid:
-  code: c4ad852778be0343
+  code: ff7cf58a0c4980a0
   inputs:
     midi/drums-raw.mid: fb64ba51e92b9165
   manifest:
     bars: 282b639f9f9d4d15
-    drums: f07b529eed41c5d3
+    drums/cymbal_subdivision: ae1949f77bd48bdc
+    drums/map: c253d20d4554684f
+    drums/subdivision: ae1949f77bd48bdc
     sections: 5af6519e9d267cbe
     tempo: 72321402045f8010
   self: 10bd353a54c8cedc
@@ -39,8 +42,23 @@ midi/drums-raw.mid:
   manifest:
     bars: 282b639f9f9d4d15
     count_in: 38b876f933c777cd
-    drums: f07b529eed41c5d3
+    drums/map: c253d20d4554684f
+    drums/origin: dd8ca37b9cc8d613
+    drums/subdivision: ae1949f77bd48bdc
     tempo: 72321402045f8010
   self: fb64ba51e92b9165
   step: drums transcribe
+  version: 0.1.0
+midi/drums-restored.mid:
+  code: 878ae06dd0ddff2f
+  inputs:
+    midi/drums-consolidated.mid: 1fc31a584012b08f
+  manifest:
+    bars: 282b639f9f9d4d15
+    drums/additions: 8ee473396544c27e
+    drums/map: c253d20d4554684f
+    drums/removals: 6a3a80ad810fe5b6
+    tempo: 72321402045f8010
+  self: 6b504fe90f53a0e3
+  step: drums restore
   version: 0.1.0

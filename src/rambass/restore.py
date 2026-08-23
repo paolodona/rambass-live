@@ -509,3 +509,41 @@ def group_missing(items) -> list[MissingGroup]:
         for (bar, instrument), group in buckets.items()
     ]
     return sorted(out, key=lambda group: group.position)
+
+
+#: Only these are ever proposed automatically. A crash is one decision with a
+#: position and a velocity already attached, so retyping twenty of them into YAML
+#: is friction with no judgement in it. A fill is a *phrase*, and proposing its
+#: eight toms one at a time would put back exactly the incoherent bar Stage 6
+#: removed — so those stay a listening job, which is what Stage 7 says anyway.
+PROPOSABLE = ("crash", "crash_2", "china", "splash")
+
+
+def propose_additions(items, *, existing=(), instruments=PROPOSABLE):
+    """``(additions, skipped)`` for the ledger entries confident enough to write.
+
+    Machine proposes, ``git diff`` reviews, ``drums restore`` applies. That is the
+    right division: the measurement behind a boundary crash is strong (see
+    :func:`crash_candidates`) but "was a crash played here" is still a musical
+    claim, and a diff is where a musical claim should be argued with.
+
+    An entry with velocity 0 is never proposed. It means nothing was measured
+    there, and a section start with no cymbal on it looks exactly like a drummer
+    choosing not to crash — six of Manlio's fifteen are that, and they are mostly
+    the breaks.
+    """
+    already = {(a.bar, round(a.beat, 3), a.instrument) for a in existing}
+    out: list[Addition] = []
+    skipped = 0
+    for item in items:
+        key = (item.bar, round(item.beat, 3), item.instrument)
+        if (item.instrument not in instruments or not item.velocity
+                or key in already):
+            skipped += 1
+            continue
+        already.add(key)
+        out.append(Addition(
+            bar=item.bar, beat=item.beat, instrument=item.instrument,
+            velocity=item.velocity,
+            note=f"proposed by drums missing ({item.section}) - check by ear"))
+    return out, skipped

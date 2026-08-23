@@ -276,3 +276,61 @@ def test_an_old_single_hash_stamp_still_reads_as_a_manifest_change(song):
     entry = {s.artifact: s for s in stale_report(song)}["midi/drums-quantized.mid"]
     assert entry.state == "stale"
     assert any("song.yaml" in reason for reason in entry.reasons)
+
+
+# ── a field spec can name a sub-key ──────────────────────────────────────────
+#
+# Watching the whole `drums` block made adding one entry to `drums.additions`
+# declare the transcription, the clean and the consolidate all stale — which is
+# false, since Stage 7 edits are applied after all three and cannot affect them.
+# It took about ten seconds of real use to hit, and a report that cries wolf is
+# worse than no report: the first thing anyone does with one is stop reading it.
+
+
+def test_a_field_spec_can_name_one_sub_key(song):
+    from rambass.provenance import manifest_hashes
+
+    before = manifest_hashes(song, ("drums/subdivision",))
+    song.drum_additions = [__import__("rambass.manifest", fromlist=["Addition"])
+                           .Addition(bar=1, instrument="crash")]
+    assert manifest_hashes(song, ("drums/subdivision",)) == before
+
+
+def test_the_sub_key_still_notices_its_own_change(song):
+    from rambass.provenance import manifest_hashes
+
+    before = manifest_hashes(song, ("drums/subdivision",))
+    song.drum_subdivision = 3
+    assert manifest_hashes(song, ("drums/subdivision",)) != before
+
+
+def test_a_stage_seven_edit_does_not_make_the_transcription_stale(song):
+    from rambass.manifest import Addition, save_song
+
+    raw = _touch(song.directory / "midi" / "drums-raw.mid")
+    quantized = _touch(song.directory / "midi" / "drums-quantized.mid")
+    stamp(song, raw, step="drums transcribe", inputs=[])
+    stamp(song, quantized, step="drums clean", inputs=[raw])
+
+    song.drum_additions = [Addition(bar=32, beat=3.0, instrument="crash")]
+    save_song(song)
+
+    states = {s.artifact: s for s in stale_report(song)}
+    assert states["midi/drums-raw.mid"].state == "ok"
+    assert states["midi/drums-quantized.mid"].state == "ok"
+
+
+def test_a_stage_seven_edit_does_make_the_restore_stale(song):
+    from rambass.manifest import Addition, save_song
+
+    consolidated = _touch(song.directory / "midi" / "drums-consolidated.mid")
+    restored = _touch(song.directory / "midi" / "drums-restored.mid")
+    stamp(song, consolidated, step="drums consolidate", inputs=[])
+    stamp(song, restored, step="drums restore", inputs=[consolidated])
+
+    song.drum_additions = [Addition(bar=32, beat=3.0, instrument="crash")]
+    save_song(song)
+
+    entry = {s.artifact: s for s in stale_report(song)}["midi/drums-restored.mid"]
+    assert entry.state == "stale"
+    assert any("additions" in reason for reason in entry.reasons)

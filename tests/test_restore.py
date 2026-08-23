@@ -205,3 +205,72 @@ def test_an_edit_naming_an_unknown_instrument_is_refused():
             "drums": {"additions": [{"bar": 1, "instrument": "bongo"}]},
         })
     assert "bongo" in str(caught.value)
+
+
+# ── proposing additions, so the checklist is not 35 lines of typing ──────────
+#
+# `drums missing` reports 35 things on Manlio and 20 of them are crashes with a
+# bar, a beat and a velocity already attached. Making somebody retype that into
+# song.yaml is the kind of friction that gets a good tool abandoned. So it can
+# propose them, and the review happens where review belongs -- in the diff.
+
+
+def test_confident_candidates_become_additions():
+    from rambass.restore import MissingHit, propose_additions
+
+    items = [
+        MissingHit(bar=32, beat=3.0, instrument="crash", velocity=111,
+                   section="chorus-1", reason="section start: a v111 open hi-hat"),
+        MissingHit(bar=14, beat=4.0, instrument="tom_mid", velocity=79,
+                   section="verse-1", reason="removed by consolidate"),
+    ]
+    proposed, skipped = propose_additions(items)
+    assert [(a.bar, a.beat, a.instrument, a.velocity) for a in proposed] == [
+        (32, 3.0, "crash", 111)]
+    assert skipped == 1
+
+
+def test_a_bare_position_is_not_proposed():
+    """velocity 0 means nothing was measured there. A crash the drummer chose not
+    to play is exactly what a section start with no cymbal looks like, so that
+    one stays a listening decision."""
+    from rambass.restore import MissingHit, propose_additions
+
+    items = [MissingHit(bar=18, beat=1.0, instrument="crash", velocity=0,
+                        section="break-1", reason="no cymbal here at all")]
+    proposed, skipped = propose_additions(items)
+    assert proposed == [] and skipped == 1
+
+
+def test_a_fill_is_not_proposed():
+    """A fill is a phrase, not a hit. Proposing its eight toms one at a time
+    would put back exactly the incoherent bar Stage 6 removed."""
+    from rambass.restore import MissingHit, propose_additions
+
+    items = [MissingHit(bar=75, beat=1.0 + i / 3.0, instrument="tom_mid",
+                        velocity=90, section="theme-finale",
+                        reason="removed by consolidate")
+             for i in range(7)]
+    proposed, skipped = propose_additions(items)
+    assert proposed == []
+    assert skipped == 7
+
+
+def test_the_note_says_where_it_came_from():
+    from rambass.restore import MissingHit, propose_additions
+
+    items = [MissingHit(bar=32, beat=3.0, instrument="crash", velocity=111,
+                        section="chorus-1", reason="section start: a v111 open hi-hat")]
+    proposed, _ = propose_additions(items)
+    assert "chorus-1" in proposed[0].note
+    assert "proposed" in proposed[0].note
+
+
+def test_something_already_in_the_manifest_is_not_proposed_twice():
+    from rambass.restore import Addition, MissingHit, propose_additions
+
+    items = [MissingHit(bar=32, beat=3.0, instrument="crash", velocity=111,
+                        section="chorus-1", reason="section start")]
+    proposed, skipped = propose_additions(
+        items, existing=[Addition(bar=32, beat=3.0, instrument="crash")])
+    assert proposed == [] and skipped == 1

@@ -736,6 +736,7 @@ def cmd_drums_missing(args: argparse.Namespace) -> int:
     from .midiio import read_drum_midi
     from .restore import (
         NOTICEABLE, checklist, crash_candidates, group_missing, missing_hits,
+        propose_additions,
     )
 
     project = _project()
@@ -776,6 +777,20 @@ def cmd_drums_missing(args: argparse.Namespace) -> int:
             if counts:
                 _say("   " + ", ".join(f"{n} {k}" for k, n in
                                        sorted(counts.items(), key=lambda kv: -kv[1])))
+
+            if args.propose:
+                proposed, skipped = propose_additions(
+                    items, existing=song.drum_additions)
+                if proposed:
+                    song.drum_additions = list(song.drum_additions) + proposed
+                    save_song(song)
+                    _say(f"   proposed {len(proposed)} additions into "
+                         f"drums.additions ({skipped} left for your ears) — "
+                         f"read the diff, then `rambass drums restore "
+                         f"{song.slug}`")
+                else:
+                    _say(f"   nothing confident enough to propose "
+                         f"({skipped} left for your ears)")
 
             target = song.path("qa", "missing-hits.md")
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1986,6 +2001,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--everything", action="store_true",
                    help="include the groove too (hats, kick, snare, side-stick), "
                         "which the vote is supposed to regularise")
+    p.add_argument("--propose", action="store_true",
+                   help="write the confident crash candidates into "
+                        "drums.additions for you to review in the diff")
     p.set_defaults(func=cmd_drums_missing)
 
     p = drums_sub.add_parser(

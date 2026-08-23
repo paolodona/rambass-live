@@ -93,7 +93,8 @@ PIPELINE: tuple[Step, ...] = (
                 "stems/parts/cymbals.wav", "stems/drums.wav",
                 "practice/align.yaml"),
         modules=("transcribe", "analyze", "midiio", "drummap"),
-        fields=("tempo", "drums", "count_in", "bars"),
+        fields=("tempo", "count_in", "bars", "drums/origin", "drums/map",
+                "drums/subdivision"),
         skip_origins=("a-cappella", "backing-track"),
     ),
     Step(
@@ -102,7 +103,8 @@ PIPELINE: tuple[Step, ...] = (
         command="rambass drums clean {slug}",
         inputs=("midi/drums-raw.mid",),
         modules=("quantize", "restore", "midiio"),
-        fields=("tempo", "drums", "sections", "bars"),
+        fields=("tempo", "sections", "bars", "drums/map", "drums/subdivision",
+                "drums/cymbal_subdivision"),
         skip_origins=("a-cappella", "backing-track"),
     ),
     Step(
@@ -111,7 +113,7 @@ PIPELINE: tuple[Step, ...] = (
         command="rambass drums consolidate {slug}",
         inputs=("midi/drums-quantized.mid",),
         modules=("quantize", "midiio"),
-        fields=("tempo", "drums", "sections", "bars"),
+        fields=("tempo", "sections", "bars", "drums/map", "drums/subdivision"),
         skip_origins=("a-cappella", "backing-track"),
     ),
     Step(
@@ -120,7 +122,9 @@ PIPELINE: tuple[Step, ...] = (
         command="rambass drums restore {slug}",
         inputs=("midi/drums-consolidated.mid",),
         modules=("restore", "midiio"),
-        fields=("tempo", "drums", "sections", "bars"),
+        # Only Stage 7's own edits, plus what places them on the grid.
+        fields=("tempo", "bars", "drums/map", "drums/additions",
+                "drums/removals"),
         skip_origins=("a-cappella", "backing-track"),
     ),
 )
@@ -193,11 +197,29 @@ def manifest_hashes(song, fields) -> dict:
     what you did.
     """
     data = song.to_dict()
+
+    def value_at(spec: str):
+        """``tempo`` is a whole block; ``drums/subdivision`` is one key of one.
+
+        Sub-keys exist because watching the whole ``drums`` block made adding one
+        entry to ``drums.additions`` declare the transcription, the clean and the
+        consolidate all stale — which is false, since Stage 7 edits are applied
+        after all three. It took about ten seconds of real use to hit, and a
+        report that cries wolf is worse than no report: the first thing anybody
+        does with one is stop reading it.
+        """
+        current = data
+        for part in spec.split("/"):
+            if not isinstance(current, dict):
+                return None
+            current = current.get(part)
+        return current
+
     return {
-        key: hashlib.sha256(
-            yaml.safe_dump(data.get(key), sort_keys=True, allow_unicode=True)
+        spec: hashlib.sha256(
+            yaml.safe_dump(value_at(spec), sort_keys=True, allow_unicode=True)
             .encode()).hexdigest()[:16]
-        for key in sorted(fields)
+        for spec in sorted(fields)
     }
 
 
