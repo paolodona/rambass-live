@@ -260,7 +260,95 @@ def cmd_stems(args: argparse.Namespace) -> int:
         )
         for name, path in sorted(result.stems.items()):
             _say(f"   {name:<10} {path}")
+        drums = result.stems.get("drums")
+        if drums:
+            _stamp(song, drums, "stems", [source])
         _mark(song, "stems")
+    return 0
+
+
+def _stamp(song, artifact, step: str, inputs) -> None:
+    """Record what produced *artifact*, so `rambass stale` can tell later.
+
+    Deliberately best-effort: a failure to write provenance must never fail the
+    command that just produced a good file.
+    """
+    from .provenance import stamp
+
+    try:
+        stamp(song, artifact, step=step, inputs=[p for p in inputs if p])
+    except OSError:
+        pass
+
+
+def _warn_if_stale(song, artifact) -> None:
+    """Say so before a command builds on something outdated.
+
+    The alert belongs *here* rather than only in `rambass stale`, because nobody
+    runs a status command before every step -- and the failure this exists to stop
+    is somebody spending an evening listening to a file that two commits of fixes
+    never reached.
+    """
+    from .provenance import stale_report
+
+    relative = str(artifact).replace("\\", "/")
+    for entry in stale_report(song):
+        if not relative.endswith(entry.artifact):
+            continue
+        if entry.state in ("stale", "unknown"):
+            _say(f"   ! {entry.artifact} is {entry.state}: "
+                 f"{'; '.join(entry.reasons)}")
+            _say(f"     re-run `{entry.command}` first, or accept it knowingly")
+        return
+
+
+def cmd_stale(args: argparse.Namespace) -> int:
+    """Which derived files are out of date, and which of the three reasons.
+
+    Paolo: "how do I avoid working on stale files?" An artifact goes stale three
+    ways and only one of them is the one make would catch: an input changed, the
+    manifest changed, or **the code that produced it changed**. The third is the
+    one that bit us -- drums-quantized.mid was two commits old with the wrong
+    articulation in it, and every timestamp on disk said it was current.
+
+    It reports and prints the command. It does not rebuild: a re-transcription is
+    minutes of CPU and it can change the part under you, so that decision belongs
+    to somebody who is about to listen to the result.
+    """
+    from .provenance import stale_report
+
+    MARK = {"ok": "ok", "missing": "--", "unknown": "??", "stale": "STALE",
+            "edited": "EDITED"}
+    project = _project()
+    todo: list[str] = []
+    for song in _songs(project, args.song, args.album, args.all):
+        entries = stale_report(song)
+        if not entries:
+            continue
+        interesting = [e for e in entries if e.state != "ok"]
+        if args.quiet and not [e for e in interesting if e.state != "missing"]:
+            continue
+        _say(f"── {song.title}")
+        for entry in entries:
+            if args.quiet and entry.state == "ok":
+                continue
+            _say(f"   {MARK[entry.state]:<7}{entry.artifact:<34}"
+                 f"{'; '.join(entry.reasons)}")
+            if entry.state in ("stale", "missing"):
+                todo.append(entry.command)
+        _say()
+    if todo:
+        _say("In order:")
+        seen = set()
+        for command in todo:
+            if command not in seen:
+                seen.add(command)
+                _say(f"   {command}")
+        _say()
+        _say("Nothing was rebuilt. A re-transcription can change the part, so")
+        _say("run these when you are ready to listen to the result.")
+    else:
+        _say("Everything derived is current.")
     return 0
 
 
@@ -343,6 +431,8 @@ def cmd_drums_transcribe(args: argparse.Namespace) -> int:
                      "re-measure the anchor (docs/drums.md) before going further.")
             target = song.drum_midi_path("raw")
             write_drum_midi(target, performance, load_drum_map(song.drum_map, project))
+            _stamp(song, target, "drums transcribe",
+                   [*parts.values(), kit, song.path("practice", "align.yaml")])
             _say(f"→ {target}  ({len(performance.hits)} hits)")
             _mark(song, "drums_midi", "wip")
             continue
@@ -413,6 +503,7 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
         performance = read_drum_midi(source, drum_map)
         performance.timeline = song.timeline()
         _say(f"── {song.title}: {len(performance.hits)} hits from {source.name}")
+        _warn_if_stale(song, source)
 
         # The song's own statement of where it ends bounds the part. A stem runs
         # to the end of the album track, so a transcription happily reports
@@ -510,6 +601,7 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
 
         target = song.drum_midi_path(args.output)
         write_drum_midi(target, performance, drum_map)
+        _stamp(song, target, "drums clean", [source])
         _say(f"→  {target}")
         _mark(song, "quantize")
     return 0
@@ -738,6 +830,7 @@ def cmd_drums_restore(args: argparse.Namespace) -> int:
             continue
         target = song.drum_midi_path(args.output)
         write_drum_midi(target, performance, drum_map)
+        _stamp(song, target, "drums restore", [source])
         _say(f"→  {target}")
     _say()
     return 0
@@ -776,6 +869,7 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
         performance.timeline = song.timeline()
         _say(f"── {song.title}: {len(performance.hits)} hits from {source.name}, "
              f"{len(spans)} sections")
+        _warn_if_stale(song, source)
 
         performance, report = consolidate(performance, spans, settings=ConsolidateSettings(
             subdivision=args.subdivision or song.drum_subdivision,
@@ -802,6 +896,7 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
             continue
         target = song.drum_midi_path(args.output)
         write_drum_midi(target, performance, drum_map)
+        _stamp(song, target, "drums consolidate", [source])
         _say(f"→  {target}")
     _say()
     _say("Stage 6 deliberately removes the fills: a fill is the bar that does not")
@@ -1717,6 +1812,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-audio-check", action="store_true",
                    help="skip the 'is the source audio present' check")
     p.set_defaults(func=cmd_check)
+
+    p = sub.add_parser(
+        "stale",
+        help="which derived files are out of date, and why (input, song.yaml, "
+             "or the code that made them)",
+    )
+    _add_song_args(p)
+    p.add_argument("--quiet", action="store_true",
+                   help="only show what is not current")
+    p.set_defaults(func=cmd_stale)
 
     p = sub.add_parser("new", help="scaffold a new song folder")
     p.add_argument("title")

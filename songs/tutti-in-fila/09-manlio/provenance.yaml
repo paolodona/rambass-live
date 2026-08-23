@@ -1,0 +1,46 @@
+# What produced each derived file here, and what it was made from.
+# `rambass stale` compares this with the files on disk. Written by the
+# producing commands -- do not hand-edit; delete a block to force a
+# rebuild.
+midi/drums-consolidated.mid:
+  code: f20dc4fbc6788e1b
+  inputs:
+    midi/drums-quantized.mid: 10bd353a54c8cedc
+  manifest:
+    bars: 282b639f9f9d4d15
+    drums: f07b529eed41c5d3
+    sections: 5af6519e9d267cbe
+    tempo: 72321402045f8010
+  self: 1fc31a584012b08f
+  step: drums consolidate
+  version: 0.1.0
+midi/drums-quantized.mid:
+  code: c4ad852778be0343
+  inputs:
+    midi/drums-raw.mid: fb64ba51e92b9165
+  manifest:
+    bars: 282b639f9f9d4d15
+    drums: f07b529eed41c5d3
+    sections: 5af6519e9d267cbe
+    tempo: 72321402045f8010
+  self: 10bd353a54c8cedc
+  step: drums clean
+  version: 0.1.0
+midi/drums-raw.mid:
+  code: 11a0ccd9ada92611
+  inputs:
+    practice/align.yaml: fa25090fa8a04fbc
+    stems/drums.wav: b7bf038b78a90ff6
+    stems/parts/cymbals.wav: e9e727cb5a9da8c7
+    stems/parts/hihat.wav: d9519f5a195844ce
+    stems/parts/kick.wav: 577ff19a684c3bb0
+    stems/parts/snare.wav: d351e4dde4ae1816
+    stems/parts/toms.wav: 3d78143a0a82687e
+  manifest:
+    bars: 282b639f9f9d4d15
+    count_in: 38b876f933c777cd
+    drums: f07b529eed41c5d3
+    tempo: 72321402045f8010
+  self: fb64ba51e92b9165
+  step: drums transcribe
+  version: 0.1.0

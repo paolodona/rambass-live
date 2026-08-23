@@ -1,0 +1,362 @@
+"""Which derived files are stale, and which of the three reasons it is.
+
+Paolo, after finding out the hard way: *"In general, how do I avoid working on
+stale files? should we have a staleness check or staleness alert so that old
+files are regenerated automatically?"*
+
+An artifact here can go stale three ways, and only the first is the one ``make``
+would catch:
+
+1. **an input changed** — a re-separated stem, a new source mix;
+2. **``song.yaml`` changed** — a new tempo, a moved section, a declared backbeat,
+   a new entry in ``drums.additions``;
+3. **the code that produced it changed.** This is the one that actually bit us.
+   ``midi/drums-quantized.mid`` was two commits old with a ``hihat_closed v122``
+   at Reaper 19.3 where the current transcriber puts an open hi-hat. Its inputs
+   were untouched, its manifest was untouched, its mtime was newer than
+   everything it was built from — and it was wrong. Nothing on disk said so, and
+   the only reason it surfaced is that Paolo listened to it.
+
+So a stamp records all three and :func:`stale_report` says which one moved.
+
+**It never regenerates anything.** A re-transcription is minutes of CPU and it
+can change the part under you — which is exactly what happened, and twice in one
+session — so the decision belongs to a human who is ready to listen to the
+result. The report's job is to make sure nobody is *surprised*, and to print the
+command.
+
+Cheap tier on purpose: hashlib, pathlib and pyyaml. A laptop at a venue can run
+it, and it does not import mido, librosa or numpy.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+
+from . import __version__
+
+#: One provenance file per song, next to ``song.yaml``. Not a sidecar per
+#: artifact: a directory of ``drums-raw.mid.provenance.yaml`` files is noise in
+#: every listing and in every diff, and the whole set is read at once anyway.
+PROVENANCE_NAME = "provenance.yaml"
+
+#: Files bigger than this are fingerprinted by sampling rather than in full.
+#: A stem is 56 MB and there are five per song; head, middle, tail and the exact
+#: length notice a re-separation and cost nothing.
+FULL_HASH_LIMIT = 4 << 20
+SAMPLE_BYTES = 1 << 20
+
+
+@dataclass(frozen=True)
+class Step:
+    """One producing command, and everything that decides whether its output is
+    still valid.
+
+    *fields* is the set of top-level ``song.yaml`` keys that matter — per concern
+    rather than the whole file, so that editing the lyrics filename does not
+    declare the drums stale. Nothing is more corrosive to a staleness report than
+    one that cries wolf.
+    """
+
+    name: str
+    artifact: str
+    command: str
+    inputs: tuple[str, ...] = ()
+    modules: tuple[str, ...] = ()
+    fields: tuple[str, ...] = ()
+    #: Skip this step entirely for these ``drums.origin`` values.
+    skip_origins: tuple[str, ...] = ()
+
+
+#: The drum chain and what hangs off it, in order. Both :func:`stale_report` and
+#: the ``rambass stale`` command read this and nothing else, so adding a stage
+#: means adding a row.
+PIPELINE: tuple[Step, ...] = (
+    Step(
+        name="stems",
+        artifact="stems/drums.wav",
+        command="rambass stems {slug}",
+        inputs=("source/{source_audio}",),
+        modules=("stems",),
+        skip_origins=("a-cappella", "backing-track"),
+    ),
+    Step(
+        name="drums transcribe",
+        artifact="midi/drums-raw.mid",
+        command="rambass drums transcribe {slug}",
+        inputs=("stems/parts/kick.wav", "stems/parts/snare.wav",
+                "stems/parts/hihat.wav", "stems/parts/toms.wav",
+                "stems/parts/cymbals.wav", "stems/drums.wav",
+                "practice/align.yaml"),
+        modules=("transcribe", "analyze", "midiio", "drummap"),
+        fields=("tempo", "drums", "count_in", "bars"),
+        skip_origins=("a-cappella", "backing-track"),
+    ),
+    Step(
+        name="drums clean",
+        artifact="midi/drums-quantized.mid",
+        command="rambass drums clean {slug}",
+        inputs=("midi/drums-raw.mid",),
+        modules=("quantize", "restore", "midiio"),
+        fields=("tempo", "drums", "sections", "bars"),
+        skip_origins=("a-cappella", "backing-track"),
+    ),
+    Step(
+        name="drums consolidate",
+        artifact="midi/drums-consolidated.mid",
+        command="rambass drums consolidate {slug}",
+        inputs=("midi/drums-quantized.mid",),
+        modules=("quantize", "midiio"),
+        fields=("tempo", "drums", "sections", "bars"),
+        skip_origins=("a-cappella", "backing-track"),
+    ),
+    Step(
+        name="drums restore",
+        artifact="midi/drums-restored.mid",
+        command="rambass drums restore {slug}",
+        inputs=("midi/drums-consolidated.mid",),
+        modules=("restore", "midiio"),
+        fields=("tempo", "drums", "sections", "bars"),
+        skip_origins=("a-cappella", "backing-track"),
+    ),
+)
+
+
+def _relative(song, path) -> str:
+    path = Path(path)
+    try:
+        return path.relative_to(song.directory).as_posix()
+    except (ValueError, TypeError):
+        return path.as_posix()
+
+
+def fingerprint(path) -> str:
+    """A short content hash. ``""`` for a file that is not there.
+
+    Content and not mtime, because copying stems between machines is normal and a
+    timestamp-based check would call every one of them stale. Sampled above
+    :data:`FULL_HASH_LIMIT`: head, middle, tail and the exact length is enough to
+    notice a re-separation, and reading 280 MB of stems per song to answer "is
+    this current" is not.
+    """
+    path = Path(path)
+    if not path.is_file():
+        return ""
+    size = path.stat().st_size
+    digest = hashlib.sha256(str(size).encode())
+    with path.open("rb") as handle:
+        if size <= FULL_HASH_LIMIT:
+            digest.update(handle.read())
+        else:
+            for offset in (0, max(0, size // 2 - SAMPLE_BYTES // 2),
+                           max(0, size - SAMPLE_BYTES)):
+                handle.seek(offset)
+                digest.update(handle.read(SAMPLE_BYTES))
+    return digest.hexdigest()[:16]
+
+
+def code_hash(modules) -> str:
+    """Hash the source of the named ``rambass`` modules.
+
+    This is what catches reason 3. Reading the installed source rather than
+    asking git means it works in a checkout with uncommitted edits — which is the
+    state a file gets built in most of the time.
+    """
+    digest = hashlib.sha256()
+    for name in sorted(modules):
+        path = Path(__file__).with_name(f"{name}.py")
+        digest.update(name.encode())
+        if path.is_file():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def manifest_hash(song, fields) -> str:
+    """One hash over the ``song.yaml`` keys a step depends on. Kept for tests."""
+    return hashlib.sha256(
+        yaml.safe_dump(manifest_hashes(song, fields), sort_keys=True).encode()
+    ).hexdigest()[:16]
+
+
+def manifest_hashes(song, fields) -> dict:
+    """One hash **per** ``song.yaml`` key a step depends on.
+
+    Per concern, not per file: a report that declares the drums stale because
+    somebody renamed the lyrics file is one people learn to ignore, and then it is
+    worse than nothing. And per *field* rather than one hash over all of them,
+    because "song.yaml changed in bars, drums, sections, tempo" -- which is what
+    the first version said -- is the whole watch list and tells you nothing about
+    what you did.
+    """
+    data = song.to_dict()
+    return {
+        key: hashlib.sha256(
+            yaml.safe_dump(data.get(key), sort_keys=True, allow_unicode=True)
+            .encode()).hexdigest()[:16]
+        for key in sorted(fields)
+    }
+
+
+def provenance_path(song) -> Path:
+    return Path(song.directory) / PROVENANCE_NAME
+
+
+def read_stamps(song) -> dict:
+    path = provenance_path(song)
+    if not path.is_file():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
+def write_stamps(song, stamps: dict) -> None:
+    path = provenance_path(song)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        "# What produced each derived file here, and what it was made from.\n"
+        "# `rambass stale` compares this with the files on disk. Written by the\n"
+        "# producing commands -- do not hand-edit; delete a block to force a\n"
+        "# rebuild.\n"
+    )
+    path.write_text(
+        header + yaml.safe_dump(stamps, sort_keys=True, allow_unicode=True),
+        encoding="utf-8")
+
+
+def step_for(artifact: str) -> Step | None:
+    for step in PIPELINE:
+        if step.artifact == artifact:
+            return step
+    return None
+
+
+def stamp(song, artifact, *, step: str, inputs=()) -> None:
+    """Record what produced *artifact*. Called by the producing command.
+
+    *step* is a :class:`Step` name, which is where the module list and the
+    manifest fields come from — so a command cannot record a different set from
+    the one the checker uses, and the two cannot drift apart.
+    """
+    relative = _relative(song, artifact)
+    known = step_for(relative)
+    modules = known.modules if known else ()
+    fields = known.fields if known else ()
+    stamps = read_stamps(song)
+    stamps[relative] = {
+        "step": step,
+        "version": __version__,
+        "self": fingerprint(artifact),
+        "code": code_hash(modules),
+        "manifest": manifest_hashes(song, fields),
+        "inputs": {_relative(song, path): fingerprint(path) for path in inputs},
+    }
+    write_stamps(song, stamps)
+
+
+@dataclass
+class Staleness:
+    """One artifact's verdict.
+
+    ``state`` is one of:
+
+    * ``ok`` — built by this code, from these inputs, against this manifest;
+    * ``missing`` — never built;
+    * ``unknown`` — there on disk with no provenance. Built before this existed,
+      or by hand. It may be perfectly current and nothing can say so;
+    * ``stale`` — an input, the manifest or **the code** moved since it was built;
+    * ``edited`` — the file itself differs from what the command wrote. Deliberate
+      almost always, and the risk here is the opposite one: re-running the step
+      throws the edit away.
+    """
+
+    artifact: str
+    step: str
+    command: str
+    state: str
+    reasons: list[str] = field(default_factory=list)
+
+
+def stale_report(song) -> list[Staleness]:
+    """Every pipeline artifact for this song, in order, with a verdict.
+
+    Staleness flows downstream, and **only staleness does**. If the raw MIDI is
+    stale then so is everything made from it, whatever its own stamp says —
+    without that you fix one file, see green below it and ship the old part, which
+    is the failure this module exists to prevent. But ``missing`` and ``unknown``
+    are not propagated, because an artifact's own stamp already answers those
+    better: it records what its inputs were when it was built, so a deleted or
+    unstamped input shows up as "has gone" or as nothing changed at all. Cascading
+    them as well turns a song where nothing has been built yet into a wall of
+    "stale", and a report that is mostly noise gets ignored.
+    """
+    stamps = read_stamps(song)
+    out: list[Staleness] = []
+    tainted: set[str] = set()
+
+    for step in PIPELINE:
+        if song.drums_origin in step.skip_origins:
+            continue
+        path = Path(song.directory) / step.artifact
+        entry = Staleness(
+            artifact=step.artifact, step=step.name,
+            command=step.command.format(slug=song.slug), state="ok")
+
+        if not path.is_file():
+            entry.state = "missing"
+            entry.reasons.append("has never been built")
+            out.append(entry)
+            continue
+
+        recorded = stamps.get(step.artifact)
+        if not recorded:
+            entry.state = "unknown"
+            entry.reasons.append(
+                "no provenance recorded — built before this existed, or by hand")
+        else:
+            if recorded.get("self") and fingerprint(path) != recorded["self"]:
+                # Worth its own state. A hand edit in Reaper is *intentional* and
+                # the danger is losing it, which is the opposite of the danger
+                # with a stale file -- so it must not read as "re-run this".
+                entry.state = "edited"
+                entry.reasons.append(
+                    "changed since it was built — probably edited by hand. "
+                    "Re-running the step will discard that; put the edits in "
+                    "drums.additions / drums.removals so they survive")
+            if recorded.get("code") != code_hash(step.modules):
+                entry.reasons.append(
+                    f"the code that makes it changed "
+                    f"({', '.join(step.modules)}.py)")
+            was = recorded.get("manifest")
+            if step.fields and isinstance(was, dict):
+                now = manifest_hashes(song, step.fields)
+                moved = sorted(key for key, value in now.items()
+                               if was.get(key) != value)
+                if moved:
+                    entry.reasons.append(
+                        f"song.yaml changed in {', '.join(moved)}")
+            elif step.fields and was != manifest_hash(song, step.fields):
+                # Provenance from before per-field hashing. Cannot say which.
+                entry.reasons.append("song.yaml changed")
+            for name, was in (recorded.get("inputs") or {}).items():
+                now = fingerprint(Path(song.directory) / name)
+                if not now:
+                    entry.reasons.append(f"{name} has gone")
+                elif now != was:
+                    entry.reasons.append(f"{name} changed")
+            if entry.reasons and entry.state != "edited":
+                entry.state = "stale"
+
+        upstream = sorted(name for name in step.inputs if name in tainted)
+        if upstream:
+            entry.state = "stale"
+            entry.reasons.append(
+                f"{', '.join(upstream)} {'is' if len(upstream) == 1 else 'are'} "
+                f"stale, so this is too")
+
+        if entry.state in ("stale", "edited"):
+            tainted.add(step.artifact)
+        out.append(entry)
+    return out
