@@ -12,8 +12,9 @@ reads as "the click does not line up with the mix" exactly when you are trying t
 judge timing.
 
 So the map is piecewise: a bar-to-seconds anchor every few bars, fitted from
-detected beats, and the audio between two anchors is resampled so that the
-recording's own duration for those bars becomes the grid's duration.
+detected beats, and the audio between two anchors is stretched — at its own
+pitch, see below — so that the recording's own duration for those bars becomes
+the grid's duration.
 
 **Only the source side is stored in seconds.** CLAUDE.md is explicit: the target
 side is computed from :class:`~rambass.timeline.Timeline` at build time, or a BPM
@@ -171,7 +172,7 @@ def test_an_absurd_rate_is_refused_rather_than_rendered():
     assert "bar 1" in str(caught.value)
 
 
-# ── the resampler ────────────────────────────────────────────────────────────
+# ── the warp itself ──────────────────────────────────────────────────────────
 
 
 def test_warping_a_click_track_puts_the_clicks_on_the_grid():
@@ -321,7 +322,13 @@ def test_an_anchor_on_every_beat_beats_an_anchor_on_every_bar():
         warp_samples(samples, sr, warp_plan(per_beat_map, timeline, bars=bars)),
         sr, bars)
     assert fine < coarse
-    assert fine < 10.0, "an anchor on every beat should land every beat"
+    # 15 ms, not the 10 ms this asserted while the warp resampled. WSOLA copies
+    # frames rather than reading a continuous position, so it may displace a
+    # transient by up to its search window (align.SEARCH_SECONDS, 10 ms) to keep
+    # the waveform in phase — that is the price of not moving the pitch. This
+    # click train measures 10.63 ms against 1067 ms for the per-bar map, and 15
+    # is well inside the 50 ms limit in docs/practice-tracks.md.
+    assert fine < 15.0, "an anchor on every beat should land every beat"
 
 
 def test_an_anchor_can_sit_mid_bar_and_survive_the_file():
@@ -543,3 +550,128 @@ def test_the_known_anchor_is_used_exactly_not_snapped_away():
     anchors = fit_anchors([0.9 + i for i in range(16)], timeline, bars=4,
                           every_beats=4, start_at=0.692)
     assert anchors[0].at == pytest.approx(0.692)
+
+
+# ── the warp preserves pitch ─────────────────────────────────────────────────
+#
+# The bug this section exists to stop. `warp_samples` used to *resample*: read
+# the source at `position * rate` and interpolate. That changes rate and pitch
+# together, by 12*log2(rate) semitones. Manlio's fitted map has 308 per-beat
+# segments with rates spanning 0.929-1.091, so the pitch moved every beat.
+# Measured on a 440 Hz tone pushed through the real plan:
+#
+#     rate 0.929 -> 408.0 Hz  (-1.31 semitones)
+#     rate 1.000 -> 440.0 Hz  ( 0.00)
+#     rate 1.091 -> 480.0 Hz  (+1.51 semitones)
+#
+# 2.78 semitones peak to peak, once per beat. That is the warble, and it made
+# the one file this module produces unusable for the one job it has.
+
+
+def _dominant_hz(x, sr):
+    """Spectral peak, parabolically interpolated. numpy only, no librosa."""
+    x = np.asarray(x, dtype=float)
+    n = len(x)
+    mag = np.abs(np.fft.rfft(x * np.hanning(n)))
+    k = int(np.argmax(mag))
+    if 0 < k < len(mag) - 1:
+        a, b, c = np.log(mag[k - 1:k + 2] + 1e-20)
+        k = k + 0.5 * (a - c) / (a - 2.0 * b + c)
+    return k * sr / n
+
+
+def _one_rate_plan(rate, seconds):
+    from rambass.align import WarpSegment
+
+    return [WarpSegment(source_start=0.0, source_end=rate * seconds,
+                        target_start=0.0, target_end=seconds)]
+
+
+@pytest.mark.parametrize("rate,resampling_read_it_as", [
+    (0.900, 396.0),
+    (0.929, 408.0),      # measured on Manlio's real plan: -1.31 semitones
+    (1.000, 440.0),
+    (1.091, 480.0),      # measured on Manlio's real plan: +1.51 semitones
+    (1.100, 484.0),
+])
+def test_a_sine_keeps_its_pitch_through_the_warp(rate, resampling_read_it_as):
+    """440 Hz in, 440 Hz out, within 1% (0.17 semitones) at every rate."""
+    sr, seconds = 22050, 2.0
+    source = np.sin(2.0 * np.pi * 440.0
+                    * np.arange(int(sr * (seconds * 1.3 + 1.0))) / sr
+                    ).astype(np.float32)
+    out = warp_samples(source, sr, _one_rate_plan(rate, seconds))
+    heard = _dominant_hz(out[int(0.25 * sr):int(1.75 * sr)], sr)
+    assert heard == pytest.approx(440.0, rel=0.01), f"rate {rate} read {heard:.1f} Hz"
+    if rate != 1.0:
+        # and it is not what resampling produced, which is the whole point
+        assert abs(heard - resampling_read_it_as) > 0.5 * abs(
+            resampling_read_it_as - 440.0)
+
+
+def test_pitch_holds_across_many_segments_without_clicking():
+    """One continuous pass, not 308 independently warped segments concatenated.
+    Alternating rates every half second is the worst case for seams."""
+    from rambass.align import WarpSegment
+
+    sr = 22050
+    plan, at, source_at = [], 0.0, 0.0
+    for index in range(12):
+        rate = 0.929 if index % 2 else 1.091
+        plan.append(WarpSegment(source_start=source_at,
+                                source_end=source_at + 0.5 * rate,
+                                target_start=at, target_end=at + 0.5))
+        source_at += 0.5 * rate
+        at += 0.5
+    source = np.sin(2.0 * np.pi * 220.0 * np.arange(int(sr * 12)) / sr
+                    ).astype(np.float32)
+    out = warp_samples(source, sr, plan)
+
+    heard = _dominant_hz(out[int(0.5 * sr):int(5.5 * sr)], sr)
+    assert heard == pytest.approx(220.0, rel=0.01)
+    # a 220 Hz sine at 22050 moves at most 0.063 per sample; a seam artefact is
+    # a step, so anything over 0.3 is a click and not the waveform
+    assert float(np.max(np.abs(np.diff(out)))) < 0.3
+
+
+def test_silence_in_silence_out():
+    sr = 8000
+    timeline = Timeline(bpm=60.0)
+    amap = AlignMap(anchors=[Anchor(bar=1, at=0.4), Anchor(bar=3, at=8.5)])
+    out = warp_samples(np.zeros(sr * 20, dtype=np.float32), sr,
+                       warp_plan(amap, timeline, bars=4))
+    assert float(np.max(np.abs(out))) == pytest.approx(0.0)
+
+
+def test_a_stereo_file_keeps_its_channels_together():
+    """WSOLA picks an offset per frame; picking it per channel independently
+    would decorrelate the two sides and smear the stereo image. One offset,
+    chosen on the mixdown, applied to both."""
+    sr = 22050
+    tone = np.sin(2.0 * np.pi * 330.0 * np.arange(sr * 4) / sr).astype(np.float32)
+    stereo = np.stack([tone, tone], axis=1)
+    out = warp_samples(stereo, sr, _one_rate_plan(1.05, 3.0))
+    assert out.shape == (int(round(3.0 * sr)), 2)
+    assert np.array_equal(out[:, 0], out[:, 1])
+
+
+def test_a_mono_array_still_comes_back_mono():
+    sr = 8000
+    out = warp_samples(np.zeros(sr * 5, dtype=np.float32), sr,
+                       _one_rate_plan(1.02, 4.0))
+    assert out.ndim == 1
+
+
+def test_a_grid_position_before_the_recording_starts_is_silence():
+    """The mirror of reading past the end: an anchor can sit later in the
+    recording than the grid position it maps to, and the head of the output then
+    has nothing to read. Silence, not a wrap."""
+    from rambass.align import WarpSegment
+
+    sr = 8000
+    source = np.ones(sr * 4, dtype=np.float32)
+    plan = [WarpSegment(source_start=-2.0, source_end=2.0,
+                        target_start=0.0, target_end=4.0)]
+    out = warp_samples(source, sr, plan)
+    assert float(np.max(np.abs(out[:int(1.5 * sr)]))) == pytest.approx(0.0)
+    assert float(np.max(np.abs(out[int(2.5 * sr):int(3.5 * sr)]))) > 0.5

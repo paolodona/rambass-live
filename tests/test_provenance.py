@@ -471,7 +471,7 @@ def test_correcting_bar_one_by_ear_does_make_it_stale(song):
 
 
 def test_the_warp_still_depends_on_the_whole_map(song):
-    """It resamples between every anchor, so every anchor matters to it."""
+    """It stretches between every anchor, so every anchor matters to it."""
     from rambass.provenance import step_for
 
     assert "practice/align.yaml" in step_for("practice/no_drums-aligned.wav").inputs

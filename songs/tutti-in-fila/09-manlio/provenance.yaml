@@ -67,7 +67,7 @@ midi/drums-restored.mid:
   step: drums restore
   version: 0.1.0
 practice/align.yaml:
-  code: 00831912db8ce21b
+  code: 8a697eabb01de260
   inputs:
     stems/drums.wav: 111446d6e131bd9a
   manifest:
@@ -78,7 +78,7 @@ practice/align.yaml:
   step: align fit
   version: 0.1.0
 practice/no_drums-aligned.wav:
-  code: 27c44738b8f398bb
+  code: 32e6d4f16f16a757
   inputs:
     practice/align.yaml: fc2c68f2e66af72a
     stems/no_drums.wav: a478dfe167d8c7d2
@@ -86,7 +86,7 @@ practice/no_drums-aligned.wav:
     bars: 282b639f9f9d4d15
     tempo: 72321402045f8010
   scalars: {}
-  self: 5e17cc5411d3a179
+  self: 03c47e7ce3712eab
   step: align warp
   version: 0.1.0
 stems/drums.wav:

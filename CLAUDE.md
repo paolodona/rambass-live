@@ -41,8 +41,19 @@ the target side is computed from `Timeline` at build time, or a BPM edit silentl
 stops re-warping. Three things there were measured and are settled: a single
 offset is not enough (Manlio drifts −88..+258 ms), anchoring every *beat* beats
 every bar (p90 38 ms against 58 ms and 107 ms), and the residual has to be
-leave-one-out or a per-beat fit reports a meaningless 0 ms. See
-`docs/practice-tracks.md`.
+leave-one-out or a per-beat fit reports a meaningless 0 ms. A fourth is settled
+now too: **the warp preserves pitch and must never resample.** `warp_samples`
+originally read the source at `position * rate`, which moves rate and pitch
+together by `12*log2(rate)` semitones — over Manlio's 308 per-beat segments
+(rates 0.929–1.091) that is 2.78 semitones peak to peak wobbling once per beat,
+which made the file unusable for the one job it has. It is WSOLA in numpy now,
+and the trade is measured: the bass fundamental sits 1.2 cents off the source at
+the median (37.2 before), and the warped backbeats land at p90 34.7 ms against
+30.4 ms, because WSOLA can displace a transient by up to its 10 ms search
+window. Do not "simplify" it back to interpolation, and do not reach for a phase
+vocoder (smears the transients that are the whole signal here) or ffmpeg
+`atempo` (one fixed rate per instance, so 308 invocations, and it drags the
+render out of the pure-numpy tier). See `docs/practice-tracks.md`.
 
 **Bar numbers spoken out loud are Reaper ruler readings; bar numbers in
 `song.yaml` are musical.** Paolo works from Reaper's ruler, where bar 1 is the

@@ -293,7 +293,7 @@ class WarpSegment:
 
 
 def warp_plan(amap: AlignMap, timeline: Timeline, *, bars: int) -> list[WarpSegment]:
-    """Turn a map into segments to resample. Target side computed, never stored.
+    """Turn a map into segments to stretch. Target side computed, never stored.
 
     The last segment runs to the end of the song rather than to the last anchor,
     because the tail is music too. With a single anchor there is nothing to
@@ -342,32 +342,150 @@ def plan_problem(amap: AlignMap, timeline: Timeline, *, bars: int) -> str | None
     return None
 
 
-def warp_samples(samples, sample_rate: int, plan) -> np.ndarray:
-    """Resample each segment so the recording lands on the grid.
+#: WSOLA frame length, seconds. Long enough to hold a couple of periods of the
+#: lowest note that matters — a bass low E is 41 Hz, 24 ms a period — and short
+#: enough that one frame sits inside one drum hit.
+FRAME_SECONDS = 0.046
+#: How far the analysis position may move to find the waveform that best
+#: continues the previous output frame. This is also the most a transient can be
+#: displaced by the warp, so it is the accuracy cost of preserving pitch: 10 ms,
+#: against the 50 ms that docs/practice-tracks.md sets as the limit.
+SEARCH_SECONDS = 0.010
 
-    Linear interpolation, deliberately. The rates here are within a few percent
-    of 1.0, this is a reference track for judging timing and not a deliverable,
-    and the alternative is a resampling dependency in the core tier — which
-    CLAUDE.md rules out without a real need. Reading past the end of the file
-    yields silence rather than wrapping, because a take that stops before the
-    grid does should go quiet, not repeat.
+
+def _source_clock(plan):
+    """``target seconds -> source seconds``, continuous across the whole plan.
+
+    The plan already *is* the piecewise-linear map, in the direction the render
+    needs it. Rebuilding one interpolator over all of its edges — rather than
+    walking segment by segment — is what makes the warp a single continuous pass
+    over the output, so 308 segments are 308 rate changes rather than 308 seams.
+    Off the ends it extrapolates at the nearest segment's own rate, the same
+    choice :meth:`AlignMap.source_at` makes and for the same reason.
+    """
+    points: list[tuple[float, float]] = []
+    for segment in plan:
+        points.append((segment.target_start, segment.source_start))
+        points.append((segment.target_end, segment.source_end))
+    points.sort()
+    edges_target, edges_source = [points[0][0]], [points[0][1]]
+    for target, source in points[1:]:
+        if target > edges_target[-1]:
+            edges_target.append(target)
+            edges_source.append(source)
+    xs = np.asarray(edges_target, dtype=float)
+    ys = np.asarray(edges_source, dtype=float)
+    first = plan[0].rate
+    last = plan[-1].rate
+
+    def clock(target: float) -> float:
+        return float(np.interp(
+            target, xs, ys,
+            left=ys[0] + (target - xs[0]) * first,
+            right=ys[-1] + (target - xs[-1]) * last))
+
+    return clock
+
+
+def _read(samples: np.ndarray, start: int, length: int) -> np.ndarray:
+    """*length* samples from *start*, zero-padded off either end.
+
+    Reading past the end of the file yields silence rather than wrapping,
+    because a take that stops before the grid does should go quiet, not repeat.
+    Reading before the start is the same case: an anchor can sit later in the
+    recording than the grid position it maps to.
+    """
+    out = np.zeros((length,) + samples.shape[1:], dtype=np.float32)
+    low = max(start, 0)
+    high = min(start + length, len(samples))
+    if high > low:
+        out[low - start:high - start] = samples[low:high]
+    return out
+
+
+def warp_samples(samples, sample_rate: int, plan, *,
+                 frame_seconds: float = FRAME_SECONDS,
+                 search_seconds: float = SEARCH_SECONDS) -> np.ndarray:
+    """Stretch the recording onto the grid **without moving its pitch**.
+
+    WSOLA: waveform-similarity overlap-add. Output frames go down at a fixed
+    synthesis hop, so the output clock is exact; each one is *copied* from the
+    recording at whatever position the map says that moment is, so the waveform
+    keeps its own period and therefore its pitch; and the copy point is nudged
+    within ±:data:`SEARCH_SECONDS` to the offset whose waveform best continues
+    the frame already written, so consecutive frames join in phase instead of
+    clicking.
+
+    This function used to resample — read the source at ``position * rate`` and
+    interpolate — and its docstring argued for that on the grounds that the
+    rates are within a few percent of 1.0. That reasoning was about *timing* and
+    never considered pitch, and it was wrong: resampling moves rate and pitch
+    together, by ``12*log2(rate)`` semitones. Manlio's fitted map spans rates
+    0.929–1.091 over 308 per-beat segments, so a 440 Hz tone came out at 408 Hz
+    (−1.31 semitones) and at 480 Hz (+1.51), **2.78 semitones peak to peak,
+    wobbling once per beat**. Unlistenable, in the one file whose only job is to
+    be listened to.
+
+    Why not the obvious alternatives. A phase vocoder is pitch-preserving and
+    takes a varying rate naturally, but it smears transients — and this
+    reference exists to judge whether programmed drums sit where the band
+    played, so attack definition *is* the signal. ffmpeg ``atempo`` sounds good
+    but takes one fixed rate per instance, which is 308 invocations and 308
+    joins to click at, and it would move the render out of the pure-numpy tier
+    so the tests would need ffmpeg. WSOLA is ~80 lines of numpy and keeps this
+    module testable with no audio file on disk, which CLAUDE.md asks for.
+
+    Mono ``(n,)`` in, mono out; ``(n, channels)`` in, the same shape out. The
+    search runs once on the mixdown and its offset is applied to every channel:
+    choosing per channel would decorrelate the sides and smear the image.
     """
     samples = np.asarray(samples, dtype=np.float32)
     if not len(plan):
         return samples
+    mono = samples.ndim == 1
+    data = samples[:, None] if mono else samples
     out_length = int(round(max(segment.target_end for segment in plan) * sample_rate))
-    out = np.zeros(out_length, dtype=np.float32)
-    for segment in plan:
-        start = int(round(segment.target_start * sample_rate))
-        stop = min(int(round(segment.target_end * sample_rate)), out_length)
-        if stop <= start:
-            continue
-        wanted = (segment.source_start
-                  + (np.arange(stop - start) / sample_rate) * segment.rate)
-        positions = wanted * sample_rate
-        out[start:stop] = np.interp(
-            positions, np.arange(len(samples)), samples, left=0.0, right=0.0)
-    return out
+    out = np.zeros((max(out_length, 0), data.shape[1]), dtype=np.float32)
+    if out_length <= 0:
+        return out[:, 0] if mono else out
+
+    clock = _source_clock(plan)
+    frame = max(8, 2 * int(round(frame_seconds * sample_rate / 2.0)))
+    hop = frame // 2
+    search = max(1, int(round(search_seconds * sample_rate)))
+    # Periodic Hann at half-frame hop sums to exactly 1.0, so nothing needs
+    # normalising afterwards — and the synthesis positions are fixed, so that
+    # stays true however far the analysis offsets move.
+    window = np.hanning(frame + 1)[:frame].astype(np.float32)
+    probe = data.mean(axis=1)
+    offsets = np.arange(-search, search + 1)
+    # Break a tie towards the map's own answer. In silence every candidate
+    # correlates at zero, and without this the first offset in the list wins.
+    penalty = 0.01 * np.abs(offsets) / float(search)
+
+    template: np.ndarray | None = None
+    # Start half a frame early and finish half a frame late so the overlap-add
+    # covers sample 0 and the final sample fully. Otherwise the first and last
+    # 23 ms fade, and a downbeat at grid 0.0 lands inside the fade.
+    for start in range(-hop, out_length + hop, hop):
+        ideal = int(round(clock(start / sample_rate) * sample_rate))
+        if template is None:
+            chosen = ideal
+        else:
+            region = _read(probe, ideal - search, 2 * search + hop)
+            scores = np.correlate(region, template, mode="valid")
+            energy = np.concatenate(([0.0], np.cumsum(region.astype(float) ** 2)))
+            energy = energy[hop:] - energy[:-hop]
+            norm = np.sqrt(energy * float(template @ template)) + 1e-12
+            chosen = ideal + int(offsets[int(np.argmax(scores / norm - penalty))])
+        piece = _read(data, chosen, frame) * window[:, None]
+        low, high = max(start, 0), min(start + frame, out_length)
+        if high > low:
+            out[low:high] += piece[low - start:high - start]
+        # What the recording does *next* after the frame just written. The next
+        # frame is chosen to continue it, which is the "similarity" in WSOLA.
+        template = _read(probe, chosen + hop, hop)
+    return out[:, 0] if mono else out
 
 
 def load_align(path) -> AlignMap:

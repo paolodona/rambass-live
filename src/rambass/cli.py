@@ -659,8 +659,6 @@ def cmd_align(args: argparse.Namespace) -> int:
     the song's `practice/` folder, touches no musical field in `song.yaml`, and is
     not a pipeline stage. It must never gate the gig.
     """
-    import numpy as np
-
     from .align import (
         AlignMap, Anchor, fit_anchors, load_align, plan_problem,
         residual_holdout_ms, residual_ms, save_align, warp_plan, warp_samples,
@@ -754,9 +752,9 @@ def cmd_align(args: argparse.Namespace) -> int:
             continue
         plan = warp_plan(amap, timeline, bars=bars)
         samples, sample_rate = load_audio(source)
-        warped = np.stack(
-            [warp_samples(samples[:, channel], sample_rate, plan)
-             for channel in range(samples.shape[1])], axis=1)
+        # Both channels in one call: WSOLA picks its offset per frame, and
+        # picking it per channel would decorrelate the sides.
+        warped = warp_samples(samples, sample_rate, plan)
         rates = [segment.rate for segment in plan]
         _say(f"── {song.title}: warped {source.name} over {len(plan)} segments, "
              f"rate {min(rates):.3f}-{max(rates):.3f}")

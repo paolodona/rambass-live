@@ -16,8 +16,8 @@ programmed part soloed against `stems/no_drums.wav` (drums-rebuild.md Stage 10).
 
 **Deliverable 0, and it is built.** `rambass align <song> --fit --warp` fits
 `practice/align.yaml` from detected beats and writes
-`practice/no_drums-aligned.wav` — the band minus drums, resampled onto the fixed
-grid so the new drums can be judged against it. `reaper build` puts it on a muted
+`practice/no_drums-aligned.wav` — the band minus drums, time-stretched onto the
+fixed grid at its own pitch so the new drums can be judged against it. `reaper build` puts it on a muted
 **REF aligned** track at the count-in with no anchor shift, because the file is
 already on the grid.
 
@@ -38,11 +38,26 @@ Three things that were measured rather than assumed, so nobody re-litigates them
   worst / 13 ms mean, and the numbers become monotone in resolution: 70/13 per
   beat, 93/20 every two beats, 116/31 per bar.
 
+* **The warp preserves pitch, and resampling did not.** `warp_samples` first
+  shipped as linear interpolation — read the source at `position * rate` — on the
+  grounds that the rates are within a few percent of 1.0. That argument was about
+  *timing* and never considered pitch: resampling moves both together, by
+  `12*log2(rate)` semitones. Manlio's 308 per-beat segments span rates
+  0.929–1.091, so a 440 Hz tone came out at 408 Hz (−1.31 semitones) and 480 Hz
+  (+1.51) — **2.78 semitones peak to peak, wobbling once per beat**, in the one
+  file whose only job is to be listened to. It is WSOLA now (waveform-similarity
+  overlap-add, ~80 lines of numpy, no new dependency): fixed synthesis hop for an
+  exact output clock, frames *copied* from the recording so the waveform keeps
+  its own period, and a ±10 ms similarity search so consecutive frames join in
+  phase. Measured on Manlio's bass stem against the same material in the source,
+  sustained notes only: the fundamental sits **1.2 cents** off the source at the
+  median and 6.6 at p90, against **37.2 and 78.4** for resampling. The cost is
+  timing: WSOLA may displace a transient by up to its search window, and the
+  warped backbeats measure p90 **34.7 ms** against 30.4 ms for resampling —
+  4.3 ms worse, and still inside the 50 ms below.
+
 Only the **source** side is stored, per CLAUDE.md: the target side comes from
 `Timeline` at build time, so a BPM edit re-warps instead of silently stopping.
-Linear interpolation resamples it, deliberately — the rates are within a few
-percent of 1.0, this is a reference for judging timing rather than a deliverable,
-and the alternative is a resampling dependency in the core tier.
 hides a lot; the same part inside the real song, with the real vocal on top, does
 not. Missing crashes, a fill that changed one bar early and a groove that is
 subtly wrong in the second half all become obvious. So this is where drum
@@ -370,12 +385,20 @@ optional extra) — but only in `practice align`. Once `align.yaml` exists,
 building and rebuilding every practice track needs nothing heavier than ffmpeg.
 Same layering rule as everywhere else: no librosa import at module top level.
 
-Time-warping goes through ffmpeg. `rubberband` handles transients better and is
-the first choice; `atempo` is the fallback and is fine at these ratios. Neither
-changes pitch — `asetrate` would, and must not be used. `rambass doctor` should
-probe for the rubberband filter (`ffmpeg -filters`) since it depends on how
-ffmpeg was built. Put T2's seams **on downbeats**, where the transient masks the
-splice, and crossfade them.
+Time-warping does **not** go through ffmpeg, in the end: `align.warp_samples`
+does it in numpy with WSOLA, so the whole render stays in the cheap tier and its
+tests need no audio file. The ffmpeg route was considered and rejected — `atempo`
+sounds good but takes one fixed rate per instance, which for Manlio is 308
+invocations and 308 joins to click at, and it would put ffmpeg in the way of
+testing the warp at all. A phase vocoder was rejected for a different reason: it
+preserves pitch and takes a varying rate naturally, but it smears transients, and
+this reference exists to judge whether programmed drums sit where the band
+played, so attack definition *is* the signal. `asetrate` is the bug that was
+actually shipped, under another name — resampling. Do not use it.
+
+WSOLA needs no seam handling, because there are no seams: one continuous pass
+runs over the output and asks the map where each moment is, so 308 segments are
+308 rate changes rather than 308 splices.
 
 ### CLI surface
 
@@ -416,6 +439,8 @@ Everything worth testing is arithmetic and runs without ffmpeg, librosa or
 demucs:
 
 * anchors → warp plan: segment boundaries, rates, monotonicity
+* the warp holds pitch: a 440 Hz sine at rates 0.9–1.1 still reads 440 Hz within
+  1%, naming the 408/480 Hz the resampling version produced
 * residual computation, and the tier verdict at the 30/50 ms thresholds
 * target times come from `Timeline`, so changing BPM changes the plan — the
   regression test for the invariant
