@@ -30,6 +30,8 @@ stems:
 sections:
 - name: theme-intro
   bar: 1
+- name: theme-intro-stop
+  bar: 4
 - name: verse-1
   bar: 6
 - name: verse-1-lift
