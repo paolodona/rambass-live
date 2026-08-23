@@ -36,6 +36,10 @@ STAGES = (
 
 STATUS_VALUES = ("todo", "wip", "done", "n/a")
 
+#: Drum MIDI variants, least to most finished. `raw` is absent on purpose: it is
+#: the unquantised take and is never a backing track.
+DRUM_VARIANT_ORDER = ("quantized", "consolidated", "restored")
+
 #: What a section may declare its backbeat to be, when no detector can settle it.
 #:
 #: Deliberately short. This is not a general re-voicing facility — it names the
@@ -694,6 +698,23 @@ class Song:
 
     def drum_midi_path(self, variant: str = "quantized") -> Path:
         return self.path("midi", f"drums-{variant}.mid")
+
+    def best_drum_midi(self) -> Path:
+        """The most finished drum variant that exists, for the Reaper project.
+
+        `reaper build` used to default to ``quantized``, which is the part before
+        the section vote and before Stage 7 -- so after doing all of that work the
+        project still played the version from three stages back, silently, and
+        looking exactly like a build that had worked.
+
+        ``raw`` is deliberately not in the order. It is the unquantised take, and
+        a project that quietly used it would be off the grid.
+        """
+        for variant in reversed(DRUM_VARIANT_ORDER):
+            candidate = self.drum_midi_path(variant)
+            if candidate.exists():
+                return candidate
+        return self.drum_midi_path("quantized")
 
     @property
     def length_known(self) -> bool:

@@ -334,3 +334,35 @@ def test_a_stage_seven_edit_does_make_the_restore_stale(song):
     entry = {s.artifact: s for s in stale_report(song)}["midi/drums-restored.mid"]
     assert entry.state == "stale"
     assert any("additions" in reason for reason in entry.reasons)
+
+
+# ── the Reaper project has to get the *finished* part ────────────────────────
+#
+# `reaper build` defaulted to drums-quantized.mid, which is the part before the
+# section vote and before Stage 7. So after doing all of that work the project
+# still played the version from three stages back -- silently, and looking
+# exactly like a build that had worked.
+
+
+def test_the_best_variant_is_the_most_finished_one_present(song):
+    from rambass.manifest import DRUM_VARIANT_ORDER
+
+    (song.directory / "midi").mkdir(parents=True, exist_ok=True)
+    for variant in ("quantized", "consolidated"):
+        song.drum_midi_path(variant).write_bytes(b"MThd")
+    assert song.best_drum_midi().name == "drums-consolidated.mid"
+    song.drum_midi_path("restored").write_bytes(b"MThd")
+    assert song.best_drum_midi().name == "drums-restored.mid"
+    assert DRUM_VARIANT_ORDER[-1] == "restored"
+
+
+def test_with_nothing_built_it_falls_back_to_the_conventional_name(song):
+    assert song.best_drum_midi().name == "drums-quantized.mid"
+
+
+def test_raw_is_never_chosen_over_nothing(song):
+    """drums-raw.mid is the unquantised take. It is never a backing track, so a
+    project that quietly used it would be off the grid and sound broken."""
+    (song.directory / "midi").mkdir(parents=True, exist_ok=True)
+    song.drum_midi_path("raw").write_bytes(b"MThd")
+    assert song.best_drum_midi().name == "drums-quantized.mid"

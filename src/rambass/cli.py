@@ -1009,7 +1009,8 @@ def cmd_reaper_build(args: argparse.Namespace) -> int:
             sticks_wav=song.path("render", "sticks.wav"),
             click_wav=song.path("render", "click.wav"),
             backing_wav=song.backing_track_path(),
-            drum_midi=song.drum_midi_path(args.midi),
+            drum_midi=(song.drum_midi_path(args.midi) if args.midi
+                       else song.best_drum_midi()),
             gx100_midi=song.path("midi", "gx100.mid"),
             include_reference=not args.no_reference,
         )
@@ -2058,7 +2059,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = reaper_sub.add_parser("build", help="one project per song")
     _add_song_args(p)
-    p.add_argument("--midi", default="quantized", help="which drum MIDI variant to place")
+    p.add_argument("--midi", default=None,
+                   help="drum MIDI variant to place; the default is the most "
+                        "finished one that exists (restored, else consolidated, "
+                        "else quantized)")
     p.add_argument("--no-reference", action="store_true",
                    help="leave out the reference stems and mix")
     p.set_defaults(func=cmd_reaper_build)
