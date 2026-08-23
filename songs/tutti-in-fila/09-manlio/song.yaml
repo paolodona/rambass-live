@@ -28,7 +28,7 @@ stems:
 - other
 - vocals
 sections:
-- name: intro
+- name: theme-intro
   bar: 1
 - name: verse-1
   bar: 6
@@ -49,10 +49,10 @@ sections:
   bar: 55
 - name: break-3
   bar: 63
-- name: theme
+- name: theme-finale
   bar: 65
   beat: 3.0
-- name: break-final
+- name: closing-fill
   bar: 77
   beat: 3.0
 gx100:
