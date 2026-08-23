@@ -81,6 +81,25 @@ CRASH_SUSTAIN_SECONDS = 0.35
 CRASH_SUSTAIN_RATIO = 0.45
 OPEN_HAT_SUSTAIN_RATIO = 0.22
 
+#: A snare-stem hit with less than this share of its energy in the shell's own
+#: band is a **side-stick** — a stick laid across the rim, tip on the head. The
+#: stroke never reaches the shell, so there is no body to it at all.
+#:
+#: Measured on Manlio at the 202 snare-stem detections, classified against the
+#: section list: the 24 verse backbeats sit at a median 0.21 and the 69 real
+#: snare backbeats at 0.57. 0.35 is between them, not on either.
+SIDESTICK_BODY_SHARE = 0.35
+#: ...and it must also be **louder in the hi-hat stem than in the snare stem**,
+#: which is a thing a snare cannot be: all of a rim click's energy is a
+#: high-frequency transient, so a separator hands most of it to the hat.
+#:
+#: Same measurement: -17.8 dB median for the verse backbeats against +28.6 dB
+#: for the real ones. This is a sign flip across a 46 dB gap rather than a tuned
+#: threshold, which is why it is 0 and not a number.
+SIDESTICK_HAT_MARGIN_DB = 0.0
+#: The window both features are measured over, relative to the detected attack.
+SIDESTICK_WINDOW = (0.015, 0.045)
+
 
 @dataclass
 class TranscriptionReport:
@@ -113,6 +132,8 @@ class TranscriptionReport:
     collision_report: dict = field(default_factory=dict)
     #: Set when hits needing a third hand were dropped.
     playability_note: str = ""
+    #: Set when snare-stem hits were renamed as side-sticks.
+    sidestick_note: str = ""
 
     def summary(self) -> str:
         lines = [f"duration {self.duration:.2f} s"]
@@ -127,6 +148,8 @@ class TranscriptionReport:
                          f"most hits on a subdivision")
         if self.parity_note:
             lines.append(self.parity_note)
+        if self.sidestick_note:
+            lines.append(self.sidestick_note)
         if self.bleed_note:
             lines.append(self.bleed_note)
         if self.cymbal_note:
@@ -405,8 +428,10 @@ def transcribe_parts(
     bands = bands or PART_BANDS
 
     wander: list[tuple[float, float]] = []
+    kit_samples = None
     if kit_mix is not None:
         samples, sr = load_mono(kit_mix, 22050)
+        kit_samples = samples
         envelope = librosa.onset.onset_strength(y=samples, sr=sr, hop_length=256)
         wander = pulse_wander(
             envelope,
@@ -416,6 +441,7 @@ def transcribe_parts(
         )
 
     hits: list[Hit] = []
+    sidesticks = 0
     reports: dict[str, TranscriptionReport] = {}
     for name, path in parts.items():
         band = bands.get(name)
@@ -432,6 +458,19 @@ def transcribe_parts(
             **kwargs,
         )
         part_hits = performance.hits
+        if name == "snare" and kit_samples is not None and "hihat" in parts:
+            # Before the dewander, while a hit's time still names a moment in
+            # the file rather than a position on the grid.
+            hat_samples, _ = load_mono(parts["hihat"], 22050)
+            snare_samples, _ = load_mono(path, 22050)
+            part_hits, renamed = label_sidesticks(part_hits, sidestick_evidence(
+                part_hits, kit=kit_samples, snare=snare_samples,
+                hat=hat_samples, sample_rate=22050, offset=offset))
+            sidesticks += renamed
+            if renamed:
+                report.per_instrument["sidestick"] = renamed
+                report.per_instrument["snare"] = (
+                    report.per_instrument.get("snare", renamed) - renamed)
         if wander:
             moved = dewander([h.time + offset for h in part_hits], wander)
             part_hits = [
@@ -462,6 +501,13 @@ def transcribe_parts(
         # per-stem pass can see that a quiet snare and a loud crash are the same
         # event, or that four stems agree on a moment needing four hands.
         hits, notes = clean_merged_hits(hits, timeline, subdivision=subdivision)
+        if sidesticks:
+            merged.sidestick_note = (
+                f"named {sidesticks} snare-stem hits as side-sticks (no shell "
+                f"tone, and louder in the hat stem than in the snare stem — see "
+                f"transcribe.label_sidesticks) and dropped "
+                f"{notes['sidestick_hats']} hi-hat hits that were only the "
+                f"click's own leak")
         opened = notes["cymbal_runs"]
         if opened:
             merged.cymbal_note = (f"relabelled {opened} cymbal hits as open hi-hats "
@@ -678,6 +724,160 @@ def merge_hat_pairs(hits: list[Hit], *, window: float = 0.030) -> tuple[list[Hit
                 continue
         kept.append(hit)
     return kept, merged
+
+
+def sidestick_evidence(
+    hits: list[Hit],
+    *,
+    kit,
+    snare,
+    hat,
+    sample_rate: int,
+    offset: float = 0.0,
+    window: tuple[float, float] = SIDESTICK_WINDOW,
+    candidates: tuple[str, ...] = ("snare",),
+) -> list[tuple[float, float]]:
+    """Measure, per hit, what :func:`label_sidesticks` needs to decide.
+
+    Returns a list parallel to *hits* of ``(body_share, hat_margin_db)``, with
+    ``nan`` for anything not measurable — a hit past the end of the audio, or one
+    that is not a *candidates* instrument. Same shape as the ``levels`` sequence
+    :func:`gate_quiet_hits` takes, for the same reason: the decision stays a pure
+    function of numbers, and only the numbers need audio.
+
+    *kit*, *snare* and *hat* are mono arrays at *sample_rate* — the whole drum
+    stem and two part stems. The body share is measured on the **kit**, not on
+    the separated snare, and that is the whole reason this works. Measured the
+    other way first: read off the snare part stem it reports 10 rim clicks in
+    Manlio's chorus-1 that are not there, because in a dense bar the separator
+    puts the crash in the snare stem and a window looking for the loudest thing
+    nearby finds the cymbal. The kit mix is the audio that was actually played;
+    the separator is not in the discriminator at all.
+
+    *offset* is where bar 1 beat 1 sits inside the recording, because ``hits``
+    are on the musical clock and the arrays are on the audio one. **Pass raw
+    detection times**: this must run before :func:`dewander` and before
+    :func:`best_anchor_shift`, since after those a hit's time is a grid position
+    and no longer names a moment in the file.
+    """
+    pre, post = window
+    length = int((pre + post) * sample_rate)
+    kit = np.asarray(kit, dtype=float)
+    snare = np.asarray(snare, dtype=float)
+    hat = np.asarray(hat, dtype=float)
+    freqs = np.fft.rfftfreq(length, 1.0 / sample_rate) if length else np.zeros(0)
+    taper = np.hanning(length) if length else np.zeros(0)
+
+    def slice_at(samples: np.ndarray, start: int) -> np.ndarray | None:
+        if start < 0 or start + length > samples.size:
+            return None
+        return samples[start:start + length]
+
+    out: list[tuple[float, float]] = []
+    for hit in hits:
+        start = int(round((hit.time + offset - pre) * sample_rate))
+        pieces = [slice_at(part, start) for part in (kit, snare, hat)]
+        if hit.instrument not in candidates or any(p is None or not length
+                                                   for p in pieces):
+            out.append((float("nan"), float("nan")))
+            continue
+        kit_seg, snare_seg, hat_seg = pieces
+        power = np.abs(np.fft.rfft(kit_seg * taper)) ** 2
+        body = float(power[(freqs >= 180.0) & (freqs < 500.0)].sum())
+        rest = float(power[(freqs >= 500.0) & (freqs < 10000.0)].sum())
+        margin = 20.0 * np.log10(
+            (float(np.sqrt((snare_seg ** 2).mean())) + 1e-9)
+            / (float(np.sqrt((hat_seg ** 2).mean())) + 1e-9))
+        out.append((body / (body + rest + 1e-20), margin))
+    return out
+
+
+def label_sidesticks(
+    hits: list[Hit],
+    evidence,
+    *,
+    body_share: float = SIDESTICK_BODY_SHARE,
+    hat_margin_db: float = SIDESTICK_HAT_MARGIN_DB,
+) -> tuple[list[Hit], int]:
+    """Rename the snare hits that are really rim clicks. Returns (hits, count).
+
+    Manlio's verses play the backbeat as a side-stick, and until this existed the
+    transcriber had no name for it: ``sidestick`` was in
+    :data:`~rambass.drummap.CANONICAL` and in :data:`_KEEP_RANK` and nothing ever
+    produced one. So verse-1, verse-2 and verse-3 came out with **zero** snare
+    hits — the rim click's transient landed in the 6-16 kHz hat band at full
+    velocity, and :func:`suppress_cross_stem_bleed` then used that phantom accent
+    as the loud partner that deleted the real stroke.
+
+    Both features must agree, and the asymmetry is deliberate. On Manlio the pair
+    catches 23 of the 24 verse backbeats and **none** of the 69 real snare
+    backbeats: turning a snare into a rim click is the error that would be heard,
+    so the rule is built to never make it, at the price of leaving the odd click
+    as a snare. Either feature alone fails — the level test alone takes 3 real
+    backbeats (bar 14 beat 2 and bar 51 beat 2 both sit at -2 dB with a full 0.6
+    body share), and the body test alone takes 5 ghost detections.
+
+    The 10 hits it does relabel beyond the backbeat are all velocity 76 or below,
+    off the beat, in the snare stem's own leakage — spurious either way, and a
+    quiet ghost voiced as a rim click rather than a soft snare is not a fault
+    worth a third constant to avoid.
+
+    Velocity is untouched, so these land near the floor: they were scaled against
+    the song's snares and they are 20-30 dB below them. That is true of the real
+    instrument too, and setting a rim click's response is the kit's job at
+    Stage 7, not this pass's.
+    """
+    evidence = list(evidence)
+    if not hits or len(evidence) != len(hits):
+        return list(hits), 0
+    out: list[Hit] = []
+    count = 0
+    for hit, (body, margin) in zip(hits, evidence, strict=True):
+        if (hit.instrument == "snare"
+                and body == body and margin == margin      # not nan
+                and body < body_share and margin < hat_margin_db):
+            out.append(replace(hit, instrument="sidestick"))
+            count += 1
+        else:
+            out.append(hit)
+    return out, count
+
+
+def drop_hats_on_sidesticks(
+    hits: list[Hit],
+    *,
+    window: float = 0.030,
+    hats: tuple[str, ...] = ("hihat_closed", "hihat_open", "hihat_pedal"),
+) -> tuple[list[Hit], int]:
+    """Drop the hi-hat hits that are only a rim click's leak. Returns (hits, n).
+
+    A side-stick is a high-frequency transient and nothing else, so the hat
+    stem's own detector fires on it. Measured on Manlio's verses, per triplet
+    slot: the hi-hat stem is 13-14 dB louder at beats 2 and 4 than at the
+    surrounding triplets, and its 6-16 kHz share collapses from 0.83-0.97 — a
+    closed hat is nearly all top end — to 0.30-0.43, which is a stick on a rim.
+    What the detector reported there is the click.
+
+    Whether a hat *also* sounded under it is not answerable from the audio, since
+    the click masks it. So this drops it, and Paolo's reasoning is what settles
+    the tie: a hi-hat note whose whole evidence is a rim click does not belong in
+    the part, and the alternative is not a hole but a velocity-122 accented
+    closed hat on every backbeat of the song, which is plainly audible and
+    plainly wrong. Putting a hat back under the click is a musical decision for
+    Stage 7 of docs/drums-rebuild.md, at a velocity somebody chose.
+
+    Runs first in :func:`clean_merged_hits`, before anything reasons about hats,
+    so no later pass merges or relabels a hit that is not a hi-hat at all.
+    """
+    sidesticks = np.asarray(
+        sorted(hit.time for hit in hits if hit.instrument == "sidestick"),
+        dtype=float)
+    if not sidesticks.size:
+        return list(hits), 0
+    kept = [hit for hit in hits
+            if hit.instrument not in hats
+            or float(np.min(np.abs(sidesticks - hit.time))) >= window]
+    return kept, len(hits) - len(kept)
 
 
 def suppress_crash_bleed(
@@ -941,7 +1141,8 @@ def suppress_cross_stem_bleed(
     window: float = 0.025,
     quiet_by: int = 13,
     louder_by: int = 10,
-    exclude: tuple[str, ...] = ("hihat_closed", "hihat_open", "hihat_pedal", "ride"),
+    exclude: tuple[str, ...] = ("hihat_closed", "hihat_open", "hihat_pedal",
+                                "ride", "sidestick"),
 ) -> tuple[list[Hit], int]:
     """Drop quiet hits that coincide with a much louder one elsewhere.
 
@@ -958,9 +1159,21 @@ def suppress_cross_stem_bleed(
     typical one". It is a proxy and not a measurement, which bounds what this
     can do — see the warning below.
 
-    Hats and the ride are excluded for the reason
-    :func:`suppress_crash_bleed` excludes hats: they play under everything, they
-    are quiet by nature, and the same rule there deletes a real part.
+    *exclude* names the instruments that are **quiet by nature**, and that
+    disqualifies them from *both* roles — they are neither deleted as bleed nor
+    believed as the loud partner that deletes something else. Hats and the ride
+    are there for the reason :func:`suppress_crash_bleed` excludes hats: they
+    play under everything, so the same rule deletes a real part. A rim click is
+    there because it is 20-30 dB below the same drummer's snare by construction.
+
+    **Believing them was the bug.** Measured on Manlio, this pass dropped 136
+    hits and 99 of them were drums deleted because a hi-hat beside them read
+    louder — 44 kicks and 45 snares, including the entire verse backbeat. A
+    closed hat cannot out-shout a kick, so a hat stem that is the louder of the
+    two is the drum leaking *into* it, and deleting the drum inverts the
+    causality. The argument that stops the pass gating hats is the same argument
+    that stops it trusting them, and applying it in only one direction is what
+    let a rim click's leak delete the stroke that caused it.
 
     **Known limit, measured, do not assume this catches everything.** On Manlio
     the snare stem's *median* detection is 20 dB below its real backbeats — the
@@ -994,7 +1207,7 @@ def suppress_cross_stem_bleed(
             if other_position == position:
                 continue
             other = hits[order[other_position]]
-            if other.instrument == hit.instrument:
+            if other.instrument == hit.instrument or other.instrument in exclude:
                 continue
             if other.velocity - hit.velocity >= louder_by:
                 drop.add(index)
@@ -1016,22 +1229,28 @@ def clean_merged_hits(
     or audio: per-stem detection needs both, this needs neither. The order is
     load-bearing and each step assumes the one before it has run:
 
-    1. :func:`split_cymbal_runs` — decide what the cymbal stem actually is,
+    1. :func:`drop_hats_on_sidesticks` — first, before anything reasons about
+       hats, because a hat that is only a rim click's leak is not a hat.
+    2. :func:`split_cymbal_runs` — decide what the cymbal stem actually is,
        before anything reasons about crashes.
-    2. :func:`merge_hat_pairs` — one open hat, not a closed one and an open one.
-    3. :func:`suppress_crash_bleed` — needs the crashes to be real crashes,
-       hence after step 1.
-    4. :func:`suppress_cross_stem_bleed` — the general case, on what is left.
-    5. :func:`resolve_collisions` — musical arbitration. After the level-based
+    3. :func:`merge_hat_pairs` — one open hat, not a closed one and an open one.
+    4. :func:`suppress_crash_bleed` — needs the crashes to be real crashes,
+       hence after step 2.
+    5. :func:`suppress_cross_stem_bleed` — the general case, on what is left.
+    6. :func:`resolve_collisions` — musical arbitration. After the level-based
        gates, because it should only be asked about collisions they could not
        explain.
-    6. :func:`enforce_playability` — last, so it judges the finished part. A
+    7. :func:`enforce_playability` — last, so it judges the finished part. A
        part that is still unplayable here is one no earlier pass could fix.
+
+    Step 1 does nothing unless the side-sticks have already been named, which
+    needs audio and so happens in :func:`transcribe_parts`.
 
     Returns (hits, notes) where notes counts what each pass did.
     """
     notes: dict = {}
     beat_seconds = 60.0 / timeline.bpm if timeline.bpm > 0 else 0.5
+    hits, notes["sidestick_hats"] = drop_hats_on_sidesticks(hits)
     hits, notes["cymbal_runs"] = split_cymbal_runs(hits, beat_seconds)
     hits, notes["hat_pairs"] = merge_hat_pairs(hits)
     hits, notes["crash_bleed"] = suppress_crash_bleed(hits)

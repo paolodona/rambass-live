@@ -280,6 +280,72 @@ def test_the_window_bounds_what_counts_as_coincident(window):
     assert dropped == (0 if window < 0.015 else 1)
 
 
+# ── quiet by nature cuts both ways ───────────────────────────────────────────
+#
+# Measured on Manlio: this pass dropped 136 hits and **99 of them were drums
+# deleted because a hi-hat beside them read louder** -- 44 kicks and 45 snares.
+# A closed hat cannot out-shout a kick, so when the hat stem is the louder of
+# the two the causality runs the other way: it is the drum leaking into the hat
+# stem, not the hat leaking into the drum's. The instruments the pass already
+# refuses to *delete* for being quiet by nature are exactly the ones it must
+# refuse to *believe*, and leaving that asymmetry in place is what deleted the
+# verse backbeat Paolo heard missing.
+
+
+def test_a_hat_is_never_the_louder_partner_that_deletes_a_snare():
+    """The Manlio verse backbeat: a rim click reads as a v122 closed hat, and
+    that phantom accent was deleting the real stroke underneath it."""
+    hits = [Hit("kick", float(i), 105) for i in range(10)]
+    hits += [Hit("snare", i + 0.5, 108) for i in range(10)]
+    hits.append(Hit("snare", 2.504, 60))            # the real, quiet stroke
+    hits.append(Hit("hihat_closed", 2.506, 122))    # its own leak in the hat stem
+    hits.sort(key=lambda h: (h.time, h.instrument))
+    kept, dropped = suppress_cross_stem_bleed(hits)
+    assert dropped == 0
+    assert Hit("snare", 2.504, 60) in kept
+
+
+def test_a_hat_is_never_the_louder_partner_that_deletes_a_kick():
+    hits = [Hit("kick", float(i), 105) for i in range(10)]
+    hits += [Hit("snare", i + 0.5, 108) for i in range(10)]
+    hits.append(Hit("kick", 3.252, 55))
+    hits.append(Hit("hihat_closed", 3.254, 120))
+    hits.sort(key=lambda h: (h.time, h.instrument))
+    _, dropped = suppress_cross_stem_bleed(hits)
+    assert dropped == 0
+
+
+def test_a_ride_is_not_loudness_evidence_either():
+    hits = [Hit("kick", float(i), 105) for i in range(10)]
+    hits += [Hit("snare", i + 0.5, 108) for i in range(10)]
+    hits.append(Hit("snare", 4.504, 60))
+    hits.append(Hit("ride", 4.506, 118))
+    hits.sort(key=lambda h: (h.time, h.instrument))
+    _, dropped = suppress_cross_stem_bleed(hits)
+    assert dropped == 0
+
+
+def test_a_real_drum_is_still_loudness_evidence():
+    """The pass has to keep working: a loud kick next to a whisper-quiet snare
+    in the snare stem is still Manlio bar 1, and still bleed."""
+    hits = [Hit("kick", float(i), 105) for i in range(10)]
+    hits += [Hit("snare", i + 0.5, 108) for i in range(10)]
+    hits.append(Hit("snare", 0.006, 60))
+    hits.sort(key=lambda h: (h.time, h.instrument))
+    _, dropped = suppress_cross_stem_bleed(hits)
+    assert dropped == 1
+
+
+def test_a_sidestick_is_quiet_by_nature_and_is_never_deleted_as_bleed():
+    hits = [Hit("kick", float(i), 105) for i in range(10)]
+    hits += [Hit("sidestick", i + 0.5, 60) for i in range(10)]
+    hits.append(Hit("sidestick", 5.004, 30))    # quiet even for a rim click
+    hits.append(Hit("snare", 5.006, 115))
+    hits.sort(key=lambda h: (h.time, h.instrument))
+    _, dropped = suppress_cross_stem_bleed(hits)
+    assert dropped == 0, "a rim click is 20-30 dB below a snare by construction"
+
+
 # ── clean_merged_hits: the whole post-merge pipeline, in order ────────────────
 #
 # Extracted from transcribe_parts precisely so it can be tested here: the
