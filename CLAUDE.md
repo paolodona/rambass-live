@@ -142,6 +142,24 @@ stem, then demucs extraction as a distant fallback. See "drum sources for the si
 unmixed songs" in that file. This is still not a reconstruction job: nothing on
 this album gets separated into part stems, transcribed, quantised or re-voiced.
 
+**One drummer, one kit, one studio — for the whole of Tutti in Fila.** So a
+level- or velocity-based heuristic tuned on one song of that album is expected
+to carry to the other ten, and "it works on Manlio" is real evidence rather
+than a coincidence. Two consequences worth acting on: a new detection threshold
+should be checked against more than one song of the album before it becomes a
+default, and a per-song override is a smell — if Manlio needs a different
+number from Tutti in Fila, the rule is probably wrong rather than the song
+unusual. Musical structure is of course still per-song; this is about levels,
+decay and separation behaviour, which are properties of the kit and the room.
+
+**None of that transfers to Diversamente Giovani**, whose drums are electronic
+(Aerodrums → BFD3): no room, no bleed between close mics, and velocities that
+came out of a sampler rather than a stick. Do not calibrate anything against
+Tutti in Fila and then reason about that album with it. In practice this
+rarely comes up, because that album is `drums.origin: backing-track` and never
+enters the drum pipeline at all — but it matters for the six unmixed songs if
+demucs extraction is ever used as the distant fallback described above.
+
 `config/drum-maps/bfd3.yaml` is a **stub with blank note numbers** that falls
 back to General MIDI — the real numbers depend on the per-song preset and must be
 read off the plugin. Don't fill it in with invented values; same for
@@ -202,6 +220,31 @@ mapping and lyric parsing. All of it runs without ffmpeg, librosa or demucs.
 Anything needing those must be skipped, not required.
 
 Run it: `pytest` (or `make test`).
+
+**Build new features test-first.** Write the failing test before the code —
+every time, including when the change looks too small to need one. This is not
+a style preference, it is what stops the drum pipeline regressing: the
+algorithms here are tuned against one song by ear, and a threshold that fixes
+Manlio silently breaks Tutti in Fila unless a test pins the behaviour down.
+Every tuning decision that was arrived at by measurement gets a test that
+would fail if someone "simplified" it back.
+
+Two rules that follow from that:
+
+* **A number that came from a measurement gets a test naming the measurement.**
+  The comments in `transcribe.py` are full of hard-won constants (the kick's
+  0.18 dominance, the 1.8x look-ahead, `CRASH_SUSTAIN_RATIO`). A constant with
+  a story and no test is a constant somebody will "clean up".
+* **Verification you did by hand belongs in `tests/`, not in the transcript.**
+  If you checked a fix with a one-off script or a hash comparison, that check
+  is the test — write it down. An md5 you ran once protects nothing.
+
+The pure-function layering is what makes this cheap: `quantize.py` is pure by
+design, and the hit-list passes in `transcribe.py` (`gate_quiet_hits`,
+`split_cymbal_runs`, `merge_hat_pairs`, `suppress_crash_bleed`,
+`enforce_playability`, `resolve_collisions`) all take `list[Hit]` and return
+`list[Hit]` plus a count. None of them touch audio, so all of them are testable
+without librosa. Keep new detection logic in that shape for the same reason.
 
 ## Git workflow
 

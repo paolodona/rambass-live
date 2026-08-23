@@ -207,6 +207,15 @@ class Song:
     drums_origin: str = "extracted"
     drum_kit: str = ""
     drum_map: str = "general-midi"
+    #: Quantise grid per beat. 4 = 16ths, 3 = triplet 8ths for a shuffle. This
+    #: is a property of the *song*, not of whoever last typed a command: Manlio
+    #: is a shuffle whose hi-hat sits on 0, 1/3 and 2/3 of the beat, and a run
+    #: of `drums clean` with the default 4 silently drags every triplet 83 ms
+    #: onto a 16th. Same argument as tempo living here.
+    drum_subdivision: int = 4
+    #: Grid per beat for the crash family, which is never snapped as tight as
+    #: the rest of the kit -- a crash is heard as an event, not a subdivision.
+    drum_cymbal_subdivision: int = 2
     source_audio: str = ""
     source_url: str = ""      # where the original came from (Drive link, etc.)
     backing_track: str = ""   # a finished base, relative to render/
@@ -270,6 +279,8 @@ class Song:
             drums_origin=origin,
             drum_kit=str(drums.get("kit", "")),
             drum_map=str(drums.get("map", "general-midi")),
+            drum_subdivision=int(drums.get("subdivision", 4) or 4),
+            drum_cymbal_subdivision=int(drums.get("cymbal_subdivision", 2) or 2),
             source_audio=str(source.get("audio", "")),
             source_url=str(source.get("url", "")),
             backing_track=str(source.get("backing_track", "")),
@@ -311,6 +322,8 @@ class Song:
                 "origin": self.drums_origin,
                 "kit": self.drum_kit,
                 "map": self.drum_map,
+                "subdivision": self.drum_subdivision,
+                "cymbal_subdivision": self.drum_cymbal_subdivision,
             },
             "source": {
                 "audio": self.source_audio,
@@ -360,6 +373,13 @@ class Song:
             seen_bars[section.bar] = section.name
         if self.bars and any(s.bar > self.bars for s in self.sections):
             out.append("a section starts after the last bar of the song")
+        for name, value in (("subdivision", self.drum_subdivision),
+                            ("cymbal_subdivision", self.drum_cymbal_subdivision)):
+            if value not in (1, 2, 3, 4, 6, 8, 12, 16):
+                out.append(
+                    f"drums.{name} is {value}; expected a musical grid "
+                    "(1, 2, 3, 4, 6, 8, 12 or 16 per beat)"
+                )
         if not 1 <= self.gx100_channel <= 16:
             out.append(f"gx100.channel must be 1-16, got {self.gx100_channel}")
         for change in self.patch_changes:
@@ -375,6 +395,24 @@ class Song:
             if value not in STATUS_VALUES:
                 out.append(f"status.{stage} must be one of {', '.join(STATUS_VALUES)}")
         return out
+
+    def grid_advice(self) -> str:
+        """Warning for a cymbal grid that does not share the kit's, or "".
+
+        Deliberately **not** in :meth:`problems`: that list is fatal through
+        :meth:`validate`, and a mismatched grid is a thing you probably did not
+        mean rather than a file that cannot be loaded. A triplet kit with the
+        cymbals on 8ths pulls every crash 83 ms off the beat at 60 BPM.
+        """
+        triplet = self.drum_subdivision % 3 == 0
+        if triplet == (self.drum_cymbal_subdivision % 3 == 0):
+            return ""
+        return (
+            f"drums.subdivision {self.drum_subdivision} and "
+            f"drums.cymbal_subdivision {self.drum_cymbal_subdivision} do not share "
+            f"a grid, so the crashes land off the beat the rest of the kit is "
+            f"snapped to (83 ms at 60 BPM between a triplet and a 16th)"
+        )
 
     # ── derived ──────────────────────────────────────────────────────────
     def timeline(self) -> Timeline:

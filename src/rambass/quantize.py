@@ -17,7 +17,18 @@ from dataclasses import dataclass
 from .midiio import DrumPerformance, Hit
 from .timeline import Timeline
 
+#: The crash family. Cymbals are never snapped as tight as the rest of the kit:
+#: a crash is heard as an event, not as a subdivision, and pulling one 80 ms to
+#: a 16th is audible as a flam against whatever it was crashed with.
+CYMBALS: frozenset[str] = frozenset({"crash", "crash_2", "china", "splash"})
+
 #: Instruments that are usually played on a coarser grid than the hats.
+#:
+#: This table is **absolute**, and it lists every instrument except the toms, so
+#: it wins over :attr:`QuantizeSettings.subdivision` for practically the whole
+#: kit. Callers that want to change the grid must pass ``per_instrument`` --
+#: setting ``subdivision`` alone moves nothing but the toms. ``rambass drums
+#: clean`` builds that table from its own flags for exactly this reason.
 DEFAULT_SUBDIVISIONS: dict[str, int] = {
     "kick": 4,            # 16ths in 4/4
     "snare": 4,

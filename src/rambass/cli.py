@@ -307,7 +307,9 @@ def _write_align(song, anchor: float, report: dict) -> None:
 def cmd_drums_transcribe(args: argparse.Namespace) -> int:
     from .analyze import analyze_tempo
     from .midiio import write_drum_midi
-    from .transcribe import detect_anchor, transcribe_drums, transcribe_parts
+    from .transcribe import (
+        bands_with_hat_delta, detect_anchor, transcribe_drums, transcribe_parts,
+    )
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
@@ -327,6 +329,8 @@ def cmd_drums_transcribe(args: argparse.Namespace) -> int:
                  f"({', '.join(sorted(parts))}), offset {offset:.3f}s")
             performance, reports = transcribe_parts(
                 parts, timeline=song.timeline(), offset=offset, kit_mix=kit,
+                subdivision=song.drum_subdivision,
+                bands=bands_with_hat_delta(args.hat_delta),
             )
             reports["kit"].anchor_seconds = offset
             reports["kit"].anchor_report = anchor_report
@@ -394,7 +398,10 @@ def cmd_drums_import(args: argparse.Namespace) -> int:
 
 def cmd_drums_clean(args: argparse.Namespace) -> int:
     from .midiio import read_drum_midi, write_drum_midi
-    from .quantize import QuantizeSettings, deflam, humanize, quantize, shape_velocities
+    from .quantize import (
+        CYMBALS, DEFAULT_SUBDIVISIONS, QuantizeSettings, deflam, humanize,
+        quantize, shape_velocities,
+    )
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
@@ -412,14 +419,40 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
             _say(f"   de-flam       -{removed} duplicate hits "
                  f"(within {args.deflam_ms:g} ms)")
 
+        # The grid belongs to the song, so the manifest wins over the built-in
+        # default and an explicit flag wins over both.
+        subdivision = (args.subdivision if args.subdivision is not None
+                       else song.drum_subdivision)
+        cymbal_subdivision = (args.cymbal_subdivision
+                              if args.cymbal_subdivision is not None
+                              else song.drum_cymbal_subdivision)
+
+        # DEFAULT_SUBDIVISIONS is an *absolute* table, so it silently wins over
+        # `subdivision` for every instrument it lists -- which is all of them
+        # except the toms. An explicit subdivision could therefore never change
+        # the grid the kick, snare or hats were snapped to. Build the table here
+        # so the setting means what it says. The defaults reproduce
+        # DEFAULT_SUBDIVISIONS exactly: everything on `subdivision`, the crash
+        # family a step coarser.
+        per_instrument = {
+            name: (cymbal_subdivision if name in CYMBALS else subdivision)
+            for name in DEFAULT_SUBDIVISIONS
+        }
         performance, report = quantize(performance, QuantizeSettings(
-            subdivision=args.subdivision,
+            subdivision=subdivision,
             strength=args.strength,
             swing=args.swing,
             tolerance_steps=args.tolerance,
+            per_instrument=per_instrument,
             force=args.force_grid,
         ))
-        _say(f"   quantise      {report['hits']} hits, "
+        advice = song.grid_advice()
+        if advice and args.subdivision is None and args.cymbal_subdivision is None:
+            _say(f"   ! {advice}")
+        grid = ("triplet 8ths" if subdivision == 3 else
+                "16ths" if subdivision == 4 else f"{subdivision}/beat")
+        _say(f"   quantise      {report['hits']} hits on {grid} "
+             f"(cymbals {cymbal_subdivision}/beat), "
              f"{report['left_alone']} left alone, "
              f"mean move {report['mean_shift_ms']} ms, "
              f"max {report['largest_shift_ms']} ms")
@@ -1332,6 +1365,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="do not correct for how far the take drifted from the "
                         "grid before placing hits (the output is metronomic "
                         "either way — see transcribe.dewander)")
+    p.add_argument("--hat-delta", type=float, default=None,
+                   help="hi-hat picker sensitivity; lower finds the subtle "
+                        "strokes. 0.12 is the default, 0.07 is about as low as "
+                        "pays on Tutti in Fila and below that the extra hits "
+                        "are noise (see transcribe.bands_with_hat_delta)")
     p.set_defaults(func=cmd_drums_transcribe)
 
     p = drums_sub.add_parser("import", help="import an existing drum MIDI performance")
@@ -1348,7 +1386,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--file")
     p.add_argument("--input", default="raw", help="input variant (default: raw)")
     p.add_argument("--output", default="quantized", help="output variant")
-    p.add_argument("--subdivision", type=int, default=4, help="4 = 16ths in 4/4")
+    p.add_argument("--subdivision", type=int, default=None,
+                   help="grid per beat: 4 = 16ths, 3 = triplet 8ths (shuffle "
+                        "feel). Default: drums.subdivision from song.yaml")
+    p.add_argument("--cymbal-subdivision", type=int, default=None,
+                   help="grid per beat for the crash family, which is never "
+                        "snapped as tight as the rest of the kit. Default: "
+                        "drums.cymbal_subdivision from song.yaml")
     p.add_argument("--strength", type=float, default=1.0, help="0..1")
     p.add_argument("--swing", type=float, default=0.0, help="0 straight, 0.33 shuffle")
     p.add_argument("--deflam-ms", type=float, default=25.0, help="0 disables de-flam")
