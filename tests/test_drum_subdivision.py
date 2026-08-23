@@ -209,3 +209,49 @@ def test_an_explicit_flag_beats_the_manifest(cwd, song):
                  "--output", "forced"]) == 0
     got = read_drum_midi(reloaded.drum_midi_path("forced"))
     assert got.sorted_hits()[0].time == pytest.approx(1.75, abs=1e-3)
+
+
+# ── the song's length bounds the part ────────────────────────────────────────
+#
+# Manlio's last drum hit is at musical bar 78 beat 2; after two seconds of
+# digital silence there is a sung note running to bar 80, which is not played at
+# the gig. The detector found it -- correctly, it is real audio -- and it
+# arrived as a lone hi-hat at bar 79 at the velocity floor. `bars` is the song's
+# own statement of where it ends, so it is what decides this, and doing it here
+# rather than by hand is what makes it survive the next re-transcription.
+
+
+def test_clean_drops_hits_past_the_last_bar(cwd, song):
+    song.bpm, song.bars = 60.0, 20      # the shared fixture has a section at 17
+    save_song(song, song.dir)
+    reloaded = load_song(song.dir)
+    hits = [Hit("kick", 0.0, 100), Hit("snare", 4.0, 100),
+            Hit("hihat_closed", 20 * 4.0 + 2.0, 45)]     # bar 21: past the end
+    _write_raw(reloaded, hits)
+
+    assert main(["drums", "clean", reloaded.slug, "--output", "trimmed"]) == 0
+    got = read_drum_midi(reloaded.drum_midi_path("trimmed")).sorted_hits()
+    assert [h.instrument for h in got] == ["kick", "snare"]
+
+
+def test_clean_keeps_a_hit_inside_the_last_bar(cwd, song):
+    """The boundary is the end of `bars`, not the start of it."""
+    song.bpm, song.bars = 60.0, 20
+    save_song(song, song.dir)
+    reloaded = load_song(song.dir)
+    _write_raw(reloaded, [Hit("kick", 0.0, 100), Hit("snare", 19 * 4.0 + 3.0, 100)])
+
+    assert main(["drums", "clean", reloaded.slug, "--output", "trimmed"]) == 0
+    got = read_drum_midi(reloaded.drum_midi_path("trimmed")).sorted_hits()
+    assert len(got) == 2, "bar 20 beat 4 is inside a 20-bar song"
+
+
+def test_clean_does_not_trim_when_the_length_is_unknown(cwd, song):
+    """bars: 0 means nobody has measured it, which is not the same as zero."""
+    song.bpm, song.bars = 60.0, 0
+    save_song(song, song.dir)
+    reloaded = load_song(song.dir)
+    _write_raw(reloaded, [Hit("kick", 0.0, 100), Hit("snare", 400.0, 100)])
+
+    assert main(["drums", "clean", reloaded.slug, "--output", "trimmed"]) == 0
+    assert len(read_drum_midi(reloaded.drum_midi_path("trimmed")).hits) == 2

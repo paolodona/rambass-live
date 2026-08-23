@@ -400,7 +400,7 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
     from .midiio import read_drum_midi, write_drum_midi
     from .quantize import (
         CYMBALS, DEFAULT_SUBDIVISIONS, QuantizeSettings, deflam, humanize,
-        quantize, shape_velocities,
+        quantize, shape_velocities, trim_to_bars,
     )
 
     project = _project()
@@ -413,6 +413,21 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
         performance = read_drum_midi(source, drum_map)
         performance.timeline = song.timeline()
         _say(f"── {song.title}: {len(performance.hits)} hits from {source.name}")
+
+        # The song's own statement of where it ends bounds the part. A stem runs
+        # to the end of the album track, so a transcription happily reports
+        # whatever is out there after the band stopped: on Manlio that was a
+        # sung note two seconds after the final snare, which arrived as a lone
+        # hi-hat at the velocity floor in bar 79 and read exactly like a
+        # phantom. It was real audio and correctly detected -- just not the drum
+        # part, and not played at the gig. bars: 0 means unmeasured, which is not
+        # the same as zero, so it trims nothing.
+        if song.bars:
+            before = len(performance.hits)
+            performance = trim_to_bars(performance, 1, song.bars)
+            if before != len(performance.hits):
+                _say(f"   trim          -{before - len(performance.hits)} hits "
+                     f"outside bars 1-{song.bars}")
 
         if args.deflam_ms > 0:
             performance, removed = deflam(performance, args.deflam_ms)

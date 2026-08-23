@@ -184,6 +184,28 @@ their lyrics docs. They are better than anything `rambass analyze` would produce
 review punch-list per base; `rambass countin` exists because four of the seven
 finished bases are missing their count-in.
 
+**An album track is longer than the song. `bars` is the band's part.** Many of
+these recordings carry vocal material outside what the band plays — a sung
+intro before the count, a held note after the last hit — and it is not played
+at the gig. Manlio is the measured example: the final snare lands at musical
+bar 78 beat 2, the band stops dead, and after two seconds of *digital silence*
+there is a sung note running to bar 80. A drum stem covers the whole track, so
+the transcriber duly found that note and reported it as a lone hi-hat at the
+velocity floor in bar 79 — which reads exactly like a phantom and is nothing of
+the kind. It is real audio, correctly detected, and simply not part of the
+drum part.
+
+Two rules follow. **Never derive `bars` from the audio duration** — nothing in
+the pipeline does, `Timeline.bars_for_duration` is not wired to it, and it must
+stay that way, because on these songs the file is longer than the music and the
+difference is exactly the material to discard. Measure it, by ear, from where
+the band stops. And **`bars` is what bounds the part**: `drums clean` trims to
+it at both ends (a vocal intro sits at negative musical time, since the anchor
+puts bar 1 at the band's entry), so an out-of-scope detection is removed by
+fixing the manifest rather than by hand-editing MIDI that the next
+re-transcription would regenerate. `bars: 0` means unmeasured, which is not the
+same as zero, and trims nothing.
+
 **The video track carries exactly one item per song, and it starts at the region
 start.** A rendered lyric video runs on the *audio* clock, so it already contains
 the count-in; starting it anywhere else drifts the words by the count-in length.
