@@ -12,7 +12,37 @@ Two deliverables, and they are independent of each other:
 | **2. minus-one** | drums + everything except your own part | one per member; two on DG, three on TIF | no — works today |
 
 Deliverable 1 is a **QA instrument first and a practice track second.** A
-programmed part soloed against `stems/no_drums.wav` (drums-rebuild.md Stage 10)
+programmed part soloed against `stems/no_drums.wav` (drums-rebuild.md Stage 10).
+
+**Deliverable 0, and it is built.** `rambass align <song> --fit --warp` fits
+`practice/align.yaml` from detected beats and writes
+`practice/no_drums-aligned.wav` — the band minus drums, resampled onto the fixed
+grid so the new drums can be judged against it. `reaper build` puts it on a muted
+**REF aligned** track at the count-in with no anchor shift, because the file is
+already on the grid.
+
+Three things that were measured rather than assumed, so nobody re-litigates them:
+
+* **A single offset is not enough.** Manlio drifts -88 to +258 ms across the
+  song, so one offset lines up at the start and flams by a quarter second by the
+  end — which reads as "the click does not line up with the mix" exactly when
+  somebody is trying to judge timing.
+* **Anchor every beat, not every bar.** Warping the drum stem and measuring how
+  far each backbeat lands from its grid line: p90 **107 ms** for one offset,
+  **58 ms** per bar, **38 ms** per beat. A bar of that shuffle is four seconds
+  long, so a linear segment across it cannot follow where the take put beats 2
+  and 4.
+* **The residual is leave-one-out.** Measured against the beats it was fitted
+  from, a per-beat map reports 0 ms however bad it is — the first run duly said
+  "0 ms worst / 0 ms mean" for 307 anchors. Held out, the same fit reports 70 ms
+  worst / 13 ms mean, and the numbers become monotone in resolution: 70/13 per
+  beat, 93/20 every two beats, 116/31 per bar.
+
+Only the **source** side is stored, per CLAUDE.md: the target side comes from
+`Timeline` at build time, so a BPM edit re-warps instead of silently stopping.
+Linear interpolation resamples it, deliberately — the rates are within a few
+percent of 1.0, this is a reference for judging timing rather than a deliverable,
+and the alternative is a resampling dependency in the core tier.
 hides a lot; the same part inside the real song, with the real vocal on top, does
 not. Missing crashes, a fill that changed one bar early and a groove that is
 subtly wrong in the second half all become obvious. So this is where drum

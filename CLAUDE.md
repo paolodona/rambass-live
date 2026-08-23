@@ -32,13 +32,17 @@ moving them onto bars; `lyrics.shift`/`scale` exist for when the timing base
 moves. Bar-anchored `lyrics.md` still exists for songs written from scratch, and
 `lyrics.from_bar_cues`/`to_bar_cues` bridge the two.
 
-A **second** such exception is planned but not yet built: `practice/align.yaml`,
-which maps bars to seconds *in the original album recording* so a practice track
-can be time-warped onto the fixed grid. Same justification as `lyrics.srt` — the
-seconds describe an immutable audio file, not a position in the musical grid. If
-you implement it, store **only the source side** in seconds; the target side is
-computed from `Timeline` at build time, or a BPM edit silently stops re-warping.
-See `docs/practice-tracks.md`.
+The **second** such exception is `practice/align.yaml`, which maps bars (and
+beats) to seconds *in the original album recording* so a reference can be
+time-warped onto the fixed grid. Same justification as `lyrics.srt` — the seconds
+describe an immutable audio file, not a position in the musical grid. It is built
+(`align.py`, `rambass align --fit --warp`) and it stores **only the source side**;
+the target side is computed from `Timeline` at build time, or a BPM edit silently
+stops re-warping. Three things there were measured and are settled: a single
+offset is not enough (Manlio drifts −88..+258 ms), anchoring every *beat* beats
+every bar (p90 38 ms against 58 ms and 107 ms), and the residual has to be
+leave-one-out or a per-beat fit reports a meaningless 0 ms. See
+`docs/practice-tracks.md`.
 
 **Bar numbers spoken out loud are Reaper ruler readings; bar numbers in
 `song.yaml` are musical.** Paolo works from Reaper's ruler, where bar 1 is the
@@ -79,6 +83,9 @@ Layered so the cheap deterministic parts have no heavy dependencies:
 | `video.py` | lyric cue parsing, ASS, ffmpeg render | — |
 | `setlist.py`, `status.py`, `doctor.py` | running orders, progress, diagnostics | — |
 | `arrange.py` | reviews a running order against set-list practice | — |
+| `restore.py` | Stage 7: declared articulation, the missing-hits ledger, hand edits | — |
+| `provenance.py` | which derived files are stale, and which of three reasons | pyyaml |
+| `align.py` | bars ↔ seconds *in the recording*, and warping onto the grid | numpy |
 | `audio.py` | ffmpeg decode/encode, WAV write, loudness | numpy |
 | `analyze.py` | tempo/beat/drift detection | **librosa** |
 | `transcribe.py` | drum stem → hits | **librosa** |
@@ -237,6 +244,69 @@ denominators measure the show; and a practice track is allowed to be imperfect
 where a base is not. The gig session and the rebuilt drums are the deliverable
 that has to be right.
 
+**The verses of Manlio are played side-stick, and that is declared, not
+detected.** Measured on the kit mix: the 180-500 Hz share at a verse backbeat is
+0.08-0.10 against 0.40-0.48 at a real snare backbeat, with the snare stem 14-19
+dB *quieter* than the hat stem instead of 16-31 dB louder. A rim click never
+reaches the shell, so it has no body, and being nothing but a high-frequency
+transient the separator hands most of it to the hi-hat. `label_sidesticks`
+catches verse-1 and verse-3 from that. It does **not** catch verse-2, and the
+reason is not a tuneable constant: across all 941 hat and cymbal stem detections
+the hat stem's 5-11 kHz share is 0.17 at a verse backbeat and 0.85-0.96
+everywhere else, but verse-2's clicks read 0.84-1.00 — a hi-hat's own spectrum.
+Paolo can hear a cross-stick in context; the spectrum there cannot. So
+`sections[].backbeat: sidestick` declares it, and that is **arrangement
+structure, not a threshold override** — the same category as the section list or
+`drums.subdivision`. Do not try to detect verse-2 acoustically; it has been
+tried.
+
+The declared backbeat is stamped at **one even velocity** and the reason is a
+scale error, not laziness: `scale_velocities` works per instrument, so a hit
+found in the hat stem carries a number meaning "loud for a hi-hat" and renaming
+it to a rim click makes that number meaningless. The reference is the median of
+whatever was measured on the right instrument (v45 on Manlio, which is the floor
+and correct — a rim click here is 25-30 dB below the same drummer's snare and the
+velocity range only spans 30 dB). Its audible level is a kit decision;
+`--backbeat-velocity` sets it.
+
+**A hi-hat is never loudness evidence.** `suppress_cross_stem_bleed`'s `exclude`
+list means "quiet by nature", and that disqualifies an instrument from *both*
+roles — neither deleted as bleed nor believed as the loud partner that deletes
+something else. Trusting them in one direction only is what deleted 99 real hits
+on Manlio, 44 of them kicks, because a rim click's leak into the hat stem read as
+a v122 accent. A closed hat cannot out-shout a kick.
+
+**Crash-versus-open-hat cannot be settled acoustically on this material, and
+four attempts are on record.** `split_cymbal_runs` lists three (decay at
+200/500/900 ms, attack centroid, hat coincidence, cymbal/hat level ratio, long
+sustain at 0.6-1.2 s) and the fourth is decay at +250 ms: across the 243
+measurable cymbal-stem hits on Manlio the median is −16.8 dB, the p90 is +3.0,
+and 114 of 243 ring at or above −14 dB. Long ring is the *normal* case in that
+stem because an open hat's wash lives there too. What does separate is **musical
+position**: the ten cymbal hits within 0.6 beat of a section start decay at a
+median +3.4 dB against −19.2 dB for the other 233, and nine of ten are v83+. So
+`restore.crash_candidates` reports boundary crashes and everything else goes on
+the checklist. Do not propose another spectral test.
+
+**Hand edits go in `song.yaml`, never into the Reaper MIDI item.**
+`drums.additions` and `drums.removals` are bar-anchored, reapplied by `rambass
+drums restore`, and ticked off by `rambass drums missing`. A crash drawn into the
+MIDI item is gone at the next `drums transcribe`, which is how a Stage 7 pass
+gets silently redone from scratch and how somebody loses track of what is
+finished. `rambass stale` reports a file that differs from what the command wrote
+as `edited` rather than `stale`, precisely because the risk there is the opposite
+one.
+
+**A derived file can be stale three ways and only one of them is a timestamp.**
+An input changed, `song.yaml` changed, or **the code that produced it changed** —
+and the third is the one that actually happened: a `drums-quantized.mid` two
+commits old, newer than everything it was built from, holding an articulation
+since corrected. `provenance.py` stamps all three and `rambass stale` says which
+moved. It **never** rebuilds: a re-transcription is minutes of CPU and can change
+the part under you. Note also that `missing` and `unknown` do not cascade
+downstream — only `stale` does — because otherwise a song where nothing has been
+built is a wall of red and the report gets ignored.
+
 **Section names carry meaning, and the rule is Paolo's.** *"If the sections are
 named exactly the same, use exactly the same part. If they are the same name
 pattern (eg: verse-2 vs verse-3) check the structure but should not match
@@ -327,3 +397,8 @@ it can be deleted once GitHub's default branch is `main`.
 * Don't invent Reaper `.RPP` internals or drum-VST mappings.
 * Don't add a dependency to the core tier without a real need — the point of the
   layering is that a laptop at a venue can run the core commands.
+* Don't tell somebody to install ffmpeg without checking `RAMBASS_FFMPEG` first.
+  On this machine ffmpeg 9.0 is installed under
+  `%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_...\bin` and winget
+  linked none of it, so every audio command failed with an install hint for
+  something already installed. Point the variable at the folder.

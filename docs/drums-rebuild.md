@@ -47,11 +47,27 @@ attention accordingly.
 | transcribe | 3 frequency bands over the drum mix | a detector per part stem, or a learned model |
 | clean | de-flam, quantise, velocities, humanise | unchanged — this part is good |
 | sections | markers in Reaper | consolidate each section to one pattern |
-| fills | "fix them by hand" | replace them, don't repair them |
+| articulation | whatever the detector said | a section can *declare* its backbeat |
+| fills | "fix them by hand" | list them, then declare them in `song.yaml` |
 | kit | "load your drum VST" | which kit, and how it has to be mixed |
 | render | render the base | plus a loudness target shared across the set |
 
-Stages 2, 3 and 6 are the ones that change the result. The rest is detail.
+Stages 2, 3, 6 and 7 are the ones that change the result. The rest is detail.
+
+**Where the repo is, as of 2026-08-23.** Stages 0-7 are commands. Stage 2's split
+itself is still an external tool, but the repo notices its output and reads it.
+Stage 8 (kit) and 9 (render) are the open work.
+
+| stage | command |
+|---|---|
+| 1 separate | `rambass stems` |
+| 2 part stems | external, then read automatically from `stems/parts/` |
+| 3 tempo | `rambass analyze`, `rambass align --fit` |
+| 4 transcribe | `rambass drums transcribe` |
+| 5 clean | `rambass drums clean` |
+| 6 consolidate | `rambass section`, `rambass sections`, `rambass drums consolidate` |
+| 7 restore | `rambass drums missing`, `rambass drums restore` |
+| — check | `rambass stale` — is anything on disk out of date? |
 
 ## Stage 0 — get the right source file
 
@@ -206,12 +222,60 @@ jitter is close to inaudible. What actually makes a sampled kit sound fake is:
 Velocity spread is the humaniser that matters. Check limb plausibility by eye in
 the MIDI editor.
 
+### The articulation a detector cannot hear
+
+`drums clean` also applies each section's declared `backbeat`, and this is the
+one place the pipeline is told something rather than measuring it.
+
+Manlio's three verses play beats 2 and 4 **side-stick** — the stick laid across
+the rim, tip on the head — and the lifts and choruses play them on the head. The
+detector gets verse-1 and verse-3 on its own: a rim click never reaches the
+shell, so it has no body, and because it is nothing but a high-frequency
+transient the separator hands most of it to the hi-hat. Measured on the kit mix,
+the 180-500 Hz share is 0.08-0.10 at a verse backbeat against 0.40-0.48 at a real
+one, with the snare stem 14-19 dB *quieter* than the hat stem instead of 16-31 dB
+louder.
+
+It does not get verse-2, and the reason is not a badly tuned constant. Across all
+941 hi-hat and cymbal stem detections the hat stem's 5-11 kHz share is 0.17 at a
+verse backbeat and 0.85-0.96 everywhere else — a clean split. In verse-2 the same
+clicks read **0.84-1.00**, which is a hi-hat's own spectrum. Paolo: *"some sound
+different than others but they are all the same concept: side stick rather than
+standard snares."* A quiet cross-stick under a hi-hat leaves the separator
+nothing to hand over, and no threshold recovers it without eating the real hat
+part.
+
+So it is declared:
+
+```yaml
+sections:
+- name: verse-2
+  bar: 20
+  beat: 3.0
+  backbeat: sidestick
+```
+
+That is **arrangement structure, not a tuning knob** — the same category as the
+section list itself, or `drums.subdivision: 3`. Settled by ear once, written
+down, never re-derived from audio. The distinction matters: CLAUDE.md warns that
+a per-song *threshold* override is a smell, and this is not one.
+
+The declared backbeat comes out **even**, at one velocity. The first run showed
+why: verse-2's side-sticks were `[45, 45, 45, 60, 118, 118, 121, 122 x9]`, which
+is not dynamics but two scales in one section — `scale_velocities` works per
+instrument, so a hit detected in the hat stem carries a number meaning "loud for
+a hi-hat", and renaming it to a rim click makes that number meaningless. The
+reference is the median of the population measured on the right instrument, which
+on Manlio is v45. That is the floor and it is correct on this scale: a rim click
+here is 25-30 dB below the same drummer's snare and the whole velocity range only
+spans 30 dB. How loud it should *sound* is a Stage 8 question about the kit's
+rim-click samples — `--backbeat-velocity` sets it by ear.
+
 ## Stage 6 — sections, and consolidating each one to a pattern
 
 This is the stage that decides whether the result sounds programmed or
-transcribed, and the repo has nothing for it. `sections` in `song.yaml` are
-markers only — `reaper.py` turns them into Reaper markers and regions, and
-nothing else reads them.
+transcribed. It is `rambass drums consolidate`, and `quantize.consolidate` is the
+pure function behind it.
 
 Without this stage, two things leak through into the final track. Every
 unintended inconsistency in the original take survives quantising, *and* every
@@ -245,25 +309,108 @@ the fill at the end of each four- or eight-bar phrase. Those are the things a
 listener notices, and they should be there because you decided so, not because
 a detector happened to catch them.
 
-No off-the-shelf tool does this. Options today: copy the best bar and paste it
-over the section in Reaper's MIDI editor, or build the section in EZdrummer 3's
-Grid Editor and Song Creator. It is also the most obviously repo-shaped thing in
-this document — a pure function over a `DrumPerformance` plus a report dict,
-exactly like everything else in `quantize.py`.
+No off-the-shelf tool does this, which is why it is here.
+
+Two rules the implementation settled, both from Paolo and both load-bearing:
+
+* **Identical names are one part.** `consolidate` pools every section sharing a
+  name into a single vote and stamps the result across all of them, so they come
+  out bit-identical. A name *family* is not a pooling key: `verse-1`, `verse-2`
+  and `verse-3` vote separately, because they are structurally alike and the
+  later ones add hits. Never pool on a prefix.
+* **Four repetitions is the minimum.** At n=2 a hit must appear in *both* to
+  clear 0.55, which is unanimity rather than agreement — measured on Manlio it
+  removed a third to a half of every 2-bar break. Below the minimum a section is
+  passed through untouched and reported, which is the right outcome for a break.
+
+Sections need not start on a bar line, and `consolidate` handles that itself.
+Manlio's verse-2 runs from bar 20 beat 3 to bar 28 beat 3; the repetitions still
+tile the bar grid, but each slot is judged against the repetitions it *could*
+have appeared in, so the half-bars at either end are voted on like everything
+else.
 
 ## Stage 7 — fills, crashes, articulation
+
+```
+rambass drums missing <song>     # the checklist
+rambass drums restore <song>     # apply what you decided
+```
 
 **Do not try to repair transcribed fills.** A three-to-five minute song has
 maybe eight to fifteen of them; dense, fast and overlapping is the one case the
 detector is worst at, and salvaging its output takes longer than starting over
 and sounds worse.
 
-Instead: note which bar each fill is in, then either play it in on pads, draw it
-in EZdrummer 3's Grid Editor, or pull a matching fill out of the library
-browser. Twenty minutes for the song, and it sounds like a session player.
+### The checklist
 
-While you are there, fix the articulations the detector cannot see: open the hat
-where the part opens up, put the ride where the ride is, add the pedal hat.
+Every omission upstream of here is deliberate, and therefore knowable.
+`drums missing` writes `qa/missing-hits.md` from two sources, both computed from
+the MIDI and the section list with no audio at all:
+
+* **the consolidate diff** — exact, matched per `(instrument, grid slot)` so that
+  a survivor moved to its group's modal slot is not reported as a deletion;
+* **section-boundary crash candidates** — see below.
+
+It reports **accents and fills, not the groove**. The first version listed
+everything and came out at 204 items for Manlio, about 170 of them single
+hi-hats: a hat the vote dropped is Stage 6 working, and putting it on a checklist
+is asking somebody to undo it. Filtered and grouped per bar, the same song
+reports **35 things to put back**. `--everything` for the full diff.
+
+Bar numbers in the report are **Reaper's**, because the document exists to be
+read next to the ruler.
+
+### Why the crashes have to be listed rather than detected
+
+`split_cymbal_runs` calls an ambiguous cymbal an open hi-hat on purpose, so the
+crashes that mark section boundaries arrive labelled `hihat_open`. Four separate
+attempts to undo that acoustically have failed and are recorded so nobody repeats
+them: decay at 200/500/900 ms, spectral centroid of the attack, coincidence with
+a hi-hat strike, the cymbal-to-hat level ratio, long sustain at 0.6-1.2 s, and
+decay at +250 ms. That last one, measured across the 243 measurable cymbal-stem
+hits on Manlio: median **-16.8 dB**, p90 **+3.0 dB**, and **114 of 243** ringing
+at or above -14 dB. Long ring is the *normal* case in that stem, because an open
+hat's wash lives there too. No threshold separates them.
+
+What does separate is musical position. The ten cymbal hits within 0.6 beat of a
+section start decay at a median **+3.4 dB** against **-19.2 dB** for the other
+233 — 23 dB apart — and nine of the ten are v83 or louder. So `drums missing`
+reports those as crash candidates, and reports the section starts with no cymbal
+on them at all (six of Manlio's fifteen, mostly the breaks, where a drummer drops
+out rather than accents).
+
+What it will *not* find is a crash played *into* a change rather than on it —
+Reaper 19.3 on Manlio is two beats before `break-1`. Widening the window triples
+the candidates and starts eating the hat part, so those stay a listening job.
+
+### Record the edits, do not draw them
+
+```yaml
+drums:
+  additions:
+  - {bar: 32, beat: 3.0, instrument: crash, velocity: 105, note: into the chorus}
+  removals:
+  - {bar: 53, beat: 4.32, instrument: sidestick, note: ghost in the stem}
+```
+
+**This is the part that matters.** A crash drawn into the Reaper MIDI item is
+gone the next time `drums transcribe` runs, so it gets drawn again every time —
+and because it is always redone from scratch there is never a record of how much
+of Stage 7 is finished. In `song.yaml` it is bar-anchored, it is in git,
+`drums restore` reapplies it, and `drums missing` ticks it off the checklist.
+
+Removals first, so replacing a hit is two lines rather than a puzzle about
+whether the addition survived its own removal — and that is the commonest edit
+there is, since the open hi-hat on a section start comes out and a crash goes in.
+An addition already present is counted, not doubled, so running it twice cannot
+build a flam. A removal that matches nothing is *reported*: it means the hit it
+named was deleted upstream, and swallowing that hides the drift.
+
+While you are here, fix the other articulations the detector cannot see: open the
+hat where the part opens up, put the ride where the ride is, add the pedal hat.
+A fill is best played in on pads, drawn in EZdrummer 3 Grid Editor, or pulled out
+of the library browser — twenty minutes for the song, and it sounds like a
+session player.
 
 ## Stage 8 — the kit, and the mix
 
@@ -680,25 +827,32 @@ will establish almost everything the other three reuse.
 
 ## Gaps in the repo this document assumes away
 
-Ranked by value, none of them implemented:
+**Closed since this was written** (kept here so the list is honest about its own
+age): the drum sub-separation stage is read automatically from `stems/parts/`;
+`rambass drums consolidate` exists and Stage 6 is a command; `rambass drums
+missing` and `rambass drums restore` make Stage 7 one; `rambass align --fit
+--warp` replaced the hand-entered offset with a fitted piecewise map; and
+`rambass stale` answers whether any of it is out of date.
 
-1. **A drum sub-separation stage** between `stems` and `drums transcribe` —
-   Stage 2. Everything else downstream improves for free.
-2. **`rambass drums consolidate`** — the section pattern vote in Stage 6. Pure
-   function, fits `quantize.py`'s style exactly.
-3. **A tempo map written from detected beat times**, to make Stage 3's
-   follow-then-flatten a command rather than hand-entered YAML.
-4. **A groove matcher over the Toontrack MIDI folder** — score every library
+Still open, ranked by value:
+
+1. **A groove matcher over the Toontrack MIDI folder** — score every library
    `.mid` against a song's extracted kick and snare pattern per section, rank
    the candidates, and emit the hybrid. `mido` is already a dependency. This is
-   what makes the alternative above a process rather than an afternoon of
+   what makes "map it, don't transcribe it" a process rather than an afternoon of
    auditioning.
-5. **`config/drum-maps/ezdrummer.yaml`**, read off the plugin — including the
-   cymbal choke notes.
-6. **`crash_choke` and `china_choke` in `drummap.py`'s `CANONICAL`**, plus the
+2. **`config/drum-maps/ezdrummer.yaml`**, read off the plugin — including the
+   cymbal choke notes. Note that `sidestick` now matters: the verses of Manlio
+   are built on it, so the kit's rim-click articulation has to be mapped and its
+   level chosen (see Stage 5).
+3. **`crash_choke` and `china_choke` in `drummap.py`'s `CANONICAL`**, plus the
    short-decay test in `_classify_high_band` that detects them. Without the
    names there is nowhere for a choke to go.
-7. **A set-level loudness match** using the `measure_loudness` already in
+4. **A set-level loudness match** using the `measure_loudness` already in
    `audio.py`.
-8. **The [reaper.md](reaper.md) line 74 contradiction**, which as written bakes
+5. **The [reaper.md](reaper.md) line 74 contradiction**, which as written bakes
    a click into the base.
+6. **A tempo map written from detected beat times.** Deliberately *not* done for
+   the drums — the fixed click is settled (CLAUDE.md) — but the machinery now
+   exists in `align.py`, so if a song ever genuinely needs one, that is where it
+   would come from.

@@ -17,6 +17,11 @@ rambass analyze 04-titolo --write               # what tempo did they play at?
 rambass stems 04-titolo --drums-only            # pull the drums out of the mix
 rambass drums transcribe 04-titolo              # onsets -> MIDI
 rambass drums clean 04-titolo --humanize 4      # de-flam, quantise, shape
+rambass drums consolidate 04-titolo             # one pattern per section
+rambass drums missing 04-titolo                 # what the vote removed, as a checklist
+rambass drums restore 04-titolo                 # put back what song.yaml says to
+rambass align 04-titolo --fit --warp            # the mix minus drums, on the grid
+rambass stale 04-titolo                         # is anything on disk out of date?
 rambass click 04-titolo                         # click + count-in
 rambass gx100 midi 04-titolo                    # pedalboard patch changes
 rambass reaper build 04-titolo                  # Reaper project
