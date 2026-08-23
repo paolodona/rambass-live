@@ -107,6 +107,12 @@ class TranscriptionReport:
     bleed_note: str = ""
     #: Set when cymbal-stem runs were relabelled as open hi-hats.
     cymbal_note: str = ""
+    #: Set when the song's own pattern resolved kick/snare collisions.
+    collision_note: str = ""
+    #: The per-slot census resolve_collisions worked from, for --report.
+    collision_report: dict = field(default_factory=dict)
+    #: Set when hits needing a third hand were dropped.
+    playability_note: str = ""
 
     def summary(self) -> str:
         lines = [f"duration {self.duration:.2f} s"]
@@ -125,6 +131,10 @@ class TranscriptionReport:
             lines.append(self.bleed_note)
         if self.cymbal_note:
             lines.append(self.cymbal_note)
+        if self.collision_note:
+            lines.append(self.collision_note)
+        if self.playability_note:
+            lines.append(self.playability_note)
         if self.anchor_report:
             r = self.anchor_report
             lines.append(
@@ -328,6 +338,42 @@ PART_BANDS: dict[str, Band] = {
 }
 
 
+def bands_with_hat_delta(
+    delta: float | None,
+    bands: dict[str, Band] | None = None,
+) -> dict[str, Band]:
+    """Copy of *bands* with the hi-hat picker's sensitivity changed.
+
+    Exposed as a knob rather than retuned in :data:`PART_BANDS`, because the
+    trade-off is real and only measurable by ear. Measured on Manlio at
+    triplet-8ths, against the whole pipeline so the timing corrections are in:
+
+    ======  ====  ==========  =============================
+    delta   hats  on the grid precision of the hits it adds
+    ======  ====  ==========  =============================
+    0.12     648         81%  -- the shipping default
+    0.09     691         79%  49%
+    0.07     726         78%  57%
+    0.05     775         75%  31% -- chance is 33%
+    ======  ====  ==========  =============================
+
+    So the subtle hat Paolo hears missing is genuinely there and recoverable
+    down to about 0.07 — a census of the hi-hat stem against every triplet slot
+    found 182 empty slots carrying energy at or above the weakest tenth of the
+    hits that were kept — but the marginal strokes arrive at about half the
+    precision of the ones already found, and below 0.07 they are noise.
+
+    Lowering the default would also change Tutti in Fila, and one drummer and
+    one kit across that album (see CLAUDE.md) means that is a real consequence
+    rather than a hypothetical one. Decide it per song, by ear.
+    """
+    table = dict(bands or PART_BANDS)
+    if delta is None:
+        return table
+    table["hihat"] = replace(table["hihat"], delta=delta)
+    return table
+
+
 def transcribe_parts(
     parts: dict[str, object],
     *,
@@ -336,6 +382,7 @@ def transcribe_parts(
     kit_mix=None,
     bands: dict[str, Band] | None = None,
     follow_window: float = 10.0,
+    subdivision: int = 4,
     **kwargs,
 ) -> tuple[DrumPerformance, dict[str, TranscriptionReport]]:
     """Transcribe one isolated stem per instrument and merge the result.
@@ -411,21 +458,35 @@ def transcribe_parts(
             hits = [replace(hit, time=hit.time + parity) for hit in hits]
             merged.parity_shift_ms = parity * 1000.0
         merged.parity_note = advice
-        # Only possible here: the crash lives in its own stem, so a per-stem pass
-        # cannot see that a quiet snare and a loud crash are the same event.
-        hits, opened = split_cymbal_runs(hits, 60.0 / timeline.bpm)
+        # Only possible here: each instrument lives in its own stem, so no
+        # per-stem pass can see that a quiet snare and a loud crash are the same
+        # event, or that four stems agree on a moment needing four hands.
+        hits, notes = clean_merged_hits(hits, timeline, subdivision=subdivision)
+        opened = notes["cymbal_runs"]
         if opened:
             merged.cymbal_note = (f"relabelled {opened} cymbal hits as open hi-hats "
                                   f"(runs of 3+ — see transcribe.split_cymbal_runs); "
                                   f"place the real crashes by hand")
-        hits, doubled = merge_hat_pairs(hits)
-        if doubled:
-            merged.cymbal_note += f"; merged {doubled} doubled hat strokes"
-        hits, bled = suppress_crash_bleed(hits)
+        if notes["hat_pairs"]:
+            merged.cymbal_note += f"; merged {notes['hat_pairs']} doubled hat strokes"
+        bled = notes["crash_bleed"] + notes["cross_stem_bleed"]
         if bled:
             merged.dropped_quiet += bled
-            merged.bleed_note = (f"dropped {bled} quiet kick/snare hits that landed "
-                                 f"on a crash — see transcribe.suppress_crash_bleed")
+            merged.bleed_note = (
+                f"dropped {notes['crash_bleed']} quiet kick/snare hits on a crash "
+                f"and {notes['cross_stem_bleed']} more that coincided with a much "
+                f"louder stroke in another stem")
+        merged.collision_report = notes["collisions"]
+        if notes["collisions"]["dropped"]:
+            merged.collision_note = (
+                f"dropped {notes['collisions']['dropped']} kick/snare collisions "
+                f"the song's own pattern resolved the other way — see "
+                f"transcribe.resolve_collisions")
+        if notes["playability"]:
+            merged.playability_note = (
+                f"dropped {notes['playability']} hits that would have needed a "
+                f"third hand — see transcribe.enforce_playability")
+        if bled or notes["collisions"]["dropped"] or notes["playability"]:
             for instrument in list(merged.per_instrument):
                 merged.per_instrument[instrument] = sum(
                     1 for hit in hits if hit.instrument == instrument)
@@ -663,6 +724,322 @@ def suppress_crash_bleed(
                 continue
         kept.append(hit)
     return kept, dropped
+
+
+#: Instruments a drummer plays with a foot, and which foot. Everything absent
+#: from this table is played with a hand.
+FOOT_OF: dict[str, str] = {
+    "kick": "right foot",
+    "kick_2": "left foot",
+    "hihat_pedal": "left foot",
+}
+
+#: Tie-break order when a cluster needs a limb it does not have. Lower is kept.
+#: On an equal velocity the drums outrank the cymbals, because the cymbal and
+#: hat stems are where the spurious detections live: a crash stem fires on
+#: anything broadband and the hat stem fires on the wash of everything else.
+_KEEP_RANK: dict[str, int] = {
+    "snare": 0, "sidestick": 0,
+    "tom_low": 1, "tom_mid": 1, "tom_high": 1,
+    "ride": 2, "ride_bell": 2,
+    "hihat_closed": 3, "hihat_open": 3,
+    "crash": 4, "crash_2": 4, "china": 4, "splash": 4,
+}
+
+
+def _clusters(hits: list[Hit], window: float) -> list[list[int]]:
+    """Indices of *hits* grouped into simultaneity clusters.
+
+    Bounded from each cluster's **first** hit rather than by single linkage, the
+    same way :func:`~rambass.quantize.deflam` does it. Single linkage would let
+    a dense hat part chain into one cluster spanning the whole song.
+    """
+    order = sorted(range(len(hits)), key=lambda i: hits[i].time)
+    out: list[list[int]] = []
+    for index in order:
+        if out and hits[index].time - hits[out[-1][0]].time <= window:
+            out[-1].append(index)
+        else:
+            out.append([index])
+    return out
+
+
+def enforce_playability(
+    hits: list[Hit],
+    *,
+    window: float = 0.030,
+    hands: int = 2,
+    feet: int = 2,
+) -> tuple[list[Hit], int]:
+    """Drop hits that would need a third hand. Returns (hits, dropped).
+
+    Five stems detected independently can agree on a moment that no human could
+    play: a snare, a closed hat and a crash inside 10 ms is three hands. It
+    happens because a loud broadband stroke leaks into every stem at once, and
+    each stem's detector believes what it sees — so the error looks like a
+    plausible chord rather than like noise, and it survives every gate that
+    reasons about one instrument at a time.
+
+    The limb model is the whole point and it is deliberately crude: two hands,
+    two feet, :data:`FOOT_OF` says which instruments are feet. **A kick is a
+    foot**, so the commonest event in rock drumming — kick, snare and hat
+    together — must pass untouched, and there is a test that says so.
+
+    Counted per *distinct instrument*, not per hit: two snares 8 ms apart is one
+    hand playing a flam, and collapsing that is
+    :func:`~rambass.quantize.deflam`'s job, not this one's. When a cluster is
+    over its limit the loudest instruments stay, ties broken by
+    :data:`_KEEP_RANK` so the result does not depend on input order.
+
+    This finds a real fault but it is not a substitute for the musical passes
+    that run beside it: on Manlio it fires far less often than
+    :func:`resolve_collisions`, because most phantom hits arrive in twos, which
+    two hands can play.
+    """
+    if not hits:
+        return list(hits), 0
+
+    drop: set[int] = set()
+    for cluster in _clusters(hits, window):
+        by_instrument: dict[str, list[int]] = {}
+        for index in cluster:
+            by_instrument.setdefault(hits[index].instrument, []).append(index)
+
+        for limit, group in (
+            (hands, [n for n in by_instrument if n not in FOOT_OF]),
+            (feet, sorted({FOOT_OF[n] for n in by_instrument if n in FOOT_OF})),
+        ):
+            if len(group) <= limit:
+                continue
+            if group and group[0] in FOOT_OF.values():
+                # Feet: rank the *limbs*, keeping each limb's loudest stroke.
+                names = [[n for n in by_instrument if FOOT_OF.get(n) == limb]
+                         for limb in group]
+            else:
+                names = [[n] for n in group]
+            ranked = sorted(
+                names,
+                key=lambda ns: (
+                    -max(hits[i].velocity for n in ns for i in by_instrument[n]),
+                    min(_KEEP_RANK.get(n, 50) for n in ns),
+                    sorted(ns)[0],
+                ),
+            )
+            for names_out in ranked[limit:]:
+                for name in names_out:
+                    drop.update(by_instrument[name])
+
+    kept = [hit for i, hit in enumerate(hits) if i not in drop]
+    return kept, len(drop)
+
+
+def resolve_collisions(
+    hits: list[Hit],
+    timeline: Timeline,
+    *,
+    subdivision: int = 4,
+    window: float = 0.030,
+    pairs: tuple[tuple[str, str], ...] = (("kick", "snare"),),
+    min_evidence: int = 4,
+    ratio: float = 2.0,
+    loud_keeps: int = 118,
+) -> tuple[list[Hit], dict]:
+    """Resolve simultaneous kick/snare hits from the song's own pattern.
+
+    Paolo: *"kick+snare on the same beat are fairly uncommon, is there a way to
+    normalize them and say based on the patterns of the song, if you have kick
+    and snare on beat 1, it is more likely to be a kick"*. This is that.
+
+    The evidence is the part itself, so nothing has to be assumed about the
+    genre. For every metrical slot, count how often each instrument of the pair
+    appears **alone** there — those are the bars where the separator did not
+    confuse anything and the drummer's intent is unambiguous. Then use that
+    census to arbitrate the bars where both fired at once. Measured on Manlio at
+    triplet-8ths::
+
+        beat 1   kick alone 49   snare alone  4   together 25
+        beat 2   kick alone  4   snare alone 59   together  1
+        beat 3   kick alone 56   snare alone  5   together 17
+        beat 4   kick alone  5   snare alone 52   together  2
+
+    A textbook shuffle, and 42 of its 52 collisions sit on beats 1 and 3 where
+    the kick wins better than ten to one. Those are the phantom snares Paolo
+    heard on the downbeat.
+
+    Three refusals keep it from inventing a part:
+
+    * **No verdict without a majority.** A slot must have *min_evidence* solo
+      hits and one instrument must lead by *ratio*, or both hits stay. An
+      ambiguous slot is a genuine unison as often as it is an error.
+    * **Loud hits are kept.** A stroke at *loud_keeps* or above was played, not
+      leaked: a crash-accented backbeat lands with the kick because the drummer
+      hit them together, hard. Bleed is quiet by nature.
+    * **Only the named pair is touched.** Everything else passes through, so a
+      hat under a downbeat is never at risk.
+
+    Returns (hits, report) where the report carries ``dropped``, ``kept`` and
+    the per-slot census, so ``--report`` can show its working.
+    """
+    report: dict = {"dropped": 0, "kept": 0, "slots": {}}
+    if not hits or subdivision < 1:
+        return list(hits), report
+
+    def slot_of(time: float) -> int:
+        bar, beat = timeline.seconds_to_bar_beat(time)
+        per_bar = timeline.time_signature_at(max(bar, 1))[0] * subdivision
+        return int(round((beat - 1.0) * subdivision)) % per_bar
+
+    drop: set[int] = set()
+    for first, second in pairs:
+        members = {first, second}
+        indices = [i for i, h in enumerate(hits) if h.instrument in members]
+        if not indices:
+            continue
+        times = {
+            name: np.array(sorted(hits[i].time for i in indices
+                                  if hits[i].instrument == name))
+            for name in (first, second)
+        }
+
+        census: dict[int, dict[str, int]] = {}
+        collisions: list[int] = []
+        for i in indices:
+            hit = hits[i]
+            other = times[second if hit.instrument == first else first]
+            near = other.size and float(np.min(np.abs(other - hit.time))) < window
+            entry = census.setdefault(slot_of(hit.time), {first: 0, second: 0})
+            if near:
+                collisions.append(i)
+            else:
+                entry[hit.instrument] += 1
+
+        for i in collisions:
+            hit = hits[i]
+            if hit.velocity >= loud_keeps:
+                continue
+            entry = census.get(slot_of(hit.time))
+            if not entry:
+                continue
+            mine, theirs = entry[hit.instrument], entry[
+                second if hit.instrument == first else first]
+            if theirs >= min_evidence and theirs >= ratio * max(mine, 1):
+                drop.add(i)
+
+        report["slots"][f"{first}/{second}"] = {
+            str(slot): dict(counts) for slot, counts in sorted(census.items())
+        }
+
+    kept = [hit for i, hit in enumerate(hits) if i not in drop]
+    report["dropped"] = len(drop)
+    report["kept"] = len(kept)
+    return kept, report
+
+
+def suppress_cross_stem_bleed(
+    hits: list[Hit],
+    *,
+    window: float = 0.025,
+    quiet_by: int = 13,
+    louder_by: int = 10,
+    exclude: tuple[str, ...] = ("hihat_closed", "hihat_open", "hihat_pedal", "ride"),
+) -> tuple[list[Hit], int]:
+    """Drop quiet hits that coincide with a much louder one elsewhere.
+
+    The general form of :func:`suppress_crash_bleed`, which only knew about
+    crashes. No separator is perfect, so any loud broadband stroke leaves a
+    trace in every other stem, and a per-stem onset detector reports it as a
+    hit with a plausible position and a plausible velocity. Manlio bar 1 is the
+    clean example: the song opens on a single kick, and the snare stem carries
+    that kick at a tenth the level with the same decay envelope.
+
+    Velocity is a fair proxy here **because**
+    :func:`scale_velocities` is per instrument against a fixed 30 dB span, so a
+    velocity is already "how this stroke compares with this instrument's own
+    typical one". It is a proxy and not a measurement, which bounds what this
+    can do — see the warning below.
+
+    Hats and the ride are excluded for the reason
+    :func:`suppress_crash_bleed` excludes hats: they play under everything, they
+    are quiet by nature, and the same rule there deletes a real part.
+
+    **Known limit, measured, do not assume this catches everything.** On Manlio
+    the snare stem's *median* detection is 20 dB below its real backbeats — the
+    part is mostly ghosts and leakage, so the median that "quiet_by" is measured
+    against is itself a ghost, and bar 1's phantom snare reads as *above*
+    average for its stem. This function does not catch it.
+    :func:`resolve_collisions` does, by asking what the song plays there
+    instead of how loud it is. Run both; they fail in different places.
+    """
+    if len(hits) < 4:
+        return list(hits), 0
+    order = sorted(range(len(hits)), key=lambda i: hits[i].time)
+    times = np.array([hits[i].time for i in order], dtype=float)
+
+    medians: dict[str, float] = {}
+    for instrument in {hit.instrument for hit in hits}:
+        velocities = [h.velocity for h in hits if h.instrument == instrument]
+        if len(velocities) >= 8:
+            medians[instrument] = float(np.median(velocities))
+
+    drop: set[int] = set()
+    for position, index in enumerate(order):
+        hit = hits[index]
+        if hit.instrument in exclude or hit.instrument not in medians:
+            continue
+        if hit.velocity >= medians[hit.instrument] - quiet_by:
+            continue
+        lo = int(np.searchsorted(times, hit.time - window, "left"))
+        hi = int(np.searchsorted(times, hit.time + window, "right"))
+        for other_position in range(lo, hi):
+            if other_position == position:
+                continue
+            other = hits[order[other_position]]
+            if other.instrument == hit.instrument:
+                continue
+            if other.velocity - hit.velocity >= louder_by:
+                drop.add(index)
+                break
+
+    kept = [hit for i, hit in enumerate(hits) if i not in drop]
+    return kept, len(drop)
+
+
+def clean_merged_hits(
+    hits: list[Hit],
+    timeline: Timeline,
+    *,
+    subdivision: int = 4,
+) -> tuple[list[Hit], dict]:
+    """Every pass that can only run once the stems have been merged.
+
+    Extracted from :func:`transcribe_parts` so it can be tested without librosa
+    or audio: per-stem detection needs both, this needs neither. The order is
+    load-bearing and each step assumes the one before it has run:
+
+    1. :func:`split_cymbal_runs` — decide what the cymbal stem actually is,
+       before anything reasons about crashes.
+    2. :func:`merge_hat_pairs` — one open hat, not a closed one and an open one.
+    3. :func:`suppress_crash_bleed` — needs the crashes to be real crashes,
+       hence after step 1.
+    4. :func:`suppress_cross_stem_bleed` — the general case, on what is left.
+    5. :func:`resolve_collisions` — musical arbitration. After the level-based
+       gates, because it should only be asked about collisions they could not
+       explain.
+    6. :func:`enforce_playability` — last, so it judges the finished part. A
+       part that is still unplayable here is one no earlier pass could fix.
+
+    Returns (hits, notes) where notes counts what each pass did.
+    """
+    notes: dict = {}
+    beat_seconds = 60.0 / timeline.bpm if timeline.bpm > 0 else 0.5
+    hits, notes["cymbal_runs"] = split_cymbal_runs(hits, beat_seconds)
+    hits, notes["hat_pairs"] = merge_hat_pairs(hits)
+    hits, notes["crash_bleed"] = suppress_crash_bleed(hits)
+    hits, notes["cross_stem_bleed"] = suppress_cross_stem_bleed(hits)
+    hits, notes["collisions"] = resolve_collisions(
+        hits, timeline, subdivision=subdivision)
+    hits, notes["playability"] = enforce_playability(hits)
+    return hits, notes
 
 
 def gate_quiet_hits(hits: list[Hit], levels, *, gate_db: float = 25.0):
