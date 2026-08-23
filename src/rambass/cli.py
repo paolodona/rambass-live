@@ -515,6 +515,124 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_align(args: argparse.Namespace) -> int:
+    """Fit ``practice/align.yaml`` from detected beats, and warp a reference.
+
+    Paolo: "I would like to rebuild the drums... until I have them over the
+    original time warped track (minus the original drums), so I can hear them in
+    context." A single offset cannot do that — Manlio's own align.yaml records
+    that the band drifts -88 to +258 ms across the song, so a reference laid at
+    one offset flams by a quarter second by the end.
+
+    Practice scope (CLAUDE.md, docs/practice-tracks.md): this writes only under
+    the song's `practice/` folder, touches no musical field in `song.yaml`, and is
+    not a pipeline stage. It must never gate the gig.
+    """
+    import numpy as np
+
+    from .align import (
+        AlignMap, Anchor, fit_anchors, load_align, residual_holdout_ms,
+        residual_ms, save_align, warp_plan, warp_samples,
+    )
+    from .analyze import analyze_tempo
+    from .audio import load_audio, write_wav
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        target = song.path("practice", "align.yaml")
+        timeline = song.timeline()
+        bars = song.bars or song.total_bars()
+        amap = load_align(target)
+
+        if args.fit:
+            reference = song.stem_path("drums") or song.source_path()
+            if not reference:
+                _say(f"{song.slug}: nothing to fit against — separate the stems "
+                     f"or put the source mix in place first")
+                continue
+            _say(f"── {song.title}: fitting anchors against {reference.name}")
+            analysis = analyze_tempo(reference)
+            anchors = fit_anchors(analysis.beat_times, timeline,
+                                  bars=bars, every_beats=args.every_beats)
+            if not anchors:
+                _say("   no beat landed near a bar line — the anchor is probably "
+                     "wrong, or this is the wrong reference file")
+                continue
+            fitted = AlignMap(
+                anchors=anchors,
+                source=(song.source_audio or reference.name),
+                detected_bpm=song.bpm,
+            )
+            # Leave-one-out, not "fit against the beats it was fitted from":
+            # at one anchor per beat the latter is circular and reports 0 ms
+            # however bad the map is. See align.residual_holdout_ms.
+            worst, mean = residual_holdout_ms(fitted, timeline)
+            if worst is None:
+                worst, mean = residual_ms(fitted, analysis.beat_times, timeline)
+                fitted.note = "residual against the beats it was fitted from"
+            else:
+                fitted.note = ("leave-one-out over the anchors -- the gap "
+                               "between them is the only thing interpolation "
+                               "can get wrong")
+            fitted.residual_max_ms, fitted.residual_mean_ms = worst, mean
+            # Keep a hand-corrected bar 1 rather than overwriting it: the old file
+            # may have been fixed by ear, and that beats any fit.
+            if amap.anchors and args.keep_bar_one:
+                fitted.anchors = [Anchor(bar=1, at=amap.offset)] + [
+                    a for a in fitted.anchors if a.bar != 1]
+            _say(f"   {len(fitted.anchors)} anchors every "
+                 f"{args.every_beats} beat(s), residual {worst:.0f} ms worst / "
+                 f"{mean:.0f} ms mean")
+            if worst > 50.0:
+                # The residual is measured against librosa's own beat times, so
+                # part of it is the beat tracker rather than the map. With an
+                # anchor on every bar the map passes exactly through every bar
+                # line and what is left is the swing inside the bar, which a
+                # linear segment cannot follow and a reference track does not
+                # need it to.
+                _say(f"   ^ worst case is over the 50 ms in "
+                     f"docs/practice-tracks.md."
+                     + (" Try --every-beats 1." if args.every_beats > 1 else
+                        " With an anchor on every beat this is the beat "
+                        "tracker's own jitter, not a bad fit — fine for a "
+                        "reference, which is all this is."))
+            if args.dry_run:
+                _say("   dry run — nothing written.")
+            else:
+                save_align(target, fitted)
+                _say(f"→  {target}")
+            amap = fitted
+
+        if not args.warp:
+            continue
+        if amap.mode == "none":
+            _say(f"{song.slug}: no anchors yet — run `rambass align {song.slug} "
+                 f"--fit` first")
+            continue
+        source = song.stem_path(args.stem)
+        if not source:
+            _say(f"{song.slug}: no stems/{args.stem}.wav to warp")
+            continue
+        plan = warp_plan(amap, timeline, bars=bars)
+        samples, sample_rate = load_audio(source)
+        warped = np.stack(
+            [warp_samples(samples[:, channel], sample_rate, plan)
+             for channel in range(samples.shape[1])], axis=1)
+        rates = [segment.rate for segment in plan]
+        _say(f"── {song.title}: warped {source.name} over {len(plan)} segments, "
+             f"rate {min(rates):.3f}-{max(rates):.3f}")
+        if args.dry_run:
+            _say("   dry run — nothing written.")
+            continue
+        out = song.path("practice", f"{args.stem}-aligned.wav")
+        write_wav(out, warped, sample_rate)
+        _say(f"→  {out}")
+        _say("   Drop it on a track at the count-in and play the new drums "
+             "against it. It is a reference, not a deliverable.")
+    _say()
+    return 0
+
+
 def cmd_drums_missing(args: argparse.Namespace) -> int:
     """The ledger: everything the pipeline removed or never named.
 
@@ -1722,6 +1840,32 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true",
                    help="report what it would do and write nothing")
     p.set_defaults(func=cmd_drums_consolidate)
+
+    p = sub.add_parser(
+        "align",
+        help="map bars to seconds in the original recording, and warp a "
+             "reference onto the grid (practice only)",
+    )
+    _add_song_args(p)
+    p.add_argument("--fit", action="store_true",
+                   help="re-fit the anchors from detected beats")
+    p.add_argument("--warp", action="store_true",
+                   help="render practice/<stem>-aligned.wav on the fixed grid")
+    p.add_argument("--stem", default="no_drums",
+                   help="which stem to warp (default: no_drums, the "
+                        "band-minus-drums bed)")
+    p.add_argument("--every-beats", type=int, default=1,
+                   help="anchor every N beats when fitting. 1 is per beat and "
+                        "is the default because it measurably wins: on Manlio "
+                        "the warped backbeats land within 38 ms at p90 against "
+                        "58 ms per bar and 107 ms for a single offset")
+    p.add_argument("--keep-bar-one", action="store_true", default=True,
+                   help="keep an existing bar-1 anchor, which may have been "
+                        "corrected by ear")
+    p.add_argument("--refit-bar-one", dest="keep_bar_one", action="store_false",
+                   help="let the fit replace bar 1 as well")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=cmd_align)
 
     p = drums_sub.add_parser(
         "missing",

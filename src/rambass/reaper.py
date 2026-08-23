@@ -63,6 +63,11 @@ DEFAULT_TRACKS: tuple[TrackSpec, ...] = (
     TrackSpec("CLICK", -6.0, 0.0, (250, 190, 60), role="click", muted=True),
     TrackSpec("BACKING", 0.0, 0.0, (120, 200, 160), role="backing"),
     TrackSpec("DRUMS MIDI", 0.0, 0.0, (120, 180, 255), role="drums"),
+    # The one reference that is already *on* the grid: practice/align.yaml warped
+    # it there, so it needs no anchor shift and does not drift away from the
+    # click. It is the track to un-mute when judging the new drums in context.
+    TrackSpec("REF aligned", -6.0, 0.0, (110, 140, 110), role="reference",
+              muted=True),
     TrackSpec("REF drums", -6.0, 0.0, (110, 110, 110), role="reference", muted=True),
     TrackSpec("REF bass", -6.0, 0.0, (110, 110, 110), role="reference", muted=True),
     TrackSpec("REF other", -6.0, 0.0, (110, 110, 110), role="reference", muted=True),
@@ -184,6 +189,16 @@ def build_song_script(
         # exactly when you are trying to check timing. So shift by the measured
         # anchor from practice/align.yaml when there is one.
         anchor = song.align_anchor() or 0.0
+        # `rambass align --warp` already put this one on the grid, so it goes at
+        # the count-in with the drums and gets *no* anchor shift. Shifting it too
+        # would undo the warp, and the symptom — a double offset — reads as "the
+        # warp does not work" rather than as a placement bug.
+        for stem in ("no_drums", "drums", "bass", "other", "vocals"):
+            aligned = song.path("practice", f"{stem}-aligned.wav")
+            if aligned.exists():
+                script.add("ITEM", "REF aligned", as_path(aligned),
+                           timeline.count_in_seconds)
+                break
         for stem in ("drums", "bass", "other", "vocals"):
             path = song.stem_path(stem)
             if path:
