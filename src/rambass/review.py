@@ -537,3 +537,190 @@ def reference_path(song):
             f"{song.slug}: no stems/drums.wav to compare against — run "
             f"`rambass stems {song.slug} --drums-only` first")
     return path
+
+
+def write_ledger(song, notes, *, version: str = "") -> None:
+    """Persist the ledger both ways: YAML source of truth, markdown for eyes."""
+    save_review(song.path("qa", "review.yaml"), notes,
+                version=version or song.drum_midi_path().name)
+    song.path("qa", "review.md").write_text(
+        review_markdown(song.title, notes, count_in_bars=song.count_in_bars),
+        encoding="utf-8")
+
+
+def add_note(song, note: Note) -> list[Note]:
+    """Append one note to the song's ledger and rewrite both files.
+
+    The CLI and the console both land here, so a note typed over SSH and a
+    note clicked in the browser are indistinguishable on disk. Fills in the
+    covering section when the caller left it blank.
+    """
+    if not note.section:
+        from .restore import _section_at
+
+        note.section = _section_at(song.sections, note.bar, note.beat)
+    version, notes = load_review(song.path("qa", "review.yaml"))
+    notes.append(note)
+    write_ledger(song, notes, version=version)
+    return notes
+
+
+def rebuild_song(song, *, project_root, dry_run: bool = False,
+                 force: str | None = None, step: str | None = None) -> dict:
+    """The rebuild, as one code path for the CLI command and the console.
+
+    Runs the auto side of :func:`rebuild_selection` in pipeline order via the
+    real ``rambass`` CLI; reports the held side untouched. *force* names one
+    held artifact to rebuild anyway — its file is copied to ``.bak`` first,
+    because a one-click rebuild must not make overwriting a hand edit easier
+    than the terminal already does.
+    """
+    import shutil
+
+    from .provenance import stale_report
+
+    auto, held = rebuild_selection(stale_report(song))
+    if step:
+        auto = [e for e in auto if e.step == step]
+
+    forced = []
+    backup_name = ""
+    if force:
+        match = [e for e in held if e.artifact == force]
+        if not match:
+            held_names = ", ".join(e.artifact for e in held) or "none"
+            raise ProjectError(
+                f"--force {force}: not a held (edited/unknown) artifact of "
+                f"{song.slug}. Held right now: {held_names}. A stale artifact "
+                f"rebuilds without --force.")
+        path = song.path(*force.split("/"))
+        if path.exists():
+            backup = path.with_suffix(path.suffix + ".bak")
+            shutil.copy2(path, backup)
+            backup_name = backup.name
+        forced = match
+
+    todo = auto + forced
+    result: dict = {
+        "song": song.slug,
+        "dry_run": dry_run,
+        "commands": [entry.command for entry in todo],
+        "ran": 0,
+        "failed": "",
+        "backup": backup_name,
+        "held": [{"artifact": entry.artifact, "state": entry.state,
+                  "reasons": entry.reasons}
+                 for entry in held if entry not in forced],
+    }
+    if todo and not dry_run:
+        report = run_rebuild(todo, runner=subprocess_runner(project_root))
+        result["ran"] = report["ran"]
+        result["failed"] = report["failed"]
+    return result
+
+
+# ── what the console's screens are made of ───────────────────────────────────
+
+#: Which dashboard column each pipeline step reports into. The drum chain's
+#: later variants all land on `quantize` — to a viewer they are one fact,
+#: "the cleaned MIDI is out of date". The practice pair reports nowhere:
+#: practice must never gate the gig, and a stale warp ringing a show column
+#: would do exactly that.
+STAGE_OF_STEP = {
+    "stems": "stems",
+    "drums transcribe": "drums_midi",
+    "drums clean": "quantize",
+    "drums consolidate": "quantize",
+    "drums restore": "quantize",
+    "click": "render",
+    "gx100 midi": "gx100",
+    "video ass": "video",
+    "video render": "video",
+}
+
+
+def dashboard_row(song, report) -> dict:
+    """One dashboard row: the manifest's own status, plus provenance flags.
+
+    Two separate facts per cell on purpose — "is this stage considered
+    finished" (`song.status`, what `rambass mark` sets) and "is what's on disk
+    provably out of date" (`rambass stale`). Collapsing them into one colour
+    would make the dashboard lie in one direction or the other.
+    """
+    from .manifest import STAGES
+
+    flags: dict = {}
+    for entry in report:
+        stage = STAGE_OF_STEP.get(entry.step)
+        if not stage:
+            continue
+        cell = flags.setdefault(stage, {"stale": False, "edited": False})
+        if entry.state == "stale":
+            cell["stale"] = True
+        if entry.state == "edited":
+            cell["edited"] = True
+    done, total = song.progress()
+    return {
+        "slug": song.slug,
+        "album": song.album,
+        "title": song.title,
+        "origin": song.drums_origin,
+        "done": done,
+        "total": total,
+        "cells": {
+            stage: {"status": song.status.get(stage, "todo"),
+                    **flags.get(stage, {"stale": False, "edited": False})}
+            for stage in STAGES
+        },
+    }
+
+
+def song_screen(song, report) -> dict:
+    """Everything one song's stage screens need, in display order.
+
+    The drum cluster is one screen (see :data:`DRUM_CLUSTER`); every other
+    stage stands alone. Steps that produce a provenance artifact carry its
+    current state, so a Run button can read "done, but stale".
+    """
+    from .manifest import STAGES
+
+    by_artifact = {entry.artifact: entry for entry in report}
+    screens = []
+    seen_cluster = False
+    for stage in STAGES:
+        if stage in DRUM_CLUSTER:
+            if seen_cluster:
+                continue
+            seen_cluster = True
+            key, title = "drums", "Drums (transcribe, clean, kit)"
+        else:
+            key, title = stage, stage
+        steps = []
+        for row in steps_for(song, key):
+            artifact = row.artifact.format(slug=song.slug)
+            entry = by_artifact.get(artifact)
+            steps.append({
+                "label": row.label, "command": row.command, "kind": row.kind,
+                "note": row.note, "artifact": artifact,
+                "state": entry.state if entry else "",
+                "reasons": entry.reasons if entry else [],
+            })
+        status = (song.status.get(stage, "todo") if key != "drums" else
+                  song.status.get("drums_midi", "todo"))
+        screens.append({"stage": key, "title": title, "status": status,
+                        "steps": steps})
+
+    counts = {"stale": 0, "edited": 0, "missing": 0}
+    for entry in report:
+        if entry.state in counts:
+            counts[entry.state] += 1
+    _, notes = load_review(song.path("qa", "review.yaml"))
+    return {
+        "slug": song.slug,
+        "title": song.title,
+        "album": song.album,
+        "origin": song.drums_origin,
+        "screens": screens,
+        "counts": counts,
+        "open_notes": sum(1 for n in notes if n.status == "open"),
+    }

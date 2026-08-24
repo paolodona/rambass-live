@@ -867,71 +867,47 @@ def cmd_review_rebuild(args: argparse.Namespace) -> int:
     for one artifact at a time, and writes a `.bak` first: a one-key rebuild
     must not make that mistake easier to make than the terminal already does.
     """
-    import shutil
-
     from . import review
-    from .provenance import stale_report
 
     project = _project()
     failed = False
     for song in _songs(project, args.song, args.album, False):
-        auto, held = review.rebuild_selection(stale_report(song))
-        if args.step:
-            auto = [e for e in auto if e.step == args.step]
-
-        forced = []
-        if args.force:
-            match = [e for e in held if e.artifact == args.force]
-            if not match:
-                held_names = ", ".join(e.artifact for e in held) or "none"
-                raise ProjectError(
-                    f"--force {args.force}: not a held (edited/unknown) "
-                    f"artifact of {song.slug}. Held right now: {held_names}. "
-                    f"A stale artifact rebuilds without --force.")
-            path = song.path(*args.force.split("/"))
-            if path.exists():
-                backup = path.with_suffix(path.suffix + ".bak")
-                shutil.copy2(path, backup)
-                _say(f"{song.slug}: kept a copy of the hand-edited file at "
-                     f"{backup.name}")
-            forced = match
-
-        todo = auto + forced
-        if not todo:
+        result = review.rebuild_song(
+            song, project_root=project.root, dry_run=args.dry_run,
+            force=args.force, step=args.step)
+        if result["backup"]:
+            _say(f"{song.slug}: kept a copy of the hand-edited file at "
+                 f"{result['backup']}")
+        if not result["commands"]:
             _say(f"{song.slug}: nothing stale or missing — nothing to rebuild")
         elif args.dry_run:
             _say(f"{song.slug}: would run, in order:")
-            for entry in todo:
-                _say(f"   {entry.command}")
+            for command in result["commands"]:
+                _say(f"   {command}")
         else:
-            report = review.run_rebuild(
-                todo, runner=review.subprocess_runner(project.root))
-            _say(f"{song.slug}: ran {report['ran']} of {len(todo)} steps")
-            if report["failed"]:
-                _say(f"   FAILED: {report['failed']} — stopping here; the "
+            _say(f"{song.slug}: ran {result['ran']} of "
+                 f"{len(result['commands'])} steps")
+            if result["failed"]:
+                _say(f"   FAILED: {result['failed']} — stopping here; the "
                      f"steps after it still need their inputs")
                 failed = True
-
-        for entry in held:
-            if entry in forced:
-                continue
-            _say(f"   left alone ({entry.state}): {entry.artifact} — "
-                 f"{'; '.join(entry.reasons)}")
+        for held in result["held"]:
+            _say(f"   left alone ({held['state']}): {held['artifact']} — "
+                 f"{'; '.join(held['reasons'])}")
     return 1 if failed else 0
 
 
-def _review_paths(song) -> tuple[Path, Path]:
-    return song.path("qa", "review.yaml"), song.path("qa", "review.md")
+def cmd_review_serve(args: argparse.Namespace) -> int:
+    """Start the console: the dashboard, stage screens and the A/B review tool.
 
+    A local page over the same data the CLI prints — `rambass status` is the
+    grid, `rambass stale` is the rings, review.py is every button. Local only.
+    """
+    from .console import serve
 
-def _write_review(song, notes, version: str) -> None:
-    from .review import review_markdown, save_review
-
-    ledger, markdown = _review_paths(song)
-    save_review(ledger, notes, version=version)
-    markdown.write_text(
-        review_markdown(song.title, notes, count_in_bars=song.count_in_bars),
-        encoding="utf-8")
+    serve(_project(), port=args.port, setlist=args.setlist,
+          open_browser=not args.no_browser)
+    return 0
 
 
 def cmd_review_clips(args: argparse.Namespace) -> int:
@@ -976,8 +952,7 @@ def cmd_review_note(args: argparse.Namespace) -> int:
     """
     from datetime import date
 
-    from .restore import _section_at
-    from .review import NOTE_KINDS, Note, load_review
+    from .review import NOTE_KINDS, Note, add_note
 
     project = _project()
     song = load_song(project.find_song_dir(args.song))
@@ -993,16 +968,13 @@ def cmd_review_note(args: argparse.Namespace) -> int:
         raise ProjectError(
             f"--kind {args.kind!r}: expected one of {', '.join(NOTE_KINDS)}")
 
-    ledger, _ = _review_paths(song)
-    version, notes = load_review(ledger)
-    notes.append(Note(
-        bar=bar, beat=beat, section=_section_at(song.sections, bar, beat),
-        kind=args.kind, instrument=args.instrument, velocity=args.velocity,
-        comment=args.comment, created=date.today().isoformat()))
-    _write_review(song, notes, version or song.drum_midi_path().name)
+    add_note(song, Note(
+        bar=bar, beat=beat, kind=args.kind, instrument=args.instrument,
+        velocity=args.velocity, comment=args.comment,
+        created=date.today().isoformat()))
     _say(f"{song.title}: noted {args.kind} at bar {bar} beat {beat:g}"
          + (f" (Reaper {quoted})" if args.reaper_bar else "")
-         + f" -> {ledger}")
+         + f" -> {song.path('qa', 'review.yaml')}")
     return 0
 
 
@@ -1013,12 +985,11 @@ def cmd_review_promote(args: argparse.Namespace) -> int:
     split `drums missing --propose` already uses. Timing and velocity
     complaints stay in the ledger for a human.
     """
-    from .review import load_review, promote_notes
+    from .review import load_review, promote_notes, write_ledger
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
-        ledger, _ = _review_paths(song)
-        version, notes = load_review(ledger)
+        version, notes = load_review(song.path("qa", "review.yaml"))
         if not notes:
             _say(f"{song.slug}: no notes to promote")
             continue
@@ -1026,7 +997,7 @@ def cmd_review_promote(args: argparse.Namespace) -> int:
         if promoted:
             song.validate()
             save_song(song)
-            _write_review(song, notes, version)
+            write_ledger(song, notes, version=version)
             _say(f"{song.title}: promoted {promoted} into song.yaml "
                  f"({skipped} left for your ears) — read the diff, then "
                  f"`rambass drums restore {song.slug}`")
@@ -1043,8 +1014,7 @@ def cmd_review_status(args: argparse.Namespace) -> int:
     project = _project()
     for song in _songs(project, args.song, args.album,
                        args.all or not (args.song or args.album)):
-        ledger, _ = _review_paths(song)
-        _, notes = load_review(ledger)
+        _, notes = load_review(song.path("qa", "review.yaml"))
         if not notes:
             continue
         counts = {"open": 0, "promoted": 0, "dismissed": 0}
@@ -2307,6 +2277,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true",
                    help="print the commands and run nothing")
     p.set_defaults(func=cmd_review_rebuild)
+
+    p = review_sub.add_parser(
+        "serve", help="start the console (dashboard, stage screens, A/B review)")
+    p.add_argument("--port", type=int, default=8433)
+    p.add_argument("--setlist", default="gig",
+                   help="which running order the dashboard rows follow")
+    p.add_argument("--no-browser", action="store_true",
+                   help="do not open a browser tab")
+    p.set_defaults(func=cmd_review_serve)
 
     p = review_sub.add_parser(
         "clips", help="cut per-section A/B clips (candidate vs original drums)")
