@@ -16,6 +16,8 @@ drums:
   origin: backing-track
   kit: ''
   map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
 source:
   audio: 02 I PoohFFI.wav
   url: https://drive.google.com/file/d/13ArsmPYFwrGRyVsfgAYihp2XEsy4DXSG/view
@@ -45,7 +47,7 @@ character:
 status:
   source: todo
   analyze: done
-  stems: n/a
+  stems: done
   drums_midi: n/a
   quantize: n/a
   kit: n/a

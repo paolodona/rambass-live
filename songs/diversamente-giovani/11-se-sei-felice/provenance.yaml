@@ -1,0 +1,12 @@
+# What produced each derived file here, and what it was made from.
+# `rambass stale` compares this with the files on disk. Written by the
+# producing commands -- do not hand-edit; delete a block to force a
+# rebuild.
+stems/drums.wav:
+  code: 8a5274681ced34f3
+  inputs: {}
+  manifest: {}
+  scalars: {}
+  self: 6a67f5ddd8dbed24
+  step: stems
+  version: 0.1.0

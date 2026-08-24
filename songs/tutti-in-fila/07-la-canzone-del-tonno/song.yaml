@@ -16,6 +16,8 @@ drums:
   origin: a-cappella
   kit: ''
   map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
 source:
   audio: 07 - La_Canzone_Del_Tonno.wav
   url: https://drive.google.com/file/d/1V_7KilXFJJgMmD-ZMPHHuI-7H4lNnbG3/view
@@ -44,7 +46,7 @@ character:
 status:
   source: todo
   analyze: n/a
-  stems: n/a
+  stems: done
   drums_midi: n/a
   quantize: n/a
   kit: n/a
@@ -55,9 +57,9 @@ status:
   rehearsed: todo
 notes: 'short — about a minute
 
-  a cappella: sung unaccompanied — no backing track, click, count-in or starting
-  pitch. The band just starts.
+  a cappella: sung unaccompanied — no backing track, click, count-in or starting pitch.
+  The band just starts.
 
-  screen: one still title card and nothing else — no lyric video. How long the
-  card holds is decided after rehearsal, once we know how quickly the transport
-  can be paused and unpaused between songs.'
+  screen: one still title card and nothing else — no lyric video. How long the card
+  holds is decided after rehearsal, once we know how quickly the transport can be
+  paused and unpaused between songs.'

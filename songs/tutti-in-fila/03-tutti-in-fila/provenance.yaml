@@ -25,3 +25,11 @@ practice/no_drums-aligned.wav:
   self: 28b49c365a8feea5
   step: align warp
   version: 0.1.0
+stems/drums.wav:
+  code: 8a5274681ced34f3
+  inputs: {}
+  manifest: {}
+  scalars: {}
+  self: 1e476d1a60f5455b
+  step: stems
+  version: 0.1.0

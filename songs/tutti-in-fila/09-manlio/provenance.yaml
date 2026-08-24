@@ -92,9 +92,9 @@ practice/no_drums-aligned.wav:
   version: 0.1.0
 stems/drums.wav:
   code: 8a5274681ced34f3
-  inputs:
-    source/09 Manlio.wav: 0202dd9d984d3b85
+  inputs: {}
   manifest: {}
-  self: 111446d6e131bd9a
+  scalars: {}
+  self: 18443aea4c489f6b
   step: stems
   version: 0.1.0
