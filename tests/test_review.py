@@ -70,7 +70,7 @@ def test_run_rebuild_invokes_each_command_in_order(song):
     ran = []
     entries = [_entry("a.mid", "stale", "rambass drums clean x"),
                _entry("b.mid", "missing", "rambass drums restore x")]
-    report = run_rebuild(entries, runner=lambda cmd: (ran.append(cmd), 0)[1])
+    report = run_rebuild(entries, runner=lambda cmd: (ran.append(cmd), (0, ""))[1])
     assert ran == ["rambass drums clean x", "rambass drums restore x"]
     assert report["ran"] == 2 and report["failed"] == ""
 
@@ -81,7 +81,9 @@ def test_run_rebuild_stops_at_the_first_failure(song):
                _entry("b.mid", "stale", "rambass two x"),
                _entry("c.mid", "stale", "rambass three x")]
     report = run_rebuild(
-        entries, runner=lambda cmd: (ran.append(cmd), 1 if cmd.endswith("two x") else 0)[1])
+        entries,
+        runner=lambda cmd: (ran.append(cmd),
+                            (1 if cmd.endswith("two x") else 0, ""))[1])
     assert ran == ["rambass one x", "rambass two x"]
     assert report["ran"] == 1 and report["failed"] == "rambass two x"
 
@@ -243,7 +245,7 @@ def test_rebuild_runs_the_auto_set_and_reports_the_held(cwd_song, capsys,
     _rebuildable(cwd_song)
     ran = []
     monkeypatch.setattr(review_module, "subprocess_runner",
-                        lambda cwd: lambda cmd: (ran.append(cmd), 0)[1])
+                        lambda cwd: lambda cmd: (ran.append(cmd), (0, ""))[1])
     assert main(["review", "rebuild", cwd_song.slug]) == 0
     assert any("drums clean" in cmd for cmd in ran)
     # The hand edit is reported with stale's own wording, never run.
@@ -259,7 +261,7 @@ def test_rebuild_force_backs_the_file_up_first(cwd_song, monkeypatch):
     _, edited = _rebuildable(cwd_song)
     ran = []
     monkeypatch.setattr(review_module, "subprocess_runner",
-                        lambda cwd: lambda cmd: (ran.append(cmd), 0)[1])
+                        lambda cwd: lambda cmd: (ran.append(cmd), (0, ""))[1])
     assert main(["review", "rebuild", cwd_song.slug,
                  "--force", "midi/drums-consolidated.mid"]) == 0
     backup = edited.with_suffix(".mid.bak")
@@ -284,7 +286,7 @@ def test_rebuild_stops_and_fails_loudly_when_a_command_fails(cwd_song,
 
     _rebuildable(cwd_song)
     monkeypatch.setattr(review_module, "subprocess_runner",
-                        lambda cwd: lambda cmd: 1)
+                        lambda cwd: lambda cmd: (1, "boom"))
     assert main(["review", "rebuild", cwd_song.slug]) == 1
 
 
@@ -709,3 +711,61 @@ def test_only_the_reference_side_offers_a_command(cwd_song):
     assert sources["ref"].command == f"rambass stems {cwd_song.slug} --drums-only"
     assert sources["ref"].command in {
         row.command for row in steps_for(cwd_song, "stems")}
+
+
+# ── what a command said, where the click happened ────────────────────────────
+#
+# `subprocess_runner` returned only an exit code, so a refusal or a traceback
+# went to the terminal `rambass console` was started from and the browser said
+# nothing but "FAIL". The reason has to reach the page: the guard on
+# `analyze --write` is worthless if the console shows a red row and no cause.
+
+
+def test_the_runner_returns_the_commands_output_with_its_code(tmp_path):
+    from rambass.review import subprocess_runner
+
+    run = subprocess_runner(tmp_path)
+    code, output = run("rambass --version")
+    assert code == 0 and output.strip(), "no output captured"
+
+
+def test_the_runner_captures_a_failures_message(tmp_path):
+    """`ProjectError` is printed to stderr and is exactly what a reader needs."""
+    from rambass.review import subprocess_runner
+
+    code, output = subprocess_runner(tmp_path)("rambass show no-such-song")
+    assert code != 0
+    assert "could not find" in output, "stderr never reached the caller"
+
+
+def test_the_runner_still_echoes_to_the_terminal(tmp_path, capfd):
+    """Capturing must not silence the terminal it used to print to."""
+    from rambass.review import subprocess_runner
+
+    subprocess_runner(tmp_path)("rambass --version")
+    assert capfd.readouterr().out.strip(), "the terminal went quiet"
+
+
+def test_run_rebuild_keeps_each_commands_output():
+    entries = [_entry("a.mid", "stale", "rambass one x"),
+               _entry("b.mid", "stale", "rambass two x")]
+
+    def runner(command):
+        return (1, "REFUSED: 60.02 is not 60.0") if "two" in command else (0, "fine")
+
+    report = run_rebuild(entries, runner=runner)
+    assert report["failed"].endswith("two x")
+    assert "REFUSED" in report["outputs"][report["failed"]]
+
+
+def test_rebuild_song_reports_the_output_of_what_it_ran(song, monkeypatch):
+    from rambass import review as review_module
+
+    monkeypatch.setattr(review_module, "subprocess_runner",
+                        lambda cwd: lambda command: (0, f"did {command}"))
+    _touch(song.dir / "source" / "mix.wav")
+    song.source_audio = "mix.wav"
+    result = review_module.rebuild_song(song, project_root=song.dir.parent)
+    assert set(result["outputs"]) <= set(result["commands"])
+    for command, text in result["outputs"].items():
+        assert text == f"did {command}"

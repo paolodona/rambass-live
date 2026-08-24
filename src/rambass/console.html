@@ -357,6 +357,16 @@ async function renderSong(slugAndQuery) {
   const log = $("#log");
   const buttons = () => app.querySelectorAll("#rebuild-all, [data-run]");
   let running = false;
+  function failureDetail(result) {
+    /* Trimmed from the end: a traceback or a refusal says what matters last,
+       and an unbounded paste would push the command list off the screen. */
+    const text = result.failed && result.outputs
+      ? (result.outputs[result.failed] || "").trimEnd() : "";
+    if (!text) return "";
+    const tail = text.length > 4000 ? "…\n" + text.slice(-4000) : text;
+    return "\n\n" + tail;
+  }
+
   async function rebuild(payload, endpoint, el) {
     /* A separation is three minutes and the server now allows one rebuild per
        song (409 otherwise), so the page has to *look* busy for all of it: the
@@ -374,9 +384,15 @@ async function renderSong(slugAndQuery) {
     try {
       const result = await api(endpoint || "/api/rebuild",
                               Object.assign({song: slug}, payload));
+      /* The reason a command failed has to be readable HERE. It used to go only
+         to the terminal `rambass console` was started from, so the guard on
+         `analyze --write` could refuse to overwrite a settled tempo and the
+         page would say nothing but "FAIL". Only the failure's output is shown:
+         a demucs run prints pages of progress and would bury it. */
       log.textContent = result.commands.length
         ? result.commands.map((c, i) =>
             (i < result.ran ? "ok    " : result.failed === c ? "FAIL  " : "held  ") + c).join("\n")
+          + failureDetail(result)
         : "nothing stale or missing — nothing to rebuild";
       if (!result.failed) setTimeout(() => renderSong(slug), 600);
     } catch (err) { log.textContent = "error: " + err.message; }

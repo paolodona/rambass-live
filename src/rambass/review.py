@@ -46,16 +46,24 @@ def rebuild_selection(entries) -> tuple[list, list]:
 def run_rebuild(entries, *, runner) -> dict:
     """Run each entry's command via *runner*, stopping at the first failure.
 
-    *runner* takes the command string and returns its exit code. The CLI and
-    the console inject a subprocess runner (the real ``rambass`` CLI, so this
-    can never produce a result a human typing the same command would not);
+    *runner* takes the command string and returns ``(exit_code, output)``. The
+    CLI and the console inject a subprocess runner (the real ``rambass`` CLI, so
+    this can never produce a result a human typing the same command would not);
     tests inject a recorder. Trusting the input is deliberate — the selection
     above is the only gate, and callers pass its *auto* side.
+
+    ``outputs`` maps each command to what it printed. The runner used to return
+    a bare exit code, which sent every reason a command had to the terminal
+    ``rambass console`` was started from — so the browser could say "FAIL" and
+    nothing else, and a refusal nobody could read is a refusal nobody can act
+    on.
     """
-    report: dict = {"ran": 0, "failed": "", "log": []}
+    report: dict = {"ran": 0, "failed": "", "log": [], "outputs": {}}
     for entry in entries:
         report["log"].append(entry.command)
-        if runner(entry.command) != 0:
+        code, output = runner(entry.command)
+        report["outputs"][entry.command] = output
+        if code != 0:
             report["failed"] = entry.command
             break
         report["ran"] += 1
@@ -69,16 +77,34 @@ def subprocess_runner(cwd):
     the rebuild uses exactly the interpreter and checkout the console runs
     from — a venv mismatch here would rebuild with different code than the
     staleness report reasoned about.
+
+    Output is **teed**, not captured: every line is printed as it arrives *and*
+    accumulated for the caller. A plain ``capture_output=True`` would have
+    silenced the terminal and held a three-minute separation's progress until it
+    finished, so the fix for an unreadable browser would have broken the one
+    place that already worked.
     """
     import shlex
     import subprocess
     import sys
 
-    def run(command: str) -> int:
+    def run(command: str) -> tuple[int, str]:
         words = shlex.split(command)
         if words and words[0] == "rambass":
             words = [sys.executable, "-m", "rambass"] + words[1:]
-        return subprocess.run(words, cwd=cwd).returncode
+        lines: list[str] = []
+        # stderr onto stdout: a ProjectError is printed to stderr and is exactly
+        # the sentence the reader needs, so the two must not be interleaved by
+        # separate pipes or read in an order that can deadlock.
+        process = subprocess.Popen(
+            words, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", bufsize=1)
+        assert process.stdout is not None
+        with process.stdout as stream:
+            for line in stream:
+                print(line, end="")
+                lines.append(line)
+        return process.wait(), "".join(lines)
 
     return run
 
@@ -680,6 +706,7 @@ def rebuild_song(song, *, project_root, dry_run: bool = False,
         "commands": [entry.command for entry in todo],
         "ran": 0,
         "failed": "",
+        "outputs": {},
         "backup": backup_name,
         "held": [{"artifact": entry.artifact, "state": entry.state,
                   "reasons": entry.reasons}
@@ -689,6 +716,7 @@ def rebuild_song(song, *, project_root, dry_run: bool = False,
         report = run_rebuild(todo, runner=subprocess_runner(project_root))
         result["ran"] = report["ran"]
         result["failed"] = report["failed"]
+        result["outputs"] = report["outputs"]
     return result
 
 
@@ -722,10 +750,10 @@ def run_step_command(song, command: str, *, project_root, report) -> dict:
         raise ProjectError(
             f"{command!r} is not a step {song.slug} offers. The console can "
             f"only run what it put a button on.")
-    code = subprocess_runner(project_root)(command)
+    code, output = subprocess_runner(project_root)(command)
     return {"song": song.slug, "dry_run": False, "commands": [command],
             "ran": 0 if code else 1, "failed": command if code else "",
-            "backup": "", "held": []}
+            "outputs": {command: output}, "backup": "", "held": []}
 
 
 # ── what the console's screens are made of ───────────────────────────────────

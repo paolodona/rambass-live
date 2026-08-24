@@ -280,7 +280,7 @@ def test_a_row_with_no_provenance_step_runs_its_own_command(served, song,
     base, _ = served
     ran = []
     monkeypatch.setattr(review_module, "subprocess_runner",
-                        lambda cwd: lambda command: ran.append(command) or 0)
+                        lambda cwd: lambda command: (ran.append(command), (0, ""))[1])
     result = _post(base, "/api/run",
                    {"song": song.slug,
                     "command": f"rambass analyze {song.slug} --write"})
@@ -297,7 +297,7 @@ def test_a_command_the_song_does_not_offer_is_refused(served, song, monkeypatch)
     base, _ = served
     ran = []
     monkeypatch.setattr(review_module, "subprocess_runner",
-                        lambda cwd: lambda command: ran.append(command) or 0)
+                        lambda cwd: lambda command: (ran.append(command), (0, ""))[1])
     with pytest.raises(urllib.error.HTTPError) as caught:
         _post(base, "/api/run", {"song": song.slug, "command": "rambass list"})
     assert caught.value.code == 400
@@ -317,7 +317,7 @@ def test_running_a_command_takes_the_same_one_at_a_time_lock(served, song,
         def run(command):
             started.set()
             release.wait(10)
-            return 0
+            return 0, ""
         return run
 
     monkeypatch.setattr(review_module, "subprocess_runner", slow)
@@ -590,3 +590,13 @@ def test_the_canvas_draws_a_per_side_reason_and_a_run_button(served):
     assert "data.sources" in page, "the canvas never reads per-side availability"
     assert 'id="make-ref"' in page, "no button for the source a command can make"
     assert "/api/run" in page
+
+
+def test_the_page_shows_a_failed_commands_output(served):
+    """A log that prints only "FAIL" is the bug: the refusal from
+    `analyze --write` has to be readable where the button was pressed. Pinned on
+    the served text, because there is no browser in this suite."""
+    base, _ = served
+    with urllib.request.urlopen(base + "/") as response:
+        page = response.read().decode("utf-8")
+    assert "result.outputs" in page, "the page ignores the captured output"
