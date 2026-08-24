@@ -22,9 +22,28 @@ this shares.
 
 **Visual mockup of the click-through** (dashboard → stage screen → drum
 review tool, static, dark-mode): <https://claude.ai/code/artifact/8a50b2ab-1dfc-4e30-bb98-0bc281e29756>.
-Sample data throughout is drawn from the real setlist and song facts
-elsewhere in this repo (Manlio's actual verse-2 span, the album/origin split,
-the two real cut songs), not placeholder filler.
+The dashboard mockup is every song in `songs/*/*/song.yaml` across both
+albums (23, once the 3 excluded ones are set aside) with its real, current
+`status:` block — not a representative sample. The review-tool mockup shows
+the two A/B waveforms **stacked**, not toggled, so a level difference at the
+same bar is a visible fact rather than something you have to remember across
+a switch — the mocked example is a snare that reads much quieter in the
+candidate than the reference at bar 23 — and a shared bar.beat ruler runs
+underneath both, the same addressing `rambass drums missing` already prints
+(e.g. `23.2.1`), so a problem can be named precisely without opening Reaper.
+
+Grounding the mockup in real data surfaced an actual bug, now fixed: `grep`
+for "verse-2 runs" turned up **four** copies of where Manlio's verse-2 ends,
+split two and two — 32 in CLAUDE.md and in `tests/test_consolidate_spans.py`,
+28 in drums-rebuild.md and in a `test_voicing.py` docstring. Only the "32"
+side is load-bearing: `test_consolidate_spans.py` asserts real consolidate
+output against `SectionSpan("verse-2", 20, 32, ...)`, while both "28"s are
+prose/docstring only. So 32 is correct and the two "28"s were a doc/docstring
+drift — fixed directly in `docs/drums-rebuild.md` and `test_voicing.py`
+rather than left as a TODO. The mockup's own bar range (20.3&ndash;28.3) is
+illustrative — it exists to show the ruler and the stacked-waveform
+mechanism, not to render Manlio's exact arrangement — so it wasn't re-drawn
+for this.
 
 ## The dashboard
 
