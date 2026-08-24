@@ -661,18 +661,29 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
              f"{report['left_alone']} left alone, "
              f"mean move {report['mean_shift_ms']} ms, "
              f"max {report['largest_shift_ms']} ms")
+        for item in report["unresolved"]:
+            _say(f"      ! {item.bar + song.count_in_bars}.{item.beat:g} "
+                 f"{item.instrument} is {item.distance_ms:g} ms off grid "
+                 f"(tolerance {item.tolerance_ms:g} ms) — needs a call: "
+                 f"syncopation, a flam, or a miss")
 
-        if args.accent_kick or args.accent_snare:
-            accents = {}
-            if args.accent_kick:
-                accents["kick"] = args.accent_kick
-            if args.accent_snare:
-                accents["snare"] = args.accent_snare
+        # The accent belongs to the song, so the manifest wins over "trust the
+        # measured contour" and an explicit flag wins over both -- same
+        # precedence as the subdivision and the backbeat velocity, and for the
+        # same reason: a value only in a flag is gone at the next plain
+        # `drums clean`.
+        accents = dict(song.drum_accents)
+        if args.accent_kick:
+            accents["kick"] = args.accent_kick
+        if args.accent_snare:
+            accents["snare"] = args.accent_snare
+        downbeat_boost = args.downbeat_boost or song.drum_downbeat_boost
+        if accents or downbeat_boost:
             performance = shape_velocities(
-                performance, accents=accents, downbeat_boost=args.downbeat_boost
+                performance, accents=accents, downbeat_boost=downbeat_boost
             )
             _say(f"   velocities    {accents}"
-                 + (f" +{args.downbeat_boost} on downbeats" if args.downbeat_boost else ""))
+                 + (f" +{downbeat_boost} on downbeats" if downbeat_boost else ""))
 
         if args.humanize > 0:
             performance = humanize(
@@ -1187,6 +1198,13 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
             _say(f"   {entry['name']:<16}{entry['spans']:>6}{entry['repeats']:>6}"
                  f"{entry['unit_bars']:>5}b{entry['hits_before']:>6} ->"
                  f"{entry['hits_after']:>4}{entry['coverage']:>7.0%}")
+            for item in entry.get("demoted", []):
+                _say(f"      ! {entry['name']} {item['bar'] + song.count_in_bars}."
+                     f"{item['beat']:g}: {item['kept']} and "
+                     f"{', '.join(item['dropped'])} each qualify on their own "
+                     f"but only played together {item['joint_coverage']:.0%} "
+                     f"of the time — kept {item['kept']}, dropped "
+                     f"{', '.join(item['dropped'])} for a listen")
         _say(f"   {'total':<16}{'':>6}{'':>6}{'':>6}"
              f"{report['hits_before']:>6} ->{report['hits_after']:>4}"
              f"   ({report['untouched']} outside every section, untouched)")
@@ -2247,9 +2265,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="snap even hits far from the grid")
     p.add_argument("--humanize", type=float, default=0.0, help="± timing jitter in ms")
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--accent-kick", type=int, default=0, help="fixed kick velocity")
-    p.add_argument("--accent-snare", type=int, default=0, help="fixed snare velocity")
-    p.add_argument("--downbeat-boost", type=int, default=0)
+    p.add_argument("--accent-kick", type=int, default=0,
+                    help="fixed kick velocity. Once settled by ear, put it in "
+                         "song.yaml as drums.accents.kick so a re-run keeps "
+                         "it; without either, kick keeps its measured contour")
+    p.add_argument("--accent-snare", type=int, default=0,
+                    help="fixed snare velocity, same precedence as "
+                         "--accent-kick via drums.accents.snare")
+    p.add_argument("--downbeat-boost", type=int, default=0,
+                    help="velocity added to every hit on beat 1. Default: "
+                         "drums.downbeat_boost from song.yaml")
     p.add_argument("--no-voicing", action="store_true",
                    help="ignore the sections' declared backbeat articulation")
     p.add_argument("--backbeat-velocity", type=int, default=None,

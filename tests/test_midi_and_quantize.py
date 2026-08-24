@@ -151,6 +151,32 @@ def test_quantise_leaves_far_hits_alone_unless_forced():
     assert forced.hits[0].time in (pytest.approx(0.0), pytest.approx(0.125))
 
 
+def test_far_hits_are_named_for_review_not_just_counted():
+    """Codex's review (Aug 2026): "unknown hits should be flagged for review,
+    not carried through unchanged." Leaving a distant hit physically alone was
+    already right -- forcing it onto the grid is how a deliberate push gets
+    ironed flat -- but leaving it *unlisted* was not: nothing above this
+    function ever saw which hit, or how far off, so a transcription error and
+    an intentional swing sat in the same silent bucket as a plain count.
+    """
+    timeline = Timeline(bpm=120)  # 16th = 0.125 s, so 0.0625 s is half a step
+    performance = DrumPerformance([Hit("kick", 0.0625, 77)], timeline)
+    _, report = quantize(performance, QuantizeSettings(subdivision=4))
+    assert len(report["unresolved"]) == 1
+    item = report["unresolved"][0]
+    assert (item.bar, round(item.beat, 3)) == (1, 1.125)
+    assert item.instrument == "kick"
+    assert item.velocity == 77
+    assert item.distance_ms == pytest.approx(62.5, abs=0.5)
+    assert item.tolerance_ms == pytest.approx(43.75, abs=0.5)
+
+    # forcing the grid resolves it -- there is nothing left to flag
+    _, forced_report = quantize(
+        performance, QuantizeSettings(subdivision=4, force=True)
+    )
+    assert forced_report["unresolved"] == []
+
+
 def test_cymbals_default_to_a_coarser_grid():
     """A crash is quantised to 8ths, so it is not dragged onto a 16th line."""
     timeline = Timeline(bpm=120)          # 8th = 0.25 s, 16th = 0.125 s

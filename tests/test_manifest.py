@@ -212,3 +212,47 @@ def test_putting_a_song_back_in_the_set_actually_persists(song):
     reloaded.exclude_reason = ""
     save_song(reloaded)
     assert load_song(song.dir).excluded is False
+
+
+# ── drums.accents / drums.downbeat_boost ─────────────────────────────────────
+#
+# Same argument as drums.backbeat_velocity (docs/practice-tracks.md is not the
+# place; see CLAUDE.md and tests/test_voicing.py for the precedent): a value
+# only in `--accent-kick`/`--accent-snare`/`--downbeat-boost` is whoever last
+# typed the command, and the next `drums clean` silently drops it. Declared in
+# song.yaml it is in git, is reapplied every time, and shows up in `rambass
+# stale` when it changes.
+
+
+def test_accents_round_trip_through_song_yaml(project):
+    directory = project.songs_dir / "a" / "01-a"
+    item = Song(slug="a", title="A", bpm=60.0, directory=directory,
+                drum_accents={"kick": 100, "snare": 90}, drum_downbeat_boost=10)
+    save_song(item, directory)
+    reloaded = load_song(directory)
+    assert reloaded.drum_accents == {"kick": 100, "snare": 90}
+    assert reloaded.drum_downbeat_boost == 10
+
+
+def test_no_accents_means_trust_the_measured_contour(project):
+    directory = project.songs_dir / "a" / "01-a"
+    save_song(Song(slug="a", title="A", bpm=60.0, directory=directory), directory)
+    reloaded = load_song(directory)
+    assert reloaded.drum_accents == {}
+    assert reloaded.drum_downbeat_boost == 0
+    assert "accents" not in yaml.safe_load((directory / "song.yaml").read_text())["drums"]
+    assert "downbeat_boost" not in yaml.safe_load(
+        (directory / "song.yaml").read_text())["drums"]
+
+
+def test_an_accent_naming_a_non_drum_instrument_is_refused():
+    item = Song(slug="x", title="X", bpm=60.0, drum_accents={"tambourine": 90})
+    assert not any("accents" in p for p in item.problems())
+    item = Song(slug="x", title="X", bpm=60.0, drum_accents={"trumpet": 90})
+    assert any("accents" in p for p in item.problems())
+
+
+@pytest.mark.parametrize("value", [-1, 128, 200])
+def test_an_accent_velocity_outside_the_midi_range_is_refused(value):
+    item = Song(slug="x", title="X", bpm=60.0, drum_accents={"kick": value})
+    assert any("accents" in problem for problem in item.problems())

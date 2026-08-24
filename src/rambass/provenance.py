@@ -169,7 +169,8 @@ PIPELINE: tuple[Step, ...] = (
         inputs=("midi/drums-raw.mid",),
         modules=("quantize", "restore", "midiio"),
         fields=("tempo", "sections", "bars", "drums/map", "drums/subdivision",
-                "drums/cymbal_subdivision", "drums/backbeat_velocity"),
+                "drums/cymbal_subdivision", "drums/backbeat_velocity",
+                "drums/accents", "drums/downbeat_boost"),
         skip_origins=("a-cappella", "backing-track"),
     ),
     Step(
