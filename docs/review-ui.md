@@ -1,7 +1,7 @@
 # The project console
 
 **Where the repo is, as of 2026-08-24: Phases 0–2 are built.** `rambass
-review serve` starts the console (`console.py` over `review.py`, tested in
+console` starts the console (`console.py` over `review.py`, tested in
 `tests/test_console.py` / `tests/test_review.py`); `review rebuild / clips /
 note / promote / status` are commands. Still open: the EZD3 headless-render
 spike (Gate R2 — needs Paolo's machine and the real plugin), the Phase 5
@@ -341,7 +341,10 @@ table lives in one place.
 ### CLI surface
 
 ```
-rambass review serve                    # the dashboard: every song x STAGES
+rambass console                         # the dashboard: every song x STAGES
+rambass-console                         # ...and the same thing as its own
+                                        #    executable, for the shell
+rambass review serve                    # ...and where it lives in the tree
 rambass review serve <song>              # that song's stage screen(s)
 rambass review serve <song> --stage drums_midi   # land on one stage directly
 
@@ -464,7 +467,7 @@ however long the tool is useful.
   without the other is a real failure mode — the same relationship code
   comments already have with the tests that pin them down, and worth the
   same discipline.
-* **Still needs a browser and `rambass review serve` running locally.**
+* **Still needs a browser and `rambass console` running locally.**
   `rambass status`/`rambass stale` in a terminal stay the ground truth for
   anyone without a browser handy; the console is a friendlier front end over
   the exact same data, not a second source of it.

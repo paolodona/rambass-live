@@ -26,6 +26,105 @@ def test_help_with_no_command_is_not_a_crash(cwd, capsys):
     assert "usage: rambass" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize(
+    "group, expected",
+    [("review", "serve"), ("drums", "transcribe"), ("lyrics", "import"),
+     ("video", "render"), ("gx100", "midi"), ("reaper", "build")],
+)
+def test_a_bare_command_group_lists_its_own_subcommands(cwd, capsys, group,
+                                                        expected):
+    """Typing `rambass review` printed the *top-level* usage, which lists every
+    command except the six under `review` -- so the console looked like it did
+    not exist. The help you get has to be the help for what you typed."""
+    assert run(group) == 1
+    out = capsys.readouterr().out
+    assert f"usage: rambass {group}" in out
+    assert expected in out
+
+
+def test_every_command_the_code_names_is_a_command_that_exists():
+    """`rambass review serve` printed "rambass console at http://..." -- a name
+    the shell rejects, for a reader who then hunts for a command that never
+    existed. Docs are excluded on purpose: `docs/practice-tracks.md` and
+    `docs/review-ui.md` describe commands that are deliberately not built yet.
+    Anything printed or documented *by the code* has to resolve."""
+    import argparse
+    import re
+
+    from rambass.cli import build_parser
+
+    def subcommands(parser):
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                return action.choices
+        return {}
+
+    groups = subcommands(build_parser())
+    src = Path(__file__).resolve().parent.parent / "src" / "rambass"
+    wrong = []
+    for path in sorted(src.rglob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"rambass ([a-z][a-z0-9-]*)(?:\s+([a-z][a-z0-9-]*))?", text):
+            group, sub = match.group(1), match.group(2)
+            if group not in groups:
+                wrong.append(f"{path.name}: rambass {group}")
+            elif sub and subcommands(groups[group]) and sub not in subcommands(groups[group]):
+                wrong.append(f"{path.name}: rambass {group} {sub}")
+    assert wrong == []
+
+
+# ── starting the console ─────────────────────────────────────────────────────
+#
+# Paolo: *"ok so I do I start it? 'rambass review serve'? maybe a shortcut
+# 'rambass-console' or 'rambass-dashboard' would be useful"*. `review serve` is
+# where it lives in the command tree and stays; the console is the thing you
+# open at the start of a session, so it gets a name you can type without
+# remembering which group it is filed under.
+
+
+def test_console_is_a_top_level_alias_for_review_serve(cwd):
+    from rambass.cli import build_parser, cmd_review_serve
+
+    parser = build_parser()
+    short = parser.parse_args(["console"])
+    full = parser.parse_args(["review", "serve"])
+    assert short.func is cmd_review_serve
+    assert full.func is cmd_review_serve
+    for flag in ("port", "setlist", "no_browser"):
+        assert getattr(short, flag) == getattr(full, flag), flag
+
+
+def test_the_console_alias_takes_the_same_flags(cwd):
+    from rambass.cli import build_parser
+
+    args = build_parser().parse_args(
+        ["console", "--port", "9111", "--setlist", "rehearsal", "--no-browser"])
+    assert (args.port, args.setlist, args.no_browser) == (9111, "rehearsal", True)
+
+
+def test_the_console_executable_starts_the_server(cwd, monkeypatch):
+    """`rambass-console` is its own console_script, so it must reach `serve`
+    with the flags it was given and nothing in between."""
+    import rambass.console as console_module
+    from rambass.cli import console_main
+
+    seen = {}
+    monkeypatch.setattr(console_module, "serve",
+                        lambda project, **kwargs: seen.update(kwargs))
+    assert console_main(["--port", "9111", "--no-browser"]) == 0
+    assert seen == {"port": 9111, "setlist": "gig", "open_browser": False}
+
+
+def test_the_console_executable_is_declared_as_an_entry_point():
+    """A shortcut that is not in pyproject.toml is a shortcut that vanishes at
+    the next `pip install -e .`."""
+    import tomllib
+
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    scripts = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
+    assert scripts["rambass-console"] == "rambass.cli:console_main"
+
+
 def test_doctor_reports(cwd, capsys):
     run("doctor")
     out = capsys.readouterr().out

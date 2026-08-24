@@ -36,6 +36,9 @@ typical order of work for one song:
   rambass gx100 midi <song>
   rambass reaper build <song>           # then run the ReaScript in Reaper
   rambass video ass <song>
+
+or drive the whole thing from the console:
+  rambass console                       # same as: rambass review serve
 """
 
 
@@ -2015,6 +2018,16 @@ def _add_song_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--all", action="store_true", help="operate on every song")
 
 
+def _add_serve_args(parser: argparse.ArgumentParser) -> None:
+    """The console's flags, shared by `rambass console` and `review serve`."""
+    parser.add_argument("--port", type=int, default=8433)
+    parser.add_argument("--setlist", default="gig",
+                        help="which running order the dashboard rows follow")
+    parser.add_argument("--no-browser", action="store_true",
+                        help="do not open a browser tab")
+    parser.set_defaults(func=cmd_review_serve)
+
+
 def _add_card_args(parser: argparse.ArgumentParser) -> None:
     """The title card that fills a lyric video's count-in."""
     parser.add_argument("--subtitle", default="",
@@ -2050,6 +2063,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--album")
     p.add_argument("--markdown", action="store_true", help="emit a markdown table")
     p.set_defaults(func=cmd_status)
+
+    p = sub.add_parser(
+        "console",
+        help="open the project console in a browser (= review serve)")
+    _add_serve_args(p)
 
     p = sub.add_parser("check", help="validate every song.yaml")
     p.add_argument("--album")
@@ -2280,12 +2298,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = review_sub.add_parser(
         "serve", help="start the console (dashboard, stage screens, A/B review)")
-    p.add_argument("--port", type=int, default=8433)
-    p.add_argument("--setlist", default="gig",
-                   help="which running order the dashboard rows follow")
-    p.add_argument("--no-browser", action="store_true",
-                   help="do not open a browser tab")
-    p.set_defaults(func=cmd_review_serve)
+    _add_serve_args(p)
 
     p = review_sub.add_parser(
         "clips", help="cut per-section A/B clips (candidate vs original drums)")
@@ -2554,7 +2567,36 @@ def build_parser() -> argparse.ArgumentParser:
                         "pattern checks are skipped if it is missing")
     p.set_defaults(func=cmd_sections)
 
+    _remember_group_parsers(parser)
     return parser
+
+
+def _remember_group_parsers(parser: argparse.ArgumentParser) -> None:
+    """Let a bare command group print *its own* help instead of the root's.
+
+    `rambass review` used to print the top-level usage, which lists every
+    command except the six under `review` -- so the console read as something
+    that had not been built. Each group parser records itself, and `main` prints
+    the help for the deepest one the arguments actually reached.
+    """
+    for action in parser._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        for group in action.choices.values():
+            if any(isinstance(inner, argparse._SubParsersAction)
+                   for inner in group._actions):
+                group.set_defaults(_group_parser=group)
+                _remember_group_parsers(group)
+
+
+def console_main(argv: list[str] | None = None) -> int:
+    """The `rambass-console` executable: `rambass console` with no subcommand.
+
+    The console is what you open at the start of a session, before you know
+    which song you are working on -- so it gets a name you can type without
+    remembering that it is filed under `review`.
+    """
+    return main(["console", *(sys.argv[1:] if argv is None else argv)])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2563,7 +2605,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):
-        parser.print_help()
+        getattr(args, "_group_parser", parser).print_help()
         return 1
     try:
         return args.func(args)

@@ -33,6 +33,7 @@ dev = [
 
 [project.scripts]
 rambass = "rambass.cli:main"
+rambass-console = "rambass.cli:console_main"
 
 [build-system]
 requires = ["hatchling"]
