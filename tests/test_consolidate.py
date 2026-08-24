@@ -103,3 +103,52 @@ def test_report_counts_the_whole_performance():
     assert report["hits_before"] == 16
     assert report["hits_after"] == 16
     assert report["sections"][0]["coverage"] == pytest.approx(1.0)
+
+
+def test_a_chord_that_never_reliably_co_occurred_is_not_stamped():
+    """Codex's review (Aug 2026): voting independently per instrument can
+    combine "the kick from one repetition, the snare ghost note from another,
+    the hats from a third" into a chord nobody actually played.
+
+    snare and hihat_open each clear the 0.55 vote on their own at the same
+    slot -- snare in 6 of 8 bars, hihat_open in 5 of 8 -- but they only land in
+    the *same* bar together 3 times out of 8 (bars 4-6). Stamping both across
+    every one of the 8 output bars would invent a chord that happened well
+    under half as often as either instrument alone. Only the better-attested
+    one -- snare -- should survive, and the drop should be on the record.
+    """
+    hits = [Hit("kick", bar(b), 100) for b in range(1, 9)]
+    hits += [Hit("snare", bar(b) + 0.5, 100) for b in range(1, 7)]        # 6/8
+    hits += [Hit("hihat_open", bar(b) + 0.5, 90) for b in range(4, 9)]    # 5/8
+    out, report = consolidate(
+        DrumPerformance(hits, TIMELINE), [("verse", 1, 9)],
+        settings=ConsolidateSettings(unit_bars=1),
+    )
+
+    for b in range(1, 9):
+        at_beat_2 = {h.instrument for h in out.hits
+                     if abs(h.time - (bar(b) + 0.5)) < 1e-6}
+        assert at_beat_2 == {"snare"}, f"bar {b}: {at_beat_2}"
+
+    demoted = report["sections"][0]["demoted"]
+    assert len(demoted) == 1
+    assert demoted[0]["kept"] == "snare"
+    assert demoted[0]["dropped"] == ["hihat_open"]
+    assert demoted[0]["joint_coverage"] == pytest.approx(3 / 8)
+
+
+def test_a_chord_that_does_reliably_co_occur_is_stamped_together():
+    """The positive case: two instruments that really do land together often
+    enough are kept together, not just the louder-voting one of the two."""
+    hits = [Hit("kick", bar(b), 100) for b in range(1, 9)]
+    hits += [Hit("snare", bar(b) + 0.5, 100) for b in range(1, 9)]          # 8/8
+    hits += [Hit("hihat_open", bar(b) + 0.5, 90) for b in (1, 2, 3, 4, 5, 6)]  # 6/8
+    out, report = consolidate(
+        DrumPerformance(hits, TIMELINE), [("verse", 1, 9)],
+        settings=ConsolidateSettings(unit_bars=1),
+    )
+    for b in range(1, 9):
+        at_beat_2 = {h.instrument for h in out.hits
+                     if abs(h.time - (bar(b) + 0.5)) < 1e-6}
+        assert at_beat_2 == {"snare", "hihat_open"}, f"bar {b}: {at_beat_2}"
+    assert "demoted" not in report["sections"][0]

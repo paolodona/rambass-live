@@ -163,6 +163,12 @@ Transcribed velocities come from onset strength, which is only loosely related
 to how hard the drummer hit. Flattening per instrument and then accenting
 musically usually beats trusting the analysis.
 
+Once an accent is settled by ear, put it in `song.yaml` — `drums.accents.kick`,
+`drums.accents.snare`, `drums.downbeat_boost` — so it survives a plain re-run.
+Same argument as `drums.backbeat_velocity`: a value only in a flag is whoever
+last typed the command, and the next `drums clean` drops silently back to the
+measured contour.
+
 ### Humanise
 
 ```
