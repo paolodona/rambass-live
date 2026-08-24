@@ -544,3 +544,80 @@ def test_a_command_cannot_record_an_input_its_step_does_not_declare(song):
     recorded = set(read_stamps(song)["midi/drums-raw.mid"]["inputs"])
     assert recorded <= declared["midi/drums-raw.mid"], (
         f"recorded an undeclared input: {recorded - declared['midi/drums-raw.mid']}")
+
+
+# ── the placeholders in Step.inputs ──────────────────────────────────────────
+#
+# `rambass stale` and the whole console dashboard died on this: the stems step
+# declares `source/{source_audio}` as its input, and `inputs_for` only ever knew
+# how to fill in `{slug}`, so resolving it raised `KeyError: 'source_audio'`.
+# It hid for as long as it did because the report `continue`s on a missing
+# artifact -- so it needed a *real* stems/drums.wav on disk to fire, and the day
+# both albums got their stems separated, `rambass stale`, `rambass stems` and
+# every console screen that calls stale_report stopped working at once.
+
+
+def test_every_placeholder_in_the_pipeline_resolves(song):
+    """The one test that would have caught it without a stem on disk: whatever
+    a step writes in `artifact` or `inputs`, the resolver has to know the name.
+    A placeholder nobody fills in is a KeyError at the first caller."""
+    for step in PIPELINE:
+        step.artifact_for(song.slug)
+        step.inputs_for(song)
+
+
+def test_the_stems_step_names_the_songs_own_source_mix(song):
+    """`source.audio` is per song and never derivable from the slug -- the real
+    files are `09 Manlio.wav`, `04_Bambolina_MST1.wav`. That is why the
+    placeholder exists, and why resolving it needs the song and not the slug."""
+    from rambass.provenance import step_for
+
+    song.source_audio = "09 Manlio.wav"
+    assert step_for("stems/drums.wav").inputs_for(song) == ("source/09 Manlio.wav",)
+
+
+def test_an_undeclared_source_mix_drops_the_input_rather_than_naming_nothing(song):
+    """`source/` is not a file. A song with no `source.audio` has nothing to
+    fingerprint, so the step declares no input -- it does not declare a
+    directory."""
+    from rambass.provenance import step_for
+
+    song.source_audio = ""
+    assert step_for("stems/drums.wav").inputs_for(song) == ()
+
+
+def test_a_stems_file_on_disk_does_not_crash_the_report(song):
+    """The reproduction. Once the stem exists the report walks past `missing`
+    into the cascade check, which is where the input names get resolved."""
+    song.source_audio = "03 Tutti In Fila.wav"
+    _touch(song.path("stems", "drums.wav"), "riff")
+    states = {s.artifact: s for s in stale_report(song)}
+    assert "stems/drums.wav" in states
+
+
+def test_the_source_mix_is_recorded_as_the_stems_input(song):
+    """Not just "does not crash": the stamp filters what a command hands it
+    against the declared names, so an unresolvable placeholder silently records
+    *no* inputs and a re-mastered source mix would never read as stale."""
+    from rambass.provenance import read_stamps
+
+    song.source_audio = "03 Tutti In Fila.wav"
+    source = _touch(song.path("source", "03 Tutti In Fila.wav"), "mix")
+    artifact = _touch(song.path("stems", "drums.wav"), "riff")
+
+    stamp(song, artifact, step="stems", inputs=[source])
+    recorded = read_stamps(song)["stems/drums.wav"]["inputs"]
+    assert "source/03 Tutti In Fila.wav" in recorded
+
+
+def test_a_changed_source_mix_makes_the_stems_stale(song):
+    """The reason the input is declared at all."""
+    song.source_audio = "03 Tutti In Fila.wav"
+    source = _touch(song.path("source", "03 Tutti In Fila.wav"), "mix")
+    artifact = _touch(song.path("stems", "drums.wav"), "riff")
+    stamp(song, artifact, step="stems", inputs=[source])
+
+    source.write_text("remaster", encoding="utf-8")
+    entry = {s.artifact: s for s in stale_report(song)}["stems/drums.wav"]
+    assert entry.state == "stale"
+    assert any("03 Tutti In Fila.wav" in reason for reason in entry.reasons)

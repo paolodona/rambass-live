@@ -113,8 +113,27 @@ class Step:
         """
         return self.artifact.format(slug=slug)
 
-    def inputs_for(self, slug: str) -> tuple[str, ...]:
-        return tuple(name.format(slug=slug) for name in self.inputs)
+    def inputs_for(self, song) -> tuple[str, ...]:
+        """The input paths with their placeholders resolved.
+
+        Takes the **song**, not the slug, because ``{source_audio}`` is a
+        manifest field and no function of the slug: the real files are
+        ``09 Manlio.wav`` and ``04_Bambolina_MST1.wav``. Resolving it against
+        the slug alone is what broke `rambass stale`, `rambass stems` and every
+        console screen the day both albums had stems on disk -- and it stayed
+        hidden until then because the report skips a step whose artifact is
+        missing, so nothing ever asked for the name.
+
+        A placeholder with nothing behind it -- a song with no ``source.audio``
+        -- drops that input instead of naming ``source/``, which is a directory
+        and has no fingerprint.
+        """
+        values = {"slug": song.slug, "source_audio": song.source_audio}
+        blank = {key for key, value in values.items() if not value}
+        return tuple(
+            name.format(**values) for name in self.inputs
+            if not any("{" + key + "}" in name for key in blank)
+        )
 
 
 #: The drum chain and what hangs off it, in order. Both :func:`stale_report` and
@@ -383,7 +402,7 @@ def stamp(song, artifact, *, step: str, inputs=()) -> None:
     known = step_for(relative, slug=song.slug)
     modules = known.modules if known else ()
     fields = known.fields if known else ()
-    declared = known.inputs_for(song.slug) if known else ()
+    declared = known.inputs_for(song) if known else ()
     stamps = read_stamps(song)
     stamps[relative] = {
         "step": step,
@@ -510,7 +529,7 @@ def stale_report(song) -> list[Staleness]:
                 entry.state = "stale"
 
         upstream = sorted(
-            name for name in step.inputs_for(song.slug) if name in tainted)
+            name for name in step.inputs_for(song) if name in tainted)
         if upstream:
             # `edited` outranks the cascade. Both mean "rebuild me" to a naive
             # reading, but they demand opposite handling: a stale file is safe
