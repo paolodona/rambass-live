@@ -10,10 +10,12 @@ than no dashboard.
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 import yaml
@@ -592,6 +594,132 @@ def test_the_canvas_draws_a_per_side_reason_and_a_run_button(served):
     assert "/api/run" in page
 
 
+# ── one console per project ──────────────────────────────────────────────────
+#
+# Paolo ended up with two consoles on port 8433 at once: the older one kept
+# serving its already-imported `review.py`, so the browser showed step states
+# from before a commit and no reload could fix it. On Windows a second bind of
+# the same address *succeeds* when SO_REUSEADDR is set, which is what
+# `allow_reuse_address` does by default -- so the second console never got the
+# "address already in use" that would have told anyone. Two answers: the socket
+# refuses to share, and a starting console asks an existing one to stand down.
+
+
+def test_the_listening_socket_refuses_to_be_shared(project):
+    """The bind must fail rather than silently double-serve."""
+    from rambass.console import make_server
+
+    first = make_server(project, port=0, setlist="gig")
+    port = first.server_address[1]
+    try:
+        with pytest.raises(OSError):
+            make_server(project, port=port, setlist="gig")
+    finally:
+        first.server_close()
+
+
+def test_a_console_says_who_it_is(served, project):
+    base, _ = served
+    who = _get(base, "/api/whoami")
+    assert who["console"] == "rambass"
+    assert Path(who["root"]) == project.root
+    assert who["pid"] == os.getpid()
+    assert who["rebuilding"] == []
+
+
+def test_existing_console_finds_one_and_reads_its_root(served, project):
+    from rambass.console import existing_console
+
+    base, _ = served
+    port = int(base.rsplit(":", 1)[1])
+    found = existing_console(port)
+    assert found and Path(found["root"]) == project.root
+    assert existing_console(_a_free_port()) is None
+
+
+def test_a_foreign_server_on_the_port_is_not_mistaken_for_a_console(project):
+    """Whatever else is on 8433, we must not ask it to shut down."""
+    import http.server
+
+    from rambass.console import existing_console
+
+    server = http.server.HTTPServer(
+        ("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        assert existing_console(port) is None
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_claim_port_stops_a_console_for_the_same_project(project, song):
+    """The replacement case: same project, so the old one is redundant."""
+    from rambass.console import claim_port, existing_console, make_server
+
+    old = make_server(project, port=0, setlist="gig")
+    port = old.server_address[1]
+    thread = threading.Thread(target=old.serve_forever, daemon=True)
+    thread.start()
+
+    note = claim_port(project, port)
+    assert "stopped" in note.lower() and str(os.getpid()) in note
+    old.server_close()
+    assert existing_console(port) is None
+
+
+def test_claim_port_refuses_a_console_serving_another_project(project, tmp_path):
+    """Killing someone else's console is not ours to do."""
+    from rambass.console import claim_port, make_server
+    from rambass.project import Project, ProjectError
+
+    other = Project(tmp_path / "elsewhere")
+    old = make_server(project, port=0, setlist="gig")
+    port = old.server_address[1]
+    thread = threading.Thread(target=old.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(ProjectError) as caught:
+            claim_port(other, port)
+        assert "--port" in str(caught.value)
+    finally:
+        old.shutdown()
+        old.server_close()
+
+
+def test_a_console_will_not_stand_down_mid_rebuild(served):
+    """A three-minute separation is running as a child process. Refuse, and say
+    so, rather than orphaning it to serve a fresher page."""
+    from rambass.console import ConsoleHandler
+
+    base, _ = served
+    ConsoleHandler._rebuilding.add("manlio")
+    try:
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            _post(base, "/api/shutdown", {})
+        assert caught.value.code == 409
+        body = json.loads(caught.value.read().decode("utf-8"))
+        assert "manlio" in body["error"]
+    finally:
+        ConsoleHandler._rebuilding.discard("manlio")
+
+
+def test_claim_port_on_a_free_port_does_nothing(project):
+    from rambass.console import claim_port
+
+    assert claim_port(project, _a_free_port()) == ""
+
+
+def _a_free_port() -> int:
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 def test_the_page_shows_a_failed_commands_output(served):
     """A log that prints only "FAIL" is the bug: the refusal from
     `analyze --write` has to be readable where the button was pressed. Pinned on
@@ -600,3 +728,27 @@ def test_the_page_shows_a_failed_commands_output(served):
     with urllib.request.urlopen(base + "/") as response:
         page = response.read().decode("utf-8")
     assert "result.outputs" in page, "the page ignores the captured output"
+
+
+def test_a_port_held_by_something_unidentifiable_gets_a_useful_error(project):
+    """The transition case, and it is Paolo's: the consoles already running when
+    this check was written have no `/api/whoami`, so nothing can negotiate with
+    them. The bind then fails, and a bare Windows socket error does not tell
+    anyone what to do about it."""
+    import socket
+
+    from rambass.console import serve
+    from rambass.project import ProjectError
+
+    holder = socket.socket()
+    holder.bind(("127.0.0.1", 0))
+    holder.listen(1)
+    port = holder.getsockname()[1]
+    try:
+        with pytest.raises(ProjectError) as caught:
+            serve(project, port=port, open_browser=False)
+        message = str(caught.value)
+        assert str(port) in message
+        assert "--port" in message
+    finally:
+        holder.close()

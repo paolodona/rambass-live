@@ -14,6 +14,7 @@ rule) is that it stays within the stdlib.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -110,6 +111,14 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             if path == "/":
                 page = resources.files("rambass").joinpath("console.html")
                 self._send(200, page.read_bytes(), "text/html; charset=utf-8")
+            elif path == "/api/whoami":
+                # How a starting console recognises one of its own on the port.
+                # The root is the deciding field: same checkout means the old
+                # one is redundant, a different checkout means hands off.
+                with self._rebuilding_lock:
+                    busy = sorted(self._rebuilding)
+                self._json({"console": "rambass", "pid": os.getpid(),
+                            "root": str(self.project.root), "rebuilding": busy})
             elif path == "/api/dashboard":
                 self._json(self._dashboard())
             elif path.startswith("/api/song/"):
@@ -245,6 +254,11 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - stdlib naming
         path = urlsplit(self.path).path
         body = self._body()
+        # Before the song lookup: standing down is not about a song, and every
+        # other POST here 404s without one.
+        if path == "/api/shutdown":
+            self._shutdown()
+            return
         song = _find_song(self.project, str(body.get("song", "")))
         if song is None:
             self._error(404, f"no such song: {body.get('song')!r}")
@@ -284,6 +298,25 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         # worse than one that races.
         with self._rebuilding_lock:
             self._rebuilding.discard(song.slug)
+
+    def _shutdown(self) -> None:
+        """Stand down so a newer console can have the port.
+
+        Refused while a rebuild is in flight: that is a demucs separation or a
+        transcription running as a child process, and killing its parent to
+        serve a fresher page trades minutes of CPU for a cosmetic win. The
+        caller reports the refusal and the reader decides.
+        """
+        with self._rebuilding_lock:
+            busy = sorted(self._rebuilding)
+        if busy:
+            self._error(409, f"a rebuild is running ({', '.join(busy)}) — "
+                             f"not stopping. Wait for it, or use --port <n>.")
+            return
+        self._json({"stopping": True, "pid": os.getpid()})
+        # After the reply, and from another thread: `shutdown` blocks until the
+        # serve loop exits, and this handler *is* that loop's current job.
+        threading.Thread(target=self.server.shutdown, daemon=True).start()
 
     def _rebuild(self, song, body: dict) -> None:
         from . import review
@@ -402,18 +435,125 @@ def reveal_in_file_manager(folder: Path) -> None:
         pass  # headless, or no opener: the path in the reply is enough
 
 
+class ConsoleServer(ThreadingHTTPServer):
+    """The console's server, which refuses to share its address.
+
+    ``allow_reuse_address`` is 1 on :class:`~http.server.HTTPServer` by default,
+    and on Windows ``SO_REUSEADDR`` lets a *second* socket bind an address that
+    is already being listened on. So starting a second ``rambass console``
+    succeeded silently, and Paolo had two on 8433 at once: the older one went on
+    serving the ``review.py`` it imported at startup, so the browser showed step
+    states from before a commit and no reload could fix it. A bind that fails
+    loudly is the whole point here — the port is a singleton, and the way to run
+    two consoles is ``--port``.
+
+    Safe to turn off for a listener: only accepted connections go to TIME_WAIT,
+    so a console that has just been stopped does not block the next one.
+    """
+
+    allow_reuse_address = False
+
+
 def make_server(project: Project, *, port: int = DEFAULT_PORT,
-                setlist: str = "gig") -> ThreadingHTTPServer:
+                setlist: str = "gig") -> ConsoleServer:
     """A configured server, not yet serving. Tests bind port 0."""
     handler = type("BoundConsoleHandler", (ConsoleHandler,),
                    {"project": project, "setlist": setlist})
-    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+    return ConsoleServer(("127.0.0.1", port), handler)
+
+
+def existing_console(port: int, *, timeout: float = 0.6) -> dict | None:
+    """What is already serving on *port*, if it is one of ours.
+
+    ``None`` for a free port **and** for a foreign server: whatever else is
+    listening on 8433 is not ours to shut down, so the identifying reply is the
+    only thing that authorises :func:`claim_port` to act.
+    """
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/whoami", timeout=timeout) as reply:
+            found = json.loads(reply.read().decode("utf-8"))
+    except (OSError, urllib.error.URLError, ValueError):
+        return None
+    return found if isinstance(found, dict) and found.get("console") == "rambass" \
+        else None
+
+
+def claim_port(project: Project, port: int, *, timeout: float = 6.0) -> str:
+    """Make *port* free for this project's console. Returns what it did.
+
+    A console is a singleton view of one project, so a second one for the *same*
+    project is never what anybody wanted — it is asked to stand down. One
+    serving a *different* checkout is left alone: killing somebody else's
+    console is not this command's business.
+
+    Stopping is a request, not a kill, so the old console can refuse while a
+    rebuild is running rather than have its demucs child orphaned.
+    """
+    import time
+    import urllib.error
+    import urllib.request
+
+    found = existing_console(port)
+    if found is None:
+        return ""
+    if Path(found.get("root", "")) != project.root:
+        raise ProjectError(
+            f"port {port} is already serving {found.get('root')} "
+            f"(pid {found.get('pid')}), not {project.root}. Stop that console, "
+            f"or start this one with --port <n>.")
+
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/api/shutdown", data=b"{}",
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        urllib.request.urlopen(request, timeout=timeout).close()
+    except urllib.error.HTTPError as refused:
+        detail = ""
+        try:
+            detail = json.loads(refused.read().decode("utf-8")).get("error", "")
+        except (ValueError, OSError):
+            pass
+        raise ProjectError(
+            f"the console on port {port} would not stand down: "
+            f"{detail or refused.reason}") from refused
+    except OSError as unreachable:
+        raise ProjectError(
+            f"could not ask the console on port {port} to stop: {unreachable}"
+        ) from unreachable
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if existing_console(port, timeout=0.2) is None:
+            return (f"stopped the console already on port {port} "
+                    f"(pid {found.get('pid')})")
+        time.sleep(0.1)
+    raise ProjectError(
+        f"the console on port {port} (pid {found.get('pid')}) accepted the stop "
+        f"but is still serving. Stop it by hand, or use --port <n>.")
 
 
 def serve(project: Project, *, port: int = DEFAULT_PORT, setlist: str = "gig",
           open_browser: bool = True) -> None:
     """Run until interrupted. What `rambass review serve` calls."""
-    server = make_server(project, port=port, setlist=setlist)
+    replaced = claim_port(project, port)
+    if replaced:
+        print(replaced)
+    try:
+        server = make_server(project, port=port, setlist=setlist)
+    except OSError as taken:
+        # `claim_port` found nothing to negotiate with, yet the address is held.
+        # The consoles running when this check was added are exactly that: no
+        # `/api/whoami`, so they cannot be asked to stand down, and a bare
+        # WinError 10048 tells the reader nothing about what to do next.
+        raise ProjectError(
+            f"port {port} is held by something that is not a console this "
+            f"version can talk to ({taken}). If it is an older `rambass "
+            f"console`, stop it and start this one again; otherwise use "
+            f"--port <n>.") from taken
     address = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"rambass console at {address}  (ctrl-c stops it)")
     if open_browser:

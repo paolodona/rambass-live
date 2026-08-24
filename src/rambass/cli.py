@@ -2073,7 +2073,15 @@ def _add_song_args(parser: argparse.ArgumentParser) -> None:
 
 def _add_serve_args(parser: argparse.ArgumentParser) -> None:
     """The console's flags, shared by `rambass console` and `review serve`."""
-    parser.add_argument("--port", type=int, default=8433)
+    # Imported here, not at module scope: cli.py keeps its imports lazy, and the
+    # default must be the one constant rather than a second copy of 8433.
+    from .console import DEFAULT_PORT
+
+    # One console per project: `serve` asks an older one on this port to stand
+    # down (see console.ConsoleServer). --port is how you deliberately run two.
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT,
+                        help=f"port to serve on (default {DEFAULT_PORT}); a "
+                             f"console already on it is replaced")
     parser.add_argument("--setlist", default="gig",
                         help="which running order the dashboard rows follow")
     parser.add_argument("--no-browser", action="store_true",
