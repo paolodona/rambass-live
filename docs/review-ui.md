@@ -171,14 +171,28 @@ a time.
 **Layout, top to bottom:**
 
 1. **Position header** — section name, bar range, a section dropdown and
-   bar-within-section scrubber. `←`/`→` (or `[`/`]`) move by the current unit
-   (section by default, bar inside a section); `↑`/`↓` switch units.
+   bar-within-section scrubber for the mouse; `n`/`p` are the keyboard route
+   between sections (see the table below).
 2. **A/B transport.** This is the actual time saver. Both clips load and loop
-   **in sync**, reference and candidate at the same playhead position; a
-   single key (`1` reference, `2` candidate, or hold `space` to hear the other
-   one) **mutes/unmutes rather than restarting playback**. That is the
-   specific fix for the described pain — no more solo-track-scrub-back-solo-
-   other-track. Loop is on by default; `l` toggles it.
+   **in sync**, reference and candidate at the same playhead position, so
+   switching which one is audible never restarts playback or loses the
+   listening position — the specific fix for the described
+   solo-track-scrub-back-solo-other-track pain.
+
+**Keyboard shortcuts** (the whole point is not touching the mouse between
+"I heard a problem" and "it's logged"):
+
+| key | action |
+|---|---|
+| `space` | start/stop the transport |
+| `s` | switch which sample is audible — candidate (rendered MIDI) ↔ reference (original drums) — without restarting playback |
+| `n` | next section |
+| `p` | previous section |
+
+More may get added once the UI exists and using it surfaces what's missing —
+a loop toggle and a bar-level nudge inside a section are the likely
+candidates — but these four are the ones asked for and the only ones this
+scope commits to.
 3. **Instrument grid.** One row per canonical instrument name that has a hit
    anywhere in the visible bars — kick, snare, sidestick, every tom, hi-hat
    closed/open, ride, ride bell, every cymbal — rendered from the candidate
