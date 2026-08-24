@@ -20,6 +20,12 @@ Read this document top to bottom: dashboard → stage screens in general → the
 drums cluster's screen in particular → the rebuild mechanism every level of
 this shares.
 
+**Visual mockup of the click-through** (dashboard → stage screen → drum
+review tool, static, dark-mode): <https://claude.ai/code/artifact/8a50b2ab-1dfc-4e30-bb98-0bc281e29756>.
+Sample data throughout is drawn from the real setlist and song facts
+elsewhere in this repo (Manlio's actual verse-2 span, the album/origin split,
+the two real cut songs), not placeholder filler.
+
 ## The dashboard
 
 Rows are the setlist's running order, not an alphabetical list — the same
