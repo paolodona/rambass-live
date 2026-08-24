@@ -64,6 +64,20 @@
   .step { display:flex; align-items:center; gap:16px; padding:16px 20px;
           border-bottom:1px solid var(--border-soft); }
   .step:last-child { border-bottom:none; }
+  /* The row being rebuilt. A three-minute separation used to report itself
+     only in the log at the very bottom of the page, below twelve stage rows:
+     the feedback has to be where the click was. */
+  .step.busy { background:var(--accent-soft);
+               box-shadow:inset 3px 0 0 var(--accent); }
+  .step.busy .label::after { content:" — rebuilding"; color:var(--accent);
+                             font-family:var(--mono); font-size:12px; }
+  /* ...and again where it cannot be scrolled away from. */
+  #running { position:fixed; left:0; right:0; bottom:0; display:none;
+             z-index:40; padding:11px 18px; background:var(--raised);
+             border-top:1px solid var(--accent);
+             font-family:var(--mono); font-size:12.5px; color:var(--text); }
+  #running .what { color:var(--accent); }
+  #running .hint { color:var(--text-faint); }
   .step .what { flex:1; }
   .step .label { font-size:14px; }
   .step .note { font-size:12px; color:var(--text-faint); margin-top:2px; }
@@ -130,6 +144,7 @@
 </head>
 <body>
 <main id="app"></main>
+<div id="running"></div>
 <div id="help"><div class="card">
   <div class="kicker" style="margin-bottom:12px">keyboard</div>
   <table>
@@ -184,6 +199,21 @@ async function api(path, payload) {
 }
 const esc = (text) => String(text).replace(/[&<>"]/g,
   (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* The one piece of progress that cannot be scrolled off. It lives outside
+   #app, so the re-render at the end of a rebuild does not take it with it, and
+   it names the command rather than saying "rebuilding": on a song with twelve
+   run rows, *which* step is the whole question. Progress itself stays in the
+   terminal -- demucs and ffmpeg write there, and proxying that through here
+   would be a second, worse copy of it. */
+function showRunning(what) {
+  const bar = $("#running");
+  if (!what) { bar.style.display = "none"; bar.innerHTML = ""; return; }
+  bar.innerHTML = `running <span class="what">${esc(what)}</span>`
+    + ` <span class="hint">&mdash; progress is in the terminal;`
+    + ` other buttons are held until it finishes</span>`;
+  bar.style.display = "block";
+}
 
 /* ── routing ─────────────────────────────────────────────────────────── */
 function route() {
@@ -318,14 +348,18 @@ async function renderSong(slugAndQuery) {
   const log = $("#log");
   const buttons = () => app.querySelectorAll("#rebuild-all, [data-run]");
   let running = false;
-  async function rebuild(payload, endpoint) {
+  async function rebuild(payload, endpoint, el) {
     /* A separation is three minutes and the server now allows one rebuild per
        song (409 otherwise), so the page has to *look* busy for all of it: the
        second press that started two demucs runs at once was the reasonable
        response to a button that still looked unpressed. */
     if (running) return;
     running = true;
-    buttons().forEach((el) => { el.disabled = true; });
+    buttons().forEach((b) => { b.disabled = true; });
+    const row = el && el.closest(".step");
+    if (row) row.classList.add("busy");
+    showRunning(el ? (el.dataset.command || "the whole chain")
+                   : "the whole chain");
     log.style.display = "block";
     log.textContent = "rebuilding…";
     try {
@@ -339,18 +373,21 @@ async function renderSong(slugAndQuery) {
     } catch (err) { log.textContent = "error: " + err.message; }
     finally {
       running = false;
-      buttons().forEach((el) => { el.disabled = false; });
+      buttons().forEach((b) => { b.disabled = false; });
+      if (row) row.classList.remove("busy");
+      showRunning("");
     }
   }
-  $("#rebuild-all").addEventListener("click", () => rebuild({}));
+  $("#rebuild-all").addEventListener("click",
+    (event) => rebuild({}, null, event.currentTarget));
   app.querySelectorAll("[data-run]").forEach((el) =>
     /* Its own step, not the whole chain: Run on the click row means the click,
        and used to mean a demucs separation. A row the staleness table does not
        track (analyze, lyrics, video card, countin) has no step to filter on,
        so it runs its own command -- posting {} for those is the same bug. */
     el.addEventListener("click", () => (el.dataset.step
-      ? rebuild({step: el.dataset.step})
-      : rebuild({command: el.dataset.command}, "/api/run"))));
+      ? rebuild({step: el.dataset.step}, null, el)
+      : rebuild({command: el.dataset.command}, "/api/run", el))));
   window._rebuild = () => rebuild({});
 }
 

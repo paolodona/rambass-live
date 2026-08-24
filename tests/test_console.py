@@ -10,6 +10,7 @@ than no dashboard.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -17,6 +18,7 @@ import urllib.request
 import pytest
 import yaml
 
+from rambass import console as rambass_console
 from rambass.console import make_server
 from rambass.project import ProjectError
 from rambass.manifest import STAGES, Song, save_song
@@ -343,6 +345,50 @@ def test_the_page_posts_the_step_it_was_clicked_on(served):
         page = response.read().decode("utf-8")
     assert "data-step=" in page
     assert "dataset.step" in page
+
+
+def test_the_pages_script_parses():
+    """console.html is one inline script with no build step and no linter, so a
+    stray brace takes the whole console down while every test here stays green
+    -- these tests assert on the *served text*, which a syntax error does not
+    change. Skipped rather than required when node is absent, same rule as
+    ffmpeg and librosa."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed; cannot parse-check the page script")
+
+    page = (Path(rambass_console.__file__).parent / "console.html").read_text(
+        encoding="utf-8")
+    blocks = re.findall(r"<script>(.*?)</script>", page, re.S)
+    assert len(blocks) == 1, f"expected one inline script, found {len(blocks)}"
+    # encoding= explicitly: the page has em dashes in it, and stdin would
+    # otherwise be encoded with the Windows locale codepage and die on them.
+    checked = subprocess.run([node, "--check", "-"], input=blocks[0],
+                             capture_output=True, text=True, encoding="utf-8")
+    assert checked.returncode == 0, checked.stderr
+
+
+def test_the_page_says_what_is_rebuilding_where_it_can_be_seen(served):
+    """Paolo: *"the 'rebuilding...' banner is at the bottom and I cannot see
+    it. It should be contextual to what is rebuilding somehow?"* -- the log is
+    the last element after every stage screen, so on a song with twelve run
+    rows the only feedback for a three-minute separation was below the fold.
+
+    Two answers, both pinned here because there is no browser in this suite:
+    the row you clicked reports its own state, and a fixed bar names the
+    command that is running wherever the page is scrolled to."""
+    base, _ = served
+    with urllib.request.urlopen(base + "/") as response:
+        page = response.read().decode("utf-8")
+
+    assert 'id="running"' in page, "no fixed running bar"
+    assert "#running" in page and "position:fixed" in page,         "the running bar has to stay in view"
+    assert ".step.busy" in page, "no marker for the row being rebuilt"
+    assert 'classList.add("busy")' in page, "nothing marks the clicked row"
 
 
 def test_a_note_posted_from_the_browser_lands_in_the_ledger(served, song):
