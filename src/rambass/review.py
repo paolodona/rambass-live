@@ -681,6 +681,10 @@ def rebuild_song(song, *, project_root, dry_run: bool = False,
     auto, held = rebuild_selection(stale_report(song))
     if step:
         auto = [e for e in auto if e.step == step]
+        # The held side is filtered too. A button that asked for one step and
+        # got back the song's whole held list reads as "this is what your click
+        # left alone" -- and the one artifact it is *about* is buried in it.
+        held = [e for e in held if e.step == step]
 
     forced = []
     backup_name = ""
@@ -693,7 +697,9 @@ def rebuild_song(song, *, project_root, dry_run: bool = False,
                 f"{song.slug}. Held right now: {held_names}. A stale artifact "
                 f"rebuilds without --force.")
         path = song.path(*force.split("/"))
-        if path.exists():
+        # Not on a dry run: asking what a force *would* do must not write
+        # anything, and the copy used to happen before the run/no-run fork.
+        if path.exists() and not dry_run:
             backup = path.with_suffix(path.suffix + ".bak")
             shutil.copy2(path, backup)
             backup_name = backup.name

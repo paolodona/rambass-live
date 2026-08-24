@@ -914,7 +914,14 @@ def cmd_review_rebuild(args: argparse.Namespace) -> int:
         if result["backup"]:
             _say(f"{song.slug}: kept a copy of the hand-edited file at "
                  f"{result['backup']}")
-        if not result["commands"]:
+        if not result["commands"] and result["held"]:
+            # "nothing stale or missing" is the wrong sentence for a file this
+            # same report calls hand-edited or un-provenanced: it reads as
+            # "there is nothing to do". Name the one way in.
+            first = result["held"][0]["artifact"]
+            _say(f"{song.slug}: nothing here rebuilds on its own — "
+                 f"run it anyway with --force {first}")
+        elif not result["commands"]:
             _say(f"{song.slug}: nothing stale or missing — nothing to rebuild")
         elif args.dry_run:
             _say(f"{song.slug}: would run, in order:")

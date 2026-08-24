@@ -769,3 +769,77 @@ def test_rebuild_song_reports_the_output_of_what_it_ran(song, monkeypatch):
     assert set(result["outputs"]) <= set(result["commands"])
     for command, text in result["outputs"].items():
         assert text == f"did {command}"
+
+
+# ── a step filter that selects a held artifact ───────────────────────────────
+#
+# Paolo clicked Run on Manlio's click-track row -- `render/click.wav`, on disk
+# with no provenance, so `unknown` -> held. The POST answered 200 with an empty
+# command list, the page re-rendered the same "no provenance" sentence, and
+# nothing anywhere said why. `--step <held>` reads the same way in a terminal:
+# "nothing stale or missing" is exactly the wrong sentence for a file the same
+# report has just called un-provenanced.
+
+
+def _held_click(song):
+    """A bounced-by-hand click track: on disk, unstamped, so `unknown`."""
+    return _touch(song.directory / "render" / "click.wav", "bounced by hand")
+
+
+def test_a_step_filter_reports_only_that_steps_hold(cwd_song):
+    from rambass.review import rebuild_song
+
+    _held_click(cwd_song)
+    _touch(cwd_song.directory / "midi" / "gx100.mid", "typed in by hand")
+    result = rebuild_song(cwd_song, project_root=cwd_song.directory.parent,
+                          step="click", dry_run=True)
+    assert result["commands"] == []
+    # Not the whole held set: the gx100 file is held too, and listing it under
+    # a click-track button is how a reader concludes the button did something
+    # to it.
+    assert [h["artifact"] for h in result["held"]] == ["render/click.wav"]
+
+
+def test_a_held_step_says_how_to_run_it_anyway(cwd_song, capsys, monkeypatch):
+    from rambass import review as review_module
+    from rambass.cli import main
+
+    _held_click(cwd_song)
+    monkeypatch.setattr(
+        review_module, "subprocess_runner",
+        lambda cwd: pytest.fail("a held step must not run without --force"))
+    assert main(["review", "rebuild", cwd_song.slug, "--step", "click"]) == 0
+    out = capsys.readouterr().out
+    assert "nothing stale or missing" not in out
+    assert "render/click.wav" in out
+    assert "--force render/click.wav" in out
+
+
+def test_forcing_a_held_step_runs_that_one_command(cwd_song, monkeypatch):
+    from rambass import review as review_module
+    from rambass.cli import main
+
+    click = _held_click(cwd_song)
+    ran = []
+    monkeypatch.setattr(review_module, "subprocess_runner",
+                        lambda cwd: lambda cmd: (ran.append(cmd), (0, ""))[1])
+    assert main(["review", "rebuild", cwd_song.slug, "--step", "click",
+                 "--force", "render/click.wav"]) == 0
+    assert ran == [f"rambass click {cwd_song.slug}"]
+    assert click.with_suffix(".wav.bak").read_text(
+        encoding="utf-8") == "bounced by hand"
+
+
+def test_a_dry_run_force_keeps_its_hands_off_the_file(cwd_song, monkeypatch):
+    """`--dry-run` prints; it does not write. The backup was copied before the
+    dry-run check, so asking what a force *would* do left a .bak behind."""
+    from rambass import review as review_module
+    from rambass.cli import main
+
+    click = _held_click(cwd_song)
+    monkeypatch.setattr(
+        review_module, "subprocess_runner",
+        lambda cwd: pytest.fail("dry run must not build a runner"))
+    assert main(["review", "rebuild", cwd_song.slug, "--step", "click",
+                 "--force", "render/click.wav", "--dry-run"]) == 0
+    assert not click.with_suffix(".wav.bak").exists()

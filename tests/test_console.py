@@ -752,3 +752,79 @@ def test_a_port_held_by_something_unidentifiable_gets_a_useful_error(project):
         assert "--port" in message
     finally:
         holder.close()
+
+
+# ── a held row's button has to be able to do the thing its row asks for ──────
+#
+# Manlio's click row reads *"on disk, but no provenance — built before this was
+# recorded, or by hand. Re-run it to make it checkable."* and carried a plain
+# Run button. `render/click.wav` is `unknown`, so `rebuild_selection` holds it:
+# the POST selected nothing, answered 200, and the page re-rendered the same
+# sentence 600 ms later -- taking the log with it, so neither the reply nor the
+# running bar was ever visible. A button that can never do what its own row
+# asks for is worse than no button.
+
+
+def _unprovenanced_click(song):
+    path = song.directory / "render" / "click.wav"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("bounced by hand", encoding="utf-8")
+    return path
+
+
+def test_a_held_row_carries_its_artifact_so_it_can_be_forced(served, song):
+    """The page can only post `force` if the payload names the artifact per
+    row."""
+    base, _ = served
+    _unprovenanced_click(song)
+    data = _get(base, f"/api/song/{song.slug}")
+    click = [step for screen in data["screens"] for step in screen["steps"]
+             if step["step"] == "click"]
+    assert click, "no click row on the render screen"
+    assert click[0]["state"] == "unknown"
+    assert click[0]["artifact"] == "render/click.wav"
+
+
+def test_forcing_a_held_step_over_http_runs_only_that_command(served, song,
+                                                              monkeypatch):
+    import rambass.review as review_module
+
+    base, _ = served
+    click = _unprovenanced_click(song)
+    ran = []
+    monkeypatch.setattr(review_module, "subprocess_runner",
+                        lambda cwd: lambda cmd: (ran.append(cmd), (0, ""))[1])
+    result = _post(base, "/api/rebuild", {"song": song.slug, "step": "click",
+                                          "force": "render/click.wav"})
+    assert ran == [f"rambass click {song.slug}"]
+    assert result["backup"] == "click.wav.bak"
+    assert click.with_suffix(".wav.bak").exists()
+
+
+def test_the_page_forces_a_held_row_and_asks_first(served):
+    """No browser here, so pin the wiring: the held row posts its artifact as
+    `force`, and forcing is a confirmed act rather than a click."""
+    base, _ = served
+    with urllib.request.urlopen(base + "/") as response:
+        page = response.read().decode("utf-8")
+
+    assert "data-force=" in page, "no held row carries its artifact"
+    assert "dataset.force" in page, "the click handler ignores it"
+    assert "confirm(" in page, "forcing a held artifact is not confirmed"
+    assert "result.backup" in page, "the page never says a .bak was kept"
+
+
+def test_the_page_keeps_its_log_across_the_refresh(served):
+    """The re-render after a rebuild rebuilt `#log` empty, so a reply that ran
+    nothing -- or a fetch that failed -- left the reader with the screen they
+    started on and no output at all. The text outlives the re-render, and a
+    failure is reported in the fixed bar, which is the one thing that cannot
+    scroll away."""
+    base, _ = served
+    with urllib.request.urlopen(base + "/") as response:
+        page = response.read().decode("utf-8")
+
+    assert "lastLog" in page, "the log does not survive the re-render"
+    assert "showProblem" in page, "a failure never reaches the fixed bar"
+    assert "result.ran" in page, "the page re-renders even when nothing ran"
+    assert "result.held" in page, "an empty selection never says what is held"

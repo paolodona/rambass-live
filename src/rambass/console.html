@@ -30,7 +30,7 @@
             background:var(--panel); border:1px solid var(--border-soft);
             border-radius:8px; font-size:12px; color:var(--text-dim);
             margin:16px 0; flex-wrap:wrap; }
-  .dot { width:10px; height:10px; border-radius:50%; display:inline-block;
+  .dot { width:13px; height:13px; border-radius:50%; display:inline-block;
          vertical-align:middle; }
   .dot.done { background:var(--green); }
   .dot.wip  { background:var(--amber); }
@@ -83,6 +83,8 @@
              font-family:var(--mono); font-size:12.5px; color:var(--text); }
   #running .what { color:var(--accent); }
   #running .hint { color:var(--text-faint); }
+  #running.bad { border-top-color:var(--red); cursor:pointer; }
+  #running.bad .what { color:var(--red); }
   .step .what { flex:1; }
   .step .label { font-size:14px; }
   .step .note { font-size:12px; color:var(--text-faint); margin-top:2px; }
@@ -213,12 +215,33 @@ const esc = (text) => String(text).replace(/[&<>"]/g,
    would be a second, worse copy of it. */
 function showRunning(what) {
   const bar = $("#running");
+  bar.classList.remove("bad");
+  bar.onclick = null;
   if (!what) { bar.style.display = "none"; bar.innerHTML = ""; return; }
   bar.innerHTML = `running <span class="what">${esc(what)}</span>`
     + ` <span class="hint">&mdash; progress is in the terminal;`
     + ` other buttons are held until it finishes</span>`;
   bar.style.display = "block";
 }
+
+/* The same bar for the answer nobody could see. `#log` is the last element on
+   the page, so on a song with twelve run rows an error in it is an error below
+   the fold -- and clicking Run on a held row put its whole reply there and then
+   re-rendered it away. It stays up until it is dismissed; *bad* is only for a
+   real failure, because a red bar for "nothing was stale" is a false alarm. */
+function showProblem(what, bad) {
+  const bar = $("#running");
+  bar.innerHTML = `<span class="what">${esc(what)}</span>`
+    + ` <span class="hint">&mdash; the log below has the detail;`
+    + ` click to dismiss</span>`;
+  if (bad) bar.classList.add("bad");
+  bar.style.display = "block";
+  bar.onclick = () => showRunning("");
+}
+
+/* What the last run said, kept per song so the re-render that follows a
+   rebuild cannot take it with it. */
+let lastLog = {slug: "", text: ""};
 
 /* ── routing ─────────────────────────────────────────────────────────── */
 function route() {
@@ -313,9 +336,22 @@ async function renderSong(slugAndQuery) {
   const screens = data.screens.filter((screen) => screen.steps.length).map((screen) => {
     const steps = screen.steps.map((step) => {
       let button = "";
+      const held = step.state === "unknown" || step.state === "edited";
       if (step.kind === "open")
         button = `<button class="btn primary"
           onclick="location.hash='#/review/${encodeURIComponent(slug)}'">Open review tool &rarr;</button>`;
+      else if (step.kind === "run" && held)
+        /* A held row used to carry a plain Run, which posted {step} alone --
+           and `rebuild_selection` holds `unknown`/`edited`, so that selects
+           NOTHING: 200, an empty command list, and a re-render of the same
+           "no provenance" sentence. `force` is the one path allowed to touch a
+           held artifact, so the row that reports the hold is the row that
+           offers it: per artifact, confirmed, and with a .bak kept. */
+        button = `<button class="btn amber" data-run data-step="${esc(step.step)}"
+          data-force="${esc(step.artifact)}" data-state="${esc(step.state)}"
+          data-command="${esc(step.command)}"
+          title="${esc(step.command)}">${step.state === "edited"
+            ? "Rebuild anyway" : "Re-run"}</button>`;
       else if (step.kind === "run" && step.state === "stale")
         button = `<button class="btn amber" data-run data-step="${esc(step.step)}"
           data-command="${esc(step.command)}"
@@ -355,6 +391,15 @@ async function renderSong(slugAndQuery) {
     </div>
     <div class="log" id="log"></div>`;
   const log = $("#log");
+  if (lastLog.slug === slug && lastLog.text) {
+    log.style.display = "block";
+    log.textContent = lastLog.text;
+  }
+  function report(text) {
+    lastLog = {slug: slug, text: text};
+    log.style.display = "block";
+    log.textContent = text;
+  }
   const buttons = () => app.querySelectorAll("#rebuild-all, [data-run]");
   let running = false;
   function failureDetail(result) {
@@ -379,8 +424,8 @@ async function renderSong(slugAndQuery) {
     if (row) row.classList.add("busy");
     showRunning(el ? (el.dataset.command || "the whole chain")
                    : "the whole chain");
-    log.style.display = "block";
-    log.textContent = "rebuilding…";
+    report("rebuilding…");
+    let problem = null;
     try {
       const result = await api(endpoint || "/api/rebuild",
                               Object.assign({song: slug}, payload));
@@ -389,18 +434,41 @@ async function renderSong(slugAndQuery) {
          `analyze --write` could refuse to overwrite a settled tempo and the
          page would say nothing but "FAIL". Only the failure's output is shown:
          a demucs run prints pages of progress and would bury it. */
-      log.textContent = result.commands.length
-        ? result.commands.map((c, i) =>
+      const kept = result.backup ? `kept a copy at ${result.backup}\n` : "";
+      /* An empty command list is not "nothing to do": it is usually a step
+         whose artifact is held, and "nothing stale or missing" for a file the
+         same screen calls un-provenanced is how a reader decides the console
+         is broken. Say which artifact, in staleness' own words. */
+      const heldNow = (result.held || []).map(
+        (h) => `held  ${h.state}  ${h.artifact} — ${h.reasons.join("; ")}`
+      ).join("\n");
+      report(result.commands.length
+        ? kept + result.commands.map((c, i) =>
             (i < result.ran ? "ok    " : result.failed === c ? "FAIL  " : "held  ") + c).join("\n")
           + failureDetail(result)
-        : "nothing stale or missing — nothing to rebuild";
-      if (!result.failed) setTimeout(() => renderSong(slug), 600);
-    } catch (err) { log.textContent = "error: " + err.message; }
+        : heldNow
+        ? "nothing here rebuilds on its own:\n" + heldNow
+        : "nothing stale or missing — nothing to rebuild");
+      if (result.failed) problem = ["failed: " + result.failed, true];
+      else if (!result.commands.length)
+        problem = heldNow
+          /* You pressed a button and nothing happened, which is the state this
+             whole bar exists for: the reason is in the log, one line down. */
+          ? ["nothing ran \u2014 held, see below", true]
+          : ["nothing was stale or missing", false];
+      /* Only when something actually changed on disk: the refresh is what took
+         the reply off the screen, so a reply that ran nothing keeps its page. */
+      else if (result.ran) setTimeout(() => renderSong(slug), 600);
+    } catch (err) {
+      report("error: " + err.message);
+      problem = ["error: " + err.message, true];
+    }
     finally {
       running = false;
       buttons().forEach((b) => { b.disabled = false; });
       if (row) row.classList.remove("busy");
       showRunning("");
+      if (problem) showProblem(problem[0], problem[1]);
     }
   }
   $("#rebuild-all").addEventListener("click",
@@ -410,10 +478,30 @@ async function renderSong(slugAndQuery) {
        and used to mean a demucs separation. A row the staleness table does not
        track (analyze, lyrics, video card, countin) has no step to filter on,
        so it runs its own command -- posting {} for those is the same bug. */
-    el.addEventListener("click", () => (el.dataset.step
-      ? rebuild({step: el.dataset.step}, null, el)
-      : rebuild({command: el.dataset.command}, "/api/run", el))));
+    el.addEventListener("click", () => {
+      if (el.dataset.force && !confirm(forceWarning(el))) return;
+      if (el.dataset.step)
+        rebuild({step: el.dataset.step,
+                 force: el.dataset.force || undefined}, null, el);
+      else
+        rebuild({command: el.dataset.command}, "/api/run", el);
+    }));
   window._rebuild = () => rebuild({});
+}
+
+/* Forcing is the one gesture on this screen that can destroy work, so it is a
+   question and not a click — the same bargain `rambass review rebuild --force`
+   makes in a terminal. Two risks, so two sentences: an `edited` file holds
+   somebody's hand edit, an `unknown` one holds nobody knows what. */
+function forceWarning(el) {
+  const what = el.dataset.force, how = el.dataset.command;
+  return el.dataset.state === "edited"
+    ? `${what} is hand-edited.\n\n${how} will overwrite it. A copy is kept as `
+      + `${what}.bak — but an edit that should survive the next rebuild `
+      + `belongs in song.yaml.\n\nRun it?`
+    : `${what} is on disk with no provenance, so nothing can say what built `
+      + `it.\n\n${how} rebuilds it, and it is checkable from then on. A copy `
+      + `is kept as ${what}.bak.\n\nRun it?`;
 }
 
 /* ── the drums review tool ───────────────────────────────────────────── */
