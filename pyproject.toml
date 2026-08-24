@@ -26,6 +26,12 @@ lyrics = [
 separate = [
     "demucs>=4.0.1",
 ]
+# Headless VST3 instrument rendering, for `review render` — the review
+# candidate wav straight from the drum MIDI instead of a hand bounce.
+# Optional by design: everything else in the review tool works without it.
+vst = [
+    "pedalboard>=0.9.12",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

@@ -946,6 +946,26 @@ def cmd_review_clips(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_review_render(args: argparse.Namespace) -> int:
+    """Render the drum MIDI through a VST3 instrument, headless.
+
+    The spike docs/review-ui.md scoped as Phase 4, answered: EZdrummer 3's
+    VST3 does instantiate without a window or a licence dialog, so the review
+    candidate no longer has to be a hand bounce out of the DAW. Writes
+    qa/candidate.wav — a QA render off a stereo master, never the Stage 9
+    base, which is still mixed by hand through the multi-out rig.
+    """
+    from .ezrender import render_candidate
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        target, seconds = render_candidate(
+            song, plugin_path=args.plugin, preset=args.preset, out=args.out,
+            sample_rate=args.sample_rate, tail=args.tail)
+        _say(f"{song.title}: {seconds:.1f}s -> {target}")
+    return 0
+
+
 def cmd_review_note(args: argparse.Namespace) -> int:
     """Log one review note against a bar, without opening the console.
 
@@ -2307,6 +2327,23 @@ def build_parser() -> argparse.ArgumentParser:
                    help="the rendered-MIDI wav (default: qa/candidate.wav, "
                         "then render/<slug>.wav)")
     p.set_defaults(func=cmd_review_clips)
+
+    p = review_sub.add_parser(
+        "render",
+        help="render the drum MIDI through a VST3 instrument (qa/candidate.wav)")
+    _add_song_args(p)
+    p.add_argument("--plugin",
+                   help="the .vst3 bundle, or the folder holding it "
+                        "(default: the usual plug-in folders, or RAMBASS_VST3)")
+    p.add_argument("--preset",
+                   help="a .vstpreset to load — a fresh instance comes up on "
+                        "the plugin's default kit, not the song's")
+    p.add_argument("--out", help="explicit output path (default qa/candidate.wav)")
+    p.add_argument("--sample-rate", type=float, default=44100.0)
+    p.add_argument("--tail", type=float, default=4.0,
+                   help="seconds to keep rendering after the last hit, so a "
+                        "closing crash can ring")
+    p.set_defaults(func=cmd_review_render)
 
     p = review_sub.add_parser(
         "note", help="log one review note against a bar (qa/review.yaml)")

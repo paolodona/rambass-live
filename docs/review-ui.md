@@ -1,13 +1,58 @@
 # The project console
 
-**Where the repo is, as of 2026-08-24: Phases 0–2 are built.** `rambass
+**Where the repo is, as of 2026-08-24: Phases 0–4 are built.** `rambass
 console` starts the console (`console.py` over `review.py`, tested in
 `tests/test_console.py` / `tests/test_review.py`); `review rebuild / clips /
-note / promote / status` are commands. Still open: the EZD3 headless-render
-spike (Gate R2 — needs Paolo's machine and the real plugin), the Phase 5
-thin lyrics/gx100 views, and a set-wide batch rebuild. The rest of this
-document is the scope as designed; where it says "would", it now mostly
-"does".
+render / note / promote / status` are commands. **Gate R2 is answered: yes**
+— see "The spike, answered" below. Still open: the Phase 5 thin lyrics/gx100
+views, and a set-wide batch rebuild. The rest of this document is the scope
+as designed; where it says "would", it now mostly "does".
+
+## The spike, answered
+
+Measured on Paolo's machine, 2026-08-24. `EZdrummer 3.vst3` **does**
+instantiate headlessly through `pedalboard` — about 12 seconds, no window,
+no licence dialog — and a *fresh* instance already has a kit loaded, so it
+renders without any preset wrangling. Neither half was safe to assume: the
+activation path blocking a headless instantiation was the entire reason this
+was scoped as a spike.
+
+So `ezrender.py` ships, and `rambass review render <song>` replaces the hand
+bounce:
+
+```
+rambass review render manlio      # -> qa/candidate.wav
+rambass review clips manlio       # -> qa/clips/*.wav
+```
+
+Manlio end to end: 313.1 s rendered (last hit 309.1 s = musical bar 78 beat
+2, which is where CLAUDE.md records the band stopping, plus a 4 s tail for
+the ring), peak 1.000 with exactly one sample at full scale, then 15 section
+pairs cut. The candidate clips come out at 12.00 / 8.00 / 32.00 / 16.00 s —
+dead on the grid — against references of 12.08 / 8.10 / 31.86 / 16.09,
+which is the album take breathing. That is the whole point of the A/B.
+
+**What it deliberately is not:**
+
+* **Not a remap.** The note numbers in the file go to the plugin unchanged.
+  `config/drum-maps/ezdrummer3.yaml` still does not exist and CLAUDE.md is
+  explicit that invented numbers are worse than none — so the render is
+  exactly as good as the song's declared map, which also makes a wrong map
+  *audible* here rather than silently corrected.
+* **Not the base.** Stereo off the plugin's master, not the multi-out rig
+  docs/drums-rebuild.md wants for the gig, and written to `qa/` — never
+  `render/`, which docs/practice-tracks.md reserves for the deliverable.
+* **Not the song's kit.** A fresh instance is on EZdrummer's default kit.
+  `--preset <file>.vstpreset` is how the chosen one gets in; choosing it is
+  still a human's job.
+
+`pedalboard` is a new optional extra (`vst`), imported only inside
+`ezrender.py` via `audio.require_module`, the same rule `analyze.py` /
+`transcribe.py` / `stems.py` follow. `rambass doctor` reports the package and
+the plug-in **separately**, because `pedalboard` installed with no VST3 found
+renders nothing and would otherwise say nothing about why; `RAMBASS_VST3`
+overrides the search, with `locate_tool`'s rule that a set-but-wrong override
+is an error rather than a fall-through.
 
 Scope for a tool, now largely built. Started from one workflow pain — verifying a
 transcribed drum part means opening Reaper, soloing the original, soloing the
@@ -383,9 +428,11 @@ rambass review rebuild <song> [--stage <name>] [--step <name>] [--force <artifac
     # `.bak` first. This is what a rebuild control calls, and it's a
     # first-class command so it works from a terminal too.
 
-rambass review render <song> --ezd3     # THE SPIKE. Optional extra required.
-    # renders drums-quantized.mid through a VST3 instrument, headless.
-    # Explicitly not required for anything else above to work.
+rambass review render <song>            # Optional `vst` extra required.
+    # renders the drum MIDI through a VST3 instrument, headless, to
+    # qa/candidate.wav. --plugin / --preset / --tail / --sample-rate.
+    # Still not required for anything else above to work: without it,
+    # `review clips --candidate <wav>` takes a hand bounce as before.
 ```
 
 Not added to `manifest.STAGES` and writes nothing to `render/` or to any
@@ -422,8 +469,13 @@ resolution — no browser, no ffmpeg needed for most of it:
   existing six already are — `Step.command` formats with the song's slug,
   and staleness flips when the fields/inputs they declare change.
 
-The `ezrender.py` spike needs the actual plugin to test at all, so it stays
-outside the ordinary suite the way `stems.py`'s demucs call already does.
+The `ezrender.py` spike needs the actual plugin to test at all, so that one
+test skips when it is absent, the way `stems.py`'s demucs call already does.
+Everything *around* the plugin is in the ordinary suite (`tests/
+test_ezrender.py`): which clock the render sits on — musical bar 1 at sample
+0, no count-in, guarded the same way the clip boundaries are — that every
+note_on gets a note_off, that the render runs past the last hit so a closing
+crash can ring, and `locate_plugin`'s override rules.
 
 ## Plan
 
@@ -433,7 +485,7 @@ outside the ordinary suite the way `stems.py`'s demucs call already does.
 | **1** | the drums cluster's data: clip-boundary functions, `qa/review.yaml` model, CLI (`clips`, `note`, `promote`, `status`) | Phase 0 |
 | **2** | the drums review tool: transport, instrument grid, notes panel, against a manually-bounced candidate wav | Phase 1 |
 | **3** | "send to EZdrummer" file export | Phase 2 |
-| **4** (spike, parallel, not committed) | `ezrender.py`: can `pedalboard` host EZD3's VST3 headlessly at all, on Paolo's machine | — |
+| **4** (spike — **answered yes, shipped**) | `ezrender.py`: `pedalboard` hosts EZD3's VST3 headlessly; `review render` writes `qa/candidate.wav` | — |
 | **5** (opportunistic) | bespoke screens for other stages beyond "Run + show report" — a lyrics timeline scrubber is the likely first candidate | Phase 0 |
 
 Phase 0 first, deliberately: it's what stops the drums screen from being a
@@ -456,9 +508,9 @@ promoted into `drums.additions`, and pressing `r` — not re-running commands
 by hand — is what gets `drums restore` re-applied and the clips current
 again.
 
-**Gate R2** — the spike has a yes/no answer. Yes: `review render` replaces
-the manual bounce. No: Phases 0-3 already stand, and the manual bounce stays
-however long the tool is useful.
+**Gate R2** — the spike has a yes/no answer. **Answered yes on 2026-08-24**;
+`review render` replaces the manual bounce, and the manual bounce stays
+available as `--candidate <wav>` for anyone without the plugin.
 
 ## Honest limits
 

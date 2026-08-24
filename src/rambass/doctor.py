@@ -98,6 +98,8 @@ def run_checks() -> list[Check]:
         ("scipy", "librosa's DSP", "audio"),
         ("faster_whisper", "drafting lyric cues from audio", "lyrics"),
         ("demucs", "separating drums out of a stereo mix", "separate"),
+        ("pedalboard", "rendering drum MIDI through a VST3 (review render)",
+         "vst"),
     ):
         present = _module(module)
         checks.append(Check(
@@ -106,6 +108,23 @@ def run_checks() -> list[Check]:
             needed,
             install_hint(extra),
         ))
+
+    # The package and the plug-in fail separately: `pedalboard` installed with
+    # no VST3 found renders nothing and, without this line, says nothing about
+    # why. Same split as ffmpeg's binary-versus-package check above.
+    if _module("pedalboard"):
+        from .ezrender import PLUGIN_ENV, locate_plugin  # noqa: PLC0415
+
+        try:
+            found = str(locate_plugin())
+            checks.append(Check("VST3 instrument", True, found,
+                                "the kit `review render` plays the MIDI on",
+                                ""))
+        except Exception as exc:  # noqa: BLE001 - diagnostics must not crash
+            checks.append(Check(
+                "VST3 instrument", False, str(exc).splitlines()[0],
+                "the kit `review render` plays the MIDI on",
+                f"install a drum VST3, or set {PLUGIN_ENV} to its bundle"))
 
     torch_note = ""
     if _module("torch"):

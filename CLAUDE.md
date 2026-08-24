@@ -102,16 +102,17 @@ Layered so the cheap deterministic parts have no heavy dependencies:
 | `provenance.py` | which derived files are stale, and which of three reasons | pyyaml |
 | `review.py` | the console's data layer: rebuild selection, step tables, notes ledger, A/B clip spans | pyyaml |
 | `console.py` | the console's local HTTP server (`rambass review serve`), thin over `review.py` | stdlib |
+| `ezrender.py` | drum MIDI → audio through a VST3 instrument, headless | **pedalboard** |
 | `align.py` | bars ↔ seconds *in the recording*, and warping onto the grid | numpy |
 | `audio.py` | ffmpeg decode/encode, WAV write, loudness | numpy |
 | `analyze.py` | tempo/beat/drift detection | **librosa** |
 | `transcribe.py` | drum stem → hits | **librosa** |
 | `stems.py` | demucs wrapper | **demucs** |
 
-Keep it that way: never import librosa, scipy or demucs at module top level in
-anything outside `analyze.py` / `transcribe.py` / `stems.py`. Use
-`audio.require_module()` so a missing extra produces an install hint rather than
-an ImportError traceback.
+Keep it that way: never import librosa, scipy, demucs or pedalboard at module
+top level in anything outside `analyze.py` / `transcribe.py` / `stems.py` /
+`ezrender.py`. Use `audio.require_module()` so a missing extra produces an
+install hint rather than an ImportError traceback.
 
 ## Conventions
 
@@ -229,6 +230,32 @@ puts bar 1 at the band's entry), so an out-of-scope detection is removed by
 fixing the manifest rather than by hand-editing MIDI that the next
 re-transcription would regenerate. `bars: 0` means unmeasured, which is not the
 same as zero, and trims nothing.
+
+**EZdrummer 3's VST3 hosts headlessly, and the review candidate is rendered,
+not bounced.** Measured 2026-08-24: `pedalboard.load_plugin` instantiates
+`EZdrummer 3.vst3` in about 12 seconds with no window and no licence dialog,
+and a *fresh* instance already has a kit, so it makes sound with no preset
+wrangling. That was the open question in docs/review-ui.md's Gate R2 and it is
+now closed — don't re-litigate it, and don't reintroduce the hand bounce as the
+only path. `ezrender.py` + `rambass review render <song>` writes
+`qa/candidate.wav`; `--candidate <wav>` still takes a hand bounce for a machine
+without the plugin.
+
+Three things there are deliberate, not gaps. **No remapping** — the file's note
+numbers go to the plugin unchanged, because `config/drum-maps/ezdrummer3.yaml`
+does not exist and invented numbers are worse than none; the render is exactly
+as good as the song's declared map, which makes a wrong map audible instead of
+silently corrected. **Not the base** — stereo off the plugin's master, written
+to `qa/` and never `render/`, because the gig base is still mixed by hand
+through the multi-out rig. **Not the song's kit** — a fresh instance is on
+EZdrummer's default; `--preset` is how the chosen one gets in, and choosing it
+stays a human's job.
+
+And the clock: the render puts **musical bar 1 beat 1 at sample 0, with no
+count-in**, because `review.clip_spans` cuts candidate clips with
+`bar_beat_to_seconds`. A rendered candidate carrying the count-in looks
+perfectly fine on its own and is wrong against every reference clip by exactly
+`count_in.bars` — the two-clocks mistake through the hardest door to spot.
 
 **The video track carries exactly one item per song, and it starts at the region
 start.** A rendered lyric video runs on the *audio* clock, so it already contains
