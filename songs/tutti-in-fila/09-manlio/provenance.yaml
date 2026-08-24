@@ -90,6 +90,18 @@ practice/no_drums-aligned.wav:
   self: e86c2a49d1b13a07
   step: align warp
   version: 0.1.0
+render/click.wav:
+  code: dce2341f6061ab78
+  inputs: {}
+  manifest:
+    bars: 282b639f9f9d4d15
+    click: 75854bab4726c2e8
+    count_in: 38b876f933c777cd
+    tempo: 72321402045f8010
+  scalars: {}
+  self: 47e5dcc38da9bd03
+  step: click
+  version: 0.1.0
 stems/drums.wav:
   code: 07a738e5888a8417
   inputs:
