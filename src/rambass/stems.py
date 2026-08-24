@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from .audio import AudioError
+from .audio import AudioError, install_hint
 
 #: Demucs models, best-sounding first. htdemucs_ft is noticeably cleaner on
 #: cymbals than plain htdemucs but takes roughly four times as long.
@@ -70,7 +70,7 @@ def separate(
     if not demucs_available():
         raise AudioError(
             "demucs is not installed.\n"
-            "  install it with:  pip install -e '.[separate]'\n"
+            f"  install it with:  {install_hint('separate')}\n"
             "  it pulls in torch, so expect a large download."
         )
 

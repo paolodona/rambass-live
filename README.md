@@ -34,14 +34,17 @@ rambass status                                  # what is left to do
 ## Install
 
 ```
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e '.[audio]'
+uv venv && .venv/Scripts/activate     # or: python3 -m venv .venv && source .venv/bin/activate
+uv pip install -e '.[audio]'
 rambass doctor
 ```
 
 Core commands need nothing heavy. `analyze` and `drums transcribe` need
-`[audio]` (librosa); `stems` needs `[separate]` (demucs + torch); reading MP3s
-and rendering video needs `ffmpeg` on PATH. See [docs/setup.md](docs/setup.md).
+`[audio]` (librosa); `lyrics transcribe` needs `[lyrics]` (faster-whisper);
+`stems` needs `[separate]` (demucs + torch); reading MP3s and rendering video
+needs `ffmpeg` on PATH. A `uv venv` has no pip in it, so use `uv pip install`
+there — `rambass doctor` prints which installer it found. See
+[docs/setup.md](docs/setup.md).
 
 ## The two albums, two different jobs
 

@@ -457,7 +457,7 @@ def transcribe(
     Then read every line against the audio and fix it. The point is to skip the
     typing, not the listening.
     """
-    from .audio import AudioError
+    from .audio import AudioError, install_hint
 
     try:
         from faster_whisper import WhisperModel  # noqa: PLC0415 - optional extra
@@ -467,7 +467,7 @@ def transcribe(
         except ImportError as exc:
             raise AudioError(
                 "automatic lyric transcription needs a Whisper implementation.\n"
-                "  install it with:  pip install -e '.[lyrics]'\n"
+                f"  install it with:  {install_hint('lyrics')}\n"
                 "  (that brings in faster-whisper, which runs well on CPU)"
             ) from exc
         return _transcribe_openai_whisper(whisper, audio, language, model, max_chars, prompt)

@@ -7,7 +7,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from .audio import AudioError, FFMPEG_ENV, locate_tool as _locate
+from .audio import FFMPEG_ENV, AudioError, install_alternatives, install_hint
+from .audio import locate_tool as _locate
 
 
 @dataclass
@@ -41,6 +42,20 @@ def run_checks() -> list[Check]:
         "python", sys.version_info >= (3, 10),
         f"{sys.version.split()[0]} at {sys.executable}",
         "everything", "install Python 3.10 or newer",
+    ))
+
+    # Named for the same reason ffmpeg's route is: every other fix line below is
+    # an install command, and "pip install ..." is unactionable in a venv built
+    # by `uv venv`, which seeds no pip. Printing which installer was found makes
+    # the fix lines readable as commands that will actually run.
+    primary = install_hint()
+    others = install_alternatives()
+    checks.append(Check(
+        "installer", not primary.startswith("python -m ensurepip"),
+        f"{primary.split(' install ')[0]}"
+        + (f"  (also: {', '.join(o.split(' install ')[0] for o in others)})" if others else ""),
+        "installing the optional extras",
+        primary if primary.startswith("python -m ensurepip") else "",
     ))
 
     # Through audio.locate_tool, not shutil.which, so this agrees with the code
@@ -89,7 +104,7 @@ def run_checks() -> list[Check]:
             module, present,
             "installed" if present else "missing",
             needed,
-            f"pip install -e '.[{extra}]'" if extra != "core" else "pip install -e .",
+            install_hint(extra),
         ))
 
     torch_note = ""

@@ -212,7 +212,13 @@ def test_ambiguous_reference_is_reported(cwd, capsys):
 
 
 def test_audio_commands_explain_the_missing_extra(cwd, capsys, monkeypatch):
-    """`analyze` needs librosa; without it the user gets an install hint."""
+    """`analyze` needs librosa; without it the user gets an install hint.
+
+    Asserted against `install_hint` rather than a literal `pip install`, because
+    the literal passes on a uv-only machine by being a substring of `uv pip
+    install` -- so it would go on passing while the printed command was one the
+    reader cannot run. See tests/test_install_hint.py.
+    """
     run("new", "X", "--album", "dg", "--create-album")
     directory = cwd.songs_dir / "dg" / "01-x"
     (directory / "source" / "mix.wav").write_bytes(b"RIFF----WAVE")
@@ -229,7 +235,9 @@ def test_audio_commands_explain_the_missing_extra(cwd, capsys, monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", no_librosa)
     assert run("analyze", "01-x") == 2
-    assert "pip install -e '.[audio]'" in capsys.readouterr().err
+    from rambass.audio import install_hint
+
+    assert f"install it with:  {install_hint('audio')}" in capsys.readouterr().err
 
 
 def test_the_repos_own_songs_and_setlists_are_valid():

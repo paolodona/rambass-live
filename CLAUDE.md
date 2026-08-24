@@ -377,7 +377,10 @@ manifests, timeline maths, MIDI round-trips, quantising, build scripts, GX-100
 mapping and lyric parsing. All of it runs without ffmpeg, librosa or demucs.
 Anything needing those must be skipped, not required.
 
-Run it: `pytest` (or `make test`).
+Run it: `pytest`. (`make test` is the same thing, but `make` is not installed on
+this machine — and `.venv` is a `uv venv`, so it has **no pip**: install extras
+with `uv pip install -e '.[lyrics]'`. Every install hint the CLI prints resolves
+the installer that exists rather than assuming pip; `rambass doctor` names it.)
 
 **Build new features test-first.** Write the failing test before the code —
 every time, including when the change looks too small to need one. This is not

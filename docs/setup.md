@@ -5,20 +5,30 @@
 ```
 git clone <this repo>
 cd rambass-live
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e '.[audio]'
+uv venv && .venv/Scripts/activate     # or: python3 -m venv .venv && source .venv/bin/activate
+uv pip install -e '.[audio]'
 rambass doctor
 ```
 
-`rambass doctor` tells you what is missing and how to get it. Three tiers:
+`rambass doctor` tells you what is missing and how to get it. Four tiers:
 
 | tier | install | needed for |
 |---|---|---|
-| core | `pip install -e .` | manifests, MIDI, quantise, click, Reaper scripts, GX-100, subtitles |
-| audio | `pip install -e '.[audio]'` | `analyze`, `drums transcribe` — pulls in librosa and scipy |
-| separate | `pip install -e '.[separate]'` | `stems` — pulls in demucs and torch, a large download |
+| core | `uv pip install -e .` | manifests, MIDI, quantise, click, Reaper scripts, GX-100, subtitles |
+| audio | `uv pip install -e '.[audio]'` | `analyze`, `drums transcribe` — pulls in librosa and scipy |
+| lyrics | `uv pip install -e '.[lyrics]'` | `lyrics transcribe` — pulls in faster-whisper, which runs well on CPU |
+| separate | `uv pip install -e '.[separate]'` | `stems` — pulls in demucs and torch, a large download |
 
-`uv` works too and is much faster: `uv pip install -e '.[audio]'`.
+### uv or pip
+
+Either works; `uv` is much faster and is what this checkout's venv was built
+with. That matters for one reason: **a venv created by `uv venv` contains no
+pip at all**, so `pip install -e '.[lyrics]'` in it fails with "the term 'pip'
+is not recognized" — nothing is broken, the installer simply isn't there. Use
+`uv pip install`, or run `uv venv --seed` if you want pip in the venv too.
+
+`rambass doctor` prints which installer it found (`installer  uv pip`), and
+every install hint the commands print names that one rather than assuming pip.
 
 ## ffmpeg
 

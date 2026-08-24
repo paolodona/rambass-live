@@ -7,6 +7,7 @@ without complaint. That also keeps ``librosa`` needed only for the actual DSP.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import struct
@@ -24,16 +25,64 @@ class AudioError(RuntimeError):
     """Raised when audio tooling is missing or a decode fails."""
 
 
+def _pip_module_present() -> bool:
+    """Whether this interpreter can run ``python -m pip``."""
+    return importlib.util.find_spec("pip") is not None
+
+
+def _install_target(extra: str) -> str:
+    """The right-hand side of the install command for *extra*."""
+    return "-e ." if extra in ("", "core") else f"-e '.[{extra}]'"
+
+
+def _installer_prefixes() -> list[str]:
+    """Package installers that exist here, best first.
+
+    Resolved rather than hard-coded, for the same reason ffmpeg is: this
+    checkout's venv comes from ``uv venv``, which seeds no pip, so a hint
+    reading ``pip install -e '.[lyrics]'`` names a command that does not exist,
+    and nothing in the message lets the reader tell that apart from a genuinely
+    missing package. pip first when it works, because it is what the docs say
+    and what a fresh clone has; the interpreter form next, because an
+    unactivated venv has the module and no console script; uv last -- and on
+    this machine it is the only one left.
+    """
+    found: list[str] = []
+    if shutil.which("pip"):
+        found.append("pip")
+    elif _pip_module_present():
+        found.append("python -m pip")
+    if shutil.which("uv"):
+        found.append("uv pip")
+    return found
+
+
+def install_hint(extra: str = "core") -> str:
+    """The install command for *extra* that works in this environment."""
+    target = _install_target(extra)
+    prefixes = _installer_prefixes()
+    if not prefixes:
+        return f"python -m ensurepip --upgrade, then:  pip install {target}"
+    return f"{prefixes[0]} install {target}"
+
+
+def install_alternatives(extra: str = "core") -> list[str]:
+    """Other installers that would also work here, in preference order."""
+    target = _install_target(extra)
+    return [f"{prefix} install {target}" for prefix in _installer_prefixes()[1:]]
+
+
 def require_module(name: str, extra: str):
     """Import *name* or explain which extra installs it."""
     try:
         return __import__(name)
     except ImportError as exc:
-        raise AudioError(
-            f"this command needs the '{name}' package.\n"
-            f"  install it with:  pip install -e '.[{extra}]'\n"
-            f"  (or:              uv pip install -e '.[{extra}]')"
-        ) from exc
+        lines = [
+            f"this command needs the '{name}' package.",
+            f"  install it with:  {install_hint(extra)}",
+        ]
+        lines += [f"  (or:              {alt})" for alt in install_alternatives(extra)]
+        raise AudioError("\n".join(lines)) from exc
 
 
 #: Point this at ffmpeg when it is installed but not on PATH — which is the
