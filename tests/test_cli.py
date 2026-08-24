@@ -640,3 +640,85 @@ def test_a_reaper_bar_inside_the_count_in_is_refused(cwd, capsys):
     capsys.readouterr()
     assert run("section", "01-x", "2", "intro", "--reaper-bar") == 2
     assert "count-in" in capsys.readouterr().err
+
+
+# ── the tempo, once settled, is not re-detected over ──────────────────────────
+#
+# Manlio's `notes:` record the decision: detection said 60.02, the flat 60 was
+# chosen deliberately, and the transcription was re-run against 60 rather than
+# re-quantised. Then a console click on "Find the tempo" put 60.02 back — 107 ms
+# of slip across that song's 320 beats — with nothing said. `analyze --write`
+# will not change a tempo the manifest already calls settled.
+
+
+def _fake_analysis(bpm: float):
+    from rambass.analyze import TempoAnalysis
+
+    return TempoAnalysis(bpm=bpm, bpm_rounded=bpm, duration=60.0)
+
+
+def _stub_analyze(monkeypatch, bpm: float):
+    from rambass import analyze
+
+    monkeypatch.setattr(analyze, "analyze_tempo",
+                        lambda *a, **k: _fake_analysis(bpm))
+
+
+def _song_with_a_settled_tempo(cwd, bpm=60.0):
+    from rambass.manifest import load_song, save_song
+
+    run("new", "Manlio", "--album", "tif", "--create-album")
+    directory = cwd.songs_dir / "tif" / "01-manlio"
+    (directory / "source" / "09 Manlio.wav").write_bytes(b"RIFF----WAVE")
+    song = load_song(directory)
+    song.bpm = bpm
+    song.status["analyze"] = "done"
+    save_song(song)
+    return directory
+
+
+def test_analyze_write_refuses_to_move_a_settled_tempo(cwd, capsys, monkeypatch):
+    from rambass.manifest import load_song
+
+    directory = _song_with_a_settled_tempo(cwd)
+    _stub_analyze(monkeypatch, 60.02)
+    capsys.readouterr()
+
+    assert run("analyze", "01-manlio", "--write") == 1
+    out = capsys.readouterr().out
+    assert "60.02" in out and "--force" in out
+    assert load_song(directory).bpm == 60.0
+
+
+def test_analyze_write_may_be_forced(cwd, capsys, monkeypatch):
+    from rambass.manifest import load_song
+
+    directory = _song_with_a_settled_tempo(cwd)
+    _stub_analyze(monkeypatch, 60.02)
+    capsys.readouterr()
+
+    assert run("analyze", "01-manlio", "--write", "--force") == 0
+    assert load_song(directory).bpm == 60.02
+
+
+def test_analyze_write_still_writes_an_unsettled_tempo(cwd, monkeypatch):
+    """A song whose analyze stage is not done has nothing to protect."""
+    from rambass.manifest import load_song, save_song
+
+    directory = _song_with_a_settled_tempo(cwd)
+    song = load_song(directory)
+    song.status["analyze"] = "todo"
+    save_song(song)
+    _stub_analyze(monkeypatch, 60.02)
+
+    assert run("analyze", "01-manlio", "--write") == 0
+    assert load_song(directory).bpm == 60.02
+
+
+def test_analyze_write_agreeing_with_the_manifest_is_not_a_refusal(cwd, monkeypatch):
+    directory = _song_with_a_settled_tempo(cwd)
+    _stub_analyze(monkeypatch, 60.0)
+    assert run("analyze", "01-manlio", "--write") == 0
+    from rambass.manifest import load_song
+
+    assert load_song(directory).bpm == 60.0

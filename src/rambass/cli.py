@@ -248,10 +248,25 @@ def cmd_new(args: argparse.Namespace) -> int:
 
 
 # ── commands: audio analysis ─────────────────────────────────────────────
+def _tempo_is_settled(song: Song, detected: float, force: bool) -> bool:
+    """Whether writing *detected* would overwrite a tempo already decided.
+
+    ``status.analyze == "done"`` is the record that the tempo is settled — there
+    is no artifact to hash, because the value lands in ``song.yaml`` itself, so
+    `provenance` cannot speak for it. A detection that agrees is not a change
+    and is allowed through, so a re-run on a finished song is still a no-op
+    rather than a nag.
+    """
+    if force or song.status.get("analyze") != "done":
+        return False
+    return detected != song.bpm
+
+
 def cmd_analyze(args: argparse.Namespace) -> int:
     from .analyze import analyze_tempo
 
     project = _project()
+    refused = False
     for song in _songs(project, args.song, args.album, args.all):
         source = Path(args.file) if args.file else song.source_path()
         if not source:
@@ -260,6 +275,24 @@ def cmd_analyze(args: argparse.Namespace) -> int:
         _say(f"── {song.title}  ({source.name})")
         analysis = analyze_tempo(source, round_to=args.round_to)
         _say(analysis.summary())
+        if args.write and _tempo_is_settled(song, analysis.bpm_rounded, args.force):
+            # A settled tempo is a decision, and re-detecting is not an
+            # improvement on it. Manlio's own `notes:` are the case: detection
+            # said 60.02, the flat 60 was chosen deliberately, and the
+            # transcription was re-run against 60 rather than re-quantised —
+            # then one console click on "Find the tempo" put 60.02 back
+            # silently, which is 107 ms across that song's 320 beats and every
+            # hit placed against the wrong grid. Refuse, loudly, and let
+            # --force be the way to say you mean it.
+            _say(f"   REFUSED: song.yaml says {song.bpm:g} BPM and analyze is "
+                 f"marked done — detection now says {analysis.bpm_rounded:g}.")
+            _say("   A settled tempo is a decision: every hit is placed "
+                 "against it, so changing it invalidates the transcription.")
+            _say(f"   Re-run with --force to overwrite it, or leave "
+                 f"{song.bpm:g} alone.")
+            _say()
+            refused = True
+            continue
         if args.write:
             song.bpm = analysis.bpm_rounded
             if not song.bars and analysis.estimated_bars:
@@ -276,7 +309,7 @@ def cmd_analyze(args: argparse.Namespace) -> int:
                      f"(budget {analysis.subdivision_budget_ms:.0f} ms) — check the "
                      f"`drums clean` report for hits snapped to the wrong subdivision")
         _say()
-    return 0
+    return 1 if refused else 0
 
 
 def cmd_stems(args: argparse.Namespace) -> int:
@@ -2124,6 +2157,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_song_args(p)
     p.add_argument("--file", help="analyse this audio file instead of source/")
     p.add_argument("--write", action="store_true", help="write the tempo into song.yaml")
+    p.add_argument("--force", action="store_true",
+                   help="overwrite a tempo the manifest already calls settled")
     # Rounding to the nearest half-BPM used to be harmless, because the tempo was
     # only ever a starting point. It is not any more: transcription places every
     # hit against this number, and 0.25 BPM out is a second of slip across a
