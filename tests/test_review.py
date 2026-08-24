@@ -843,3 +843,219 @@ def test_a_dry_run_force_keeps_its_hands_off_the_file(cwd_song, monkeypatch):
     assert main(["review", "rebuild", cwd_song.slug, "--step", "click",
                  "--force", "render/click.wav", "--dry-run"]) == 0
     assert not click.with_suffix(".wav.bak").exists()
+
+
+# ── retiring a note ─────────────────────────────────────────────────────────
+#
+# Paolo: *"there is a "[open]" string that does nothing, also how do I remove a
+# wrong note?"*. The string was the note's `status` rendered as decoration, and
+# there was no answer to the second question at all: `NOTE_STATUSES` has had
+# `dismissed` since the ledger was written and nothing could set it.
+#
+# Two different acts, deliberately kept apart. **Dismiss** is a judgement --
+# "I listened, it was nothing" -- and it is a record worth keeping, which is
+# why `review_markdown` already has a `[-]` mark for it. **Remove** is for an
+# entry that should never have existed, filed at the wrong bar or against the
+# wrong instrument, and it leaves nothing behind.
+
+
+def _ledger(song):
+    from rambass.review import load_review
+
+    return load_review(song.path("qa", "review.yaml"))[1]
+
+
+def _note(bar, **kwargs):
+    from rambass.review import Note
+
+    return Note(bar=bar, **kwargs)
+
+
+def test_a_notes_key_tells_two_notes_at_one_bar_apart():
+    """The ledger is a hand-editable YAML file and has no ids, so identity is
+    the fields a human filed. Two notes at the same bar about different things
+    are two notes, and a client has to be able to name one of them."""
+    from rambass.review import note_key
+
+    crash = _note(9, kind="missing-hit", instrument="crash")
+    splash = _note(9, kind="missing-hit", instrument="splash")
+    timing = _note(9, kind="timing", comment="late")
+
+    assert note_key(crash) != note_key(splash) != note_key(timing)
+    assert note_key(crash) == note_key(_note(9, kind="missing-hit",
+                                             instrument="crash"))
+
+
+def test_removing_a_note_rewrites_both_files(song):
+    """The YAML is the source of truth and the markdown is for reading beside
+    the ruler; a removal that left the note in one of them would be worse than
+    no removal at all."""
+    from rambass.review import add_note, note_key, remove_note
+
+    add_note(song, _note(9, kind="missing-hit", instrument="crash",
+                         comment="keep me"))
+    add_note(song, _note(17, kind="timing", comment="wrong bar, delete"))
+    doomed = next(n for n in _ledger(song) if n.bar == 17)
+
+    left = remove_note(song, note_key(doomed))
+
+    assert [n.bar for n in left] == [9]
+    assert [n.bar for n in _ledger(song)] == [9]
+    text = song.path("qa", "review.md").read_text(encoding="utf-8")
+    assert "wrong bar" not in text and "keep me" in text
+
+
+def test_removing_only_takes_one_of_two_identical_notes(song):
+    """Filing the same thing twice is a slip, and undoing the slip should not
+    also undo the note that was wanted."""
+    from rambass.review import add_note, note_key, remove_note
+
+    for _ in range(2):
+        add_note(song, _note(9, kind="extra-hit", instrument="crash"))
+
+    left = remove_note(song, note_key(_ledger(song)[0]))
+    assert len(left) == 1
+
+
+def test_removing_a_note_that_is_not_there_says_so(song):
+    from rambass.project import ProjectError
+    from rambass.review import remove_note
+
+    with pytest.raises(ProjectError) as caught:
+        remove_note(song, "9|1|missing-hit|crash|")
+    assert "no such note" in str(caught.value)
+
+
+def test_a_promoted_note_cannot_be_quietly_removed(song):
+    """Its edit is in `song.yaml` now, and `drums restore` applies that blindly.
+    Removing the ledger entry would leave the addition behind with nothing on
+    record saying where it came from -- so the refusal names what to remove
+    instead, the way every other ProjectError here does."""
+    from rambass.manifest import save_song
+    from rambass.project import ProjectError
+    from rambass.review import (
+        add_note,
+        load_review,
+        note_key,
+        promote_notes,
+        remove_note,
+        write_ledger,
+    )
+
+    add_note(song, _note(9, beat=3.0, kind="missing-hit", instrument="crash"))
+    version, notes = load_review(song.path("qa", "review.yaml"))
+    promote_notes(song, notes)
+    save_song(song)
+    write_ledger(song, notes, version=version)
+
+    promoted = _ledger(song)[0]
+    assert promoted.status == "promoted"
+    with pytest.raises(ProjectError) as caught:
+        remove_note(song, note_key(promoted))
+    message = str(caught.value)
+    assert "drums.additions" in message and "9.3" in message
+
+
+def test_dismissing_a_note_keeps_it_and_stops_it_promoting(song):
+    """The record of having listened is the point: `review_markdown` marks it
+    `[-]`, and `promote` only ever touches an open note."""
+    from rambass.review import (
+        add_note,
+        load_review,
+        note_key,
+        promote_notes,
+        set_note_status,
+    )
+
+    add_note(song, _note(9, kind="missing-hit", instrument="crash",
+                         comment="thought I heard a crash"))
+    set_note_status(song, note_key(_ledger(song)[0]), "dismissed")
+
+    kept = _ledger(song)
+    assert len(kept) == 1 and kept[0].status == "dismissed"
+    assert "- [-]" in song.path("qa", "review.md").read_text(encoding="utf-8")
+
+    version, notes = load_review(song.path("qa", "review.yaml"))
+    assert promote_notes(song, notes) == (0, 1)
+    assert not song.drum_additions
+
+
+def test_a_dismissed_note_can_be_reopened(song):
+    """Changing your mind is the normal case in a review pass."""
+    from rambass.review import add_note, note_key, set_note_status
+
+    add_note(song, _note(9, kind="timing"))
+    key = note_key(_ledger(song)[0])
+    set_note_status(song, key, "dismissed")
+    set_note_status(song, key, "open")
+
+    assert _ledger(song)[0].status == "open"
+
+
+def test_a_status_the_ledger_does_not_know_is_refused(song):
+    from rambass.project import ProjectError
+    from rambass.review import add_note, note_key, set_note_status
+
+    add_note(song, _note(9, kind="timing"))
+    with pytest.raises(ProjectError) as caught:
+        set_note_status(song, note_key(_ledger(song)[0]), "maybe")
+    assert "open, promoted, dismissed" in str(caught.value)
+
+
+# ── the review loop has to actually close ────────────────────────────────────
+#
+# Paolo: *"once I have added a note, how is that processed? should I hit
+# "rebuild?" and the notes should be incorporated?"*. The honest answer was no,
+# and nothing said so. `drums restore` watches `drums/additions`, so promoting
+# a note does make `midi/drums-restored.mid` stale and Rebuild does regenerate
+# it -- but `qa/candidate.wav` is not in `PIPELINE` and the cut clips in
+# `qa/clips/` were cached forever, so the A/B went on playing the audio from
+# before the edit. Promote, rebuild, hear no change, conclude the note did
+# nothing.
+
+
+def test_a_candidate_older_than_the_midi_is_reported_as_stale(song):
+    """The one fact the review screen needs in order not to lie: the audio it
+    is about to play is older than the part it claims to be showing."""
+    import os
+
+    from rambass.review import candidate_state
+
+    midi = song.drum_midi_path("restored")
+    midi.parent.mkdir(parents=True, exist_ok=True)
+    midi.write_bytes(b"MThd")
+    candidate = song.path("qa", "candidate.wav")
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_bytes(b"RIFF")
+
+    # Rendered after the MIDI: current.
+    os.utime(candidate, (os.path.getmtime(midi) + 10,) * 2)
+    state = candidate_state(song)
+    assert state["fresh"] is True and state["exists"] is True
+
+    # ...and then the MIDI is rebuilt under it.
+    os.utime(midi, (os.path.getmtime(candidate) + 10,) * 2)
+    state = candidate_state(song)
+    assert state["fresh"] is False
+    assert "drums-restored.mid" in state["why"]
+    assert state["command"] == f"rambass review render {song.slug}"
+
+
+def test_a_missing_candidate_is_not_called_stale(song):
+    """Missing and out of date are different things, and the screen already has
+    a per-side "no clip yet" message for the first one."""
+    from rambass.review import candidate_state
+
+    state = candidate_state(song)
+    assert state["exists"] is False and state["fresh"] is False
+
+
+def test_rendering_a_candidate_is_a_step_the_console_may_run(song):
+    """`run_step_command` will only run what a stage screen put a button on, so
+    the review screen's re-render button has to come from the same list -- the
+    two cannot be allowed to drift."""
+    from rambass.provenance import stale_report
+    from rambass.review import runnable_commands
+
+    assert (f"rambass review render {song.slug}"
+            in runnable_commands(song, stale_report(song)))

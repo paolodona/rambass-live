@@ -3,10 +3,13 @@
 **Where the repo is, as of 2026-08-24: Phases 0–4 are built.** `rambass
 console` starts the console (`console.py` over `review.py`, tested in
 `tests/test_console.py` / `tests/test_review.py`); `review rebuild / clips /
-render / note / promote / status` are commands. **Gate R2 is answered: yes**
-— see "The spike, answered" below. Still open: the Phase 5 thin lyrics/gx100
-views, and a set-wide batch rebuild. The rest of this document is the scope
-as designed; where it says "would", it now mostly "does".
+render / note / promote / status` are commands. The review screen's stack was
+rebuilt on 2026-08-24 -- one gutter, one mapping in beats, a playhead and a
+Reaper-numbered ruler; see "the review screen's one stack" below.
+**Gate R2 is answered: yes** — see "The spike, answered" below. Still open:
+the Phase 5 thin lyrics/gx100 views, and a set-wide batch rebuild. The rest
+of this document is the scope as designed; where it says "would", it now
+mostly "does".
 
 ## The spike, answered
 
@@ -83,8 +86,11 @@ the two A/B waveforms **stacked**, not toggled, so a level difference at the
 same bar is a visible fact rather than something you have to remember across
 a switch — the mocked example is a snare that reads much quieter in the
 candidate than the reference at bar 23 — and a shared bar.beat ruler runs
-underneath both, the same addressing `rambass drums missing` already prints
+between them, the same addressing `rambass drums missing` already prints
 (e.g. `23.2.1`), so a problem can be named precisely without opening Reaper.
+As built, the ruler carries **Reaper's** bar numbers and the instrument grid
+hangs off the same ruler in the same stack — see "the review screen's one
+stack" below.
 
 Grounding the work in real data surfaced a doc inconsistency, and the first
 attempt at fixing it picked the wrong side — worth recording because the
@@ -98,6 +104,191 @@ verse-2 *plus its lift*. All four places now say so precisely, and CLAUDE.md
 notes that the manifest wins when a doc disagrees. (The
 `test_consolidate_spans.py` fixture spanning 20–32 is unaffected: it is a
 synthetic shape, and its docstring now says "verse-2 plus its lift".)
+
+## The review screen's one stack, and its two clocks
+
+Paolo, using it: *"the instrument grid with the different drum parts needs to
+sit under the two wavs (same width) so that the hits align perfectly with the
+waveform above"*, *"when playing there should be a cursor that shows me where
+we are"*, and *"much more granular bar subdivisions eg 3.1, 3.2, 3.3 and a
+vertical subtle grid on top of the wav canvas so I see where they align"*.
+
+Three of the four things that broke alignment were not visible as bugs:
+
+* **Two label gutters.** The A/B lanes reserved 170px and a 12px gap for their
+  label; the grid rows reserved 90px and 14px. So every grid canvas was 78px
+  wider than the waveform above it and started 78px further left. There is one
+  `--gutter` now, used by all three row kinds, and every canvas in the stack
+  carries the same 1px border — `box-sizing:border-box` is global, so a canvas
+  with a border has a `clientWidth` 2px smaller than one without.
+* **Four drawers, four extents.** `drawWave` spread over `canvas.width`,
+  `drawRuler` over `width - 2`, and `drawGrid` put bar lines at `width` but hits
+  at `width - 4 + 1`. All of it goes through one `mark.frac * width` now, and a
+  hit is drawn *centred* on its line rather than starting at it.
+* **Bar arithmetic on sections that are not whole bars.** Every drawer computed
+  `end_bar - start_bar`, which counts `closing-fill` (77.3–79.1) as two bars
+  when it is one and a half — putting bar 78 half way across the clip instead
+  of a third of the way in, 9% of the section out on every line, every hit and
+  the playhead. The mapping is in **beats** through the section
+  (`sectionBeats` / `beatOffset` / `beatMarks`), which is also what lets a
+  section start mid-bar at all, and `playheadBar` was on the same arithmetic —
+  so the error reached `song.yaml` through `review promote`.
+
+Two decisions, both Paolo's, both cheap to get wrong later:
+
+* **The ruler prints Reaper numbers**, `bar + count_in.bars`. It is the ruler
+  read next to Reaper's own and `qa/review.md` already prints them, so this is
+  the same one-conversion-at-the-edge rule `restore.checklist` follows. The
+  conversion happens in `drawRuler` and nowhere else: the section header above
+  still says the musical bars, because that is what `song.yaml` says, and a
+  stored note stays musical. `count_in_bars` is in the review payload for this
+  and nothing else.
+* **Gridlines are evenly spaced on both lanes**, so `align.yaml` is not
+  involved. The reference take breathes — 12.08 s against the candidate's
+  12.00 s on Manlio's verse-1 — so a reference line can sit up to ~90 ms from
+  where that beat was actually played. That is accepted, and the payoff is
+  real: both lanes map musical position linearly, so **one** playhead element
+  spans the whole stack instead of one per lane with its own mapping. If
+  somebody later wants the reference lines where the band put them, the data is
+  there (`AlignMap.source_at`, 310 per-beat anchors on Manlio) — but it stops
+  being one line.
+
+**Clicking the stack places the playhead.** Paolo: *"we need the ability to
+click on the wav/grid and move the playhead so we can zone in on a given hit or
+portion"*. Either waveform, the ruler and every instrument row all take a click
+or a drag, because they share one mapping — so it does not matter which row
+the hit was spotted in. The position **snaps to the song's own grid**: a hit is on
+the grid (`drums.subdivision: 3` on Manlio, so its shuffle triplets), and a
+pixel-exact seek lands between two lines, which is never the position anybody
+was aiming for. Hold alt to place it exactly. The transport reads the position
+back in **Reaper's** numbers and `restore.checklist`'s format, so a spot found
+by ear can be typed into `rambass section` or matched against what `rambass
+drums missing` printed — while the note the same playhead would log stays
+musical, as the ledger stores it.
+
+**Two things the click exposed, both of which were the panel writing what it
+never showed.** Paolo, after logging one note: *"I was not aware I was adding a
+note to the 'crash' (no visual clue of what was selected) and I dont know what
+1.1 refers to (again I did not select it, and nevertheless the section starts at
+3.1)"*.
+
+* `saveNote` hard-coded `instrument: "crash"` for every missing- or extra-hit
+  note. The instrument is now a control on screen, populated from
+  `drummap.CANONICAL` through the payload — so it cannot drift from what
+  `review.promote_notes` will accept — and it defaults to **nothing**, which
+  makes the note a written-down observation that `promote` leaves alone. That is
+  a better default than a guess nobody was shown. Clicking an **instrument row**
+  picks that instrument and highlights the row, which is the visual clue the
+  panel was missing: the row is already labelled. Also the answer to *"should we
+  split crash into crash, splash etc?"* — it already is. `crash`, `crash_2`,
+  `crash_choke`, `china`, `china_choke` and `splash` are all in `CANONICAL` and
+  mapped in `general-midi.yaml` (GM 49, 57, 49-choked, 52, 52, 55). Nothing to
+  add; the panel was hiding the vocabulary.
+* The chip printed the note's stored **musical** bar while the ruler above it
+  prints **Reaper's**. Both were right and they disagreed by the count-in, so a
+  note correctly filed at musical 1.1 read `1.1` against a ruler saying `3.1`
+  and looked two bars wrong. Every number a human reads on this screen now goes
+  through one `reaperAt()` — the ruler, the transport readout, the "filing at"
+  line and the chips — and the stored note stays musical. Mixing two clocks
+  on one screen is the cost of the Reaper-numbered ruler, and this is where
+  it has to be paid.
+
+**Clips are served with byte ranges, or none of the above works.** `_clip`
+answered every request with 200 and the whole body, ignoring `Range` and never
+sending `Accept-Ranges` — and a browser treats a media resource with no range
+support as **not seekable**, so assigning `currentTime` snaps back to the start
+of what is buffered. Clicking the waveform computed the right position and
+playback restarted from the beginning, which reads as a page bug and is not one:
+no amount of work on the page could have fixed it. `parse_byte_range` handles
+the three single-range forms a media element actually sends, and answers the two
+kinds of no differently — a header it cannot parse is ignored (RFC 9110; a
+clip that 400s here is a clip that never plays), while a well-formed range past
+the end is the 416 a player needs to correct itself from. The handler is on
+HTTP/1.1 now, because seeking is a stream of range requests and HTTP/1.0 closes
+the connection after each one. One more of the same family: seeking to *exactly*
+`duration` fires `ended`, so clicking the right-hand edge of a lane restarted
+the loop — `seek` stops 10 ms short.
+
+**The notes panel reads as a list, and a note can be retired.** Paolo: *"there
+is a `[open]` string that does nothing, also how do I remove a wrong note?"* and
+*"can the notes be listed in a ordered list rather than like tag/pills? (they
+pile up horizontally and are difficult to read)"*. Both the same panel. The
+notes were inline pills, which wrap mid-sentence and have nowhere to put a
+control; they are a list now — position, kind, instrument, comment, then the
+acts — and `[open]` is gone, because it was the *default* status printed on
+every row, which said nothing and read as a button. A status badge is drawn
+only for `promoted` and `dismissed`.
+
+Two ways to retire one, deliberately kept apart:
+
+* **dismiss** is a judgement worth keeping — "I listened, it was nothing".
+  `NOTE_STATUSES` has had `dismissed` since the ledger was written and nothing
+  could set it; `review_markdown` already marks it `[-]`, and `promote_notes`
+  only ever touches an open note. Reversible.
+* **remove** is for an entry that should never have existed — the wrong bar,
+  the wrong instrument — and leaves nothing behind. It asks first, because the
+  comment is typed by hand. `remove_note` **refuses a promoted note**: its edit
+  is in `song.yaml` and `drums restore` applies that blindly, so dropping the
+  ledger entry would leave the addition in place with nothing on record saying
+  where it came from. The refusal names the entry to take out instead.
+
+Identity is `note_key` — the fields a human filed, joined. `qa/review.yaml` has
+no ids and should not grow any: it is a hand-editable file, and an id is a thing
+whoever edits it has to maintain for no benefit of their own. An index would
+have done, right up until the list re-sorted under two open tabs and deleted the
+wrong row.
+
+**And the loop has to actually close.** Paolo: *"once I have added a note, how
+is that processed? should I hit rebuild and the notes should be incorporated?"*
+The honest answer was no, and nothing said so. The chain is:
+
+1. the note lands in `qa/review.yaml` — raw, undecided
+2. **Promote** turns the confident ones (`missing-hit` / `extra-hit` with an
+   instrument in `CANONICAL`) into `drums.additions` / `removals`; a timing or
+   velocity complaint is left for a human, which is `PROMOTABLE`'s whole point
+3. `git diff` — machine proposes, git reviews
+4. **Rebuild** — `drums restore` watches `drums/additions`, so the promote makes
+   `midi/drums-restored.mid` stale and this regenerates it
+5. **Re-render the candidate**, which is the step that was missing
+
+`qa/candidate.wav` is *not* in `provenance.PIPELINE` and should not be: it needs
+the VST3 plugin, so on a machine without one every extracted song would report a
+missing artifact and Rebuild would fail on a step that is not part of the show —
+the same argument that keeps the practice pair out. So `candidate_state` reports
+whether the candidate is older than the MIDI it was rendered from, the screen
+says so in an amber bar with the button that fixes it, and the whole chain is
+written next to the three buttons that carry it out. Without that, promoting and
+rebuilding played back the audio from before the edit and the note looked like it
+had done nothing.
+
+The other half was the clip cache: `_clip` cut a clip on first request and kept
+it forever, so a re-rendered candidate went on being A/B'd as the old audio. It
+is an mtime check against the source **and** `song.yaml` — every reason the
+source moved counts, including a section boundary edit, which does not move the
+audio but does move where the clip starts and stops. Resolved from the clip's
+own file name rather than from `clip_spans`, because a scrub is a stream of range
+requests and every one of them lands there; parsing a 310-anchor align map per
+request is not the place to be.
+
+Not built, and the obvious next thing if the click is not enough: **looping a
+selected range** rather than the whole section. Drag-select two positions and
+loop between them, which is what "or portion" would want for A/B-ing one bar
+over and over. The clip is already cut per section, so this is a pair of
+fractions and a `timeupdate` check, not new audio.
+
+The grid resolution is the song's own `drums.subdivision`, which the payload
+already carried and the page ignored: 3 on Manlio, so the subtle lines are the
+shuffle triplets its hats and its 4.667 kicks actually sit on. Lines and labels
+both thin out rather than crowd — `theme-finale` is 48 beats in ~1100px, where
+a label per beat cannot fit and a line per triplet is mush, while
+`theme-intro-stop` is 8 beats and can carry both.
+
+Two tests run the page's geometry **in node** (skipped when node is absent, the
+same rule as `test_the_pages_script_parses`, ffmpeg and librosa): one exercises
+`beatMarks`/`positionAt` on Manlio's two awkward sections, one draws a lane, a
+ruler and a grid row onto recording canvases of equal width and asserts a bar
+line lands at the same x in all three. Checking that by eye in a browser and
+writing nothing down is what CLAUDE.md's rule about hand verification is for.
 
 ## The dashboard
 
@@ -233,8 +424,9 @@ being the whole application.
    sync**, at the same playhead position, so switching which one is audible
    never restarts playback — the fix for the solo-track-scrub-back-solo-
    other-track cycle this whole thing started from.
-3. **Instrument grid.** One row per canonical instrument name with a hit in
-   the visible bars — kick, snare, sidestick, every tom, hi-hat
+3. **Instrument grid**, in the same stack as the waveforms and on the same
+   ruler, so a hit sits under its own transient. One row per canonical
+   instrument name with a hit in the visible bars — kick, snare, sidestick, every tom, hi-hat
    closed/open, ride, ride bell, every cymbal — rendered straight from the
    MIDI (`midiio.read_drum_midi` + `drummap.CANONICAL`). This is the
    toms-and-cymbals visibility Reaper's default drum view does not give.

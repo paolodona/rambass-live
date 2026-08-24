@@ -55,6 +55,41 @@ def _songs_in_order(project: Project, setlist: str):
     return ordered + rest, cut
 
 
+def parse_byte_range(header: str, size: int):
+    """``(start, stop)`` for a ``Range:`` header over a *size*-byte file.
+
+    ``None`` means "no usable range, send the whole thing" -- which RFC 9110
+    requires for a header this cannot parse, rather than an error: a clip that
+    refuses to serve is a clip that does not play at all. ``()`` means the
+    range is well formed but unsatisfiable, which *is* an error (416), because
+    that is the answer a player needs in order to correct itself.
+
+    Only the single-range forms a media element actually sends: ``bytes=N-M``,
+    ``bytes=N-`` to resume, and ``bytes=-N`` for a trailer.
+    """
+    units, _, spec = (header or "").partition("=")
+    if units.strip().lower() != "bytes" or "," in spec:
+        return None
+    first, sep, last = spec.strip().partition("-")
+    if not sep:
+        return None
+    try:
+        if not first:
+            if not last:
+                return None
+            start, stop = max(0, size - int(last)), size
+        else:
+            start = int(first)
+            stop = size if not last else min(size, int(last) + 1)
+    except ValueError:
+        return None
+    if start >= size:
+        return ()          # well formed, past the end: 416
+    if stop <= start:
+        return None        # e.g. bytes=5-2 -- nonsense, so ignore it
+    return start, stop
+
+
 def _find_song(project: Project, slug: str):
     try:
         return load_song(project.find_song_dir(unquote(slug)))
@@ -66,6 +101,13 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     """Routes only. All judgement lives in review.py, where the tests are."""
 
     server_version = "rambass-console"
+    #: Media seeking is a stream of range requests, and HTTP/1.0 closes the
+    #: connection after every one of them -- so a scrub across a 5.6 MB clip
+    #: becomes a new TCP connection per move, and some media stacks will not
+    #: treat a 1.0 resource as reliably seekable at all. Safe here because
+    #: every reply goes through `_send` / `_send_file` / `_json`, all of which
+    #: set an accurate Content-Length, which is what keep-alive needs.
+    protocol_version = "HTTP/1.1"
     project: Project = None  # set by make_server
     setlist: str = ""
 
@@ -84,6 +126,40 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     def _send(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_file(self, path: Path, content_type: str) -> None:
+        """Serve *path*, honouring ``Range``. What makes a clip seekable.
+
+        A browser will not let you seek in a media resource that does not
+        advertise byte ranges: `element.seekable` stays empty and assigning
+        `currentTime` snaps back to the start of what is buffered. So clicking
+        the waveform moved the playhead and playback restarted from the
+        beginning -- a bug that looked like a page bug and was not one.
+
+        Only the requested slice is read, rather than the whole file per
+        request: seeking around a 5.6 MB clip is a stream of range requests,
+        and `read_bytes()` for ten bytes of it is the wrong shape.
+        """
+        size = path.stat().st_size
+        wanted = parse_byte_range(self.headers.get("Range", ""), size)
+        if wanted == ():
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        start, stop = wanted or (0, size)
+        with path.open("rb") as handle:
+            handle.seek(start)
+            body = handle.read(stop - start)
+        self.send_response(206 if wanted else 200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Accept-Ranges", "bytes")
+        if wanted:
+            self.send_header("Content-Range", f"bytes {start}-{stop - 1}/{size}")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -163,14 +239,16 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     def _review(self, slug: str) -> None:
         """Everything the A/B review screen needs, addressed on both clocks."""
         from .align import load_align
-        from .drummap import load_drum_map
+        from .drummap import CANONICAL, load_drum_map
         from .midiio import read_drum_midi
         from .review import (
+            candidate_state,
             clip_name,
             clip_sources,
             clip_spans,
             grid_rows,
             load_review,
+            notes_payload,
         )
 
         song = _find_song(self.project, slug)
@@ -195,6 +273,20 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             "approximate": bool(spans and spans[0].approximate),
             "beats_per_bar": song.timeline().time_signature[0],
             "subdivision": song.drum_subdivision,
+            # The ruler is read next to Reaper's, and `qa/review.md` already
+            # prints Reaper numbers, so the screen adds the count-in at the
+            # drawing edge -- the same one-conversion-at-the-edge rule
+            # `restore.checklist` follows. Stored notes stay musical.
+            "count_in_bars": song.count_in_bars,
+            # The kit a note may name, straight from `drummap.CANONICAL`:
+            # `review.promote_notes` skips a note whose instrument is not in
+            # it, so a panel with its own list would offer names that silently
+            # never promote.
+            "instruments": list(CANONICAL),
+            # Whether the audio this screen is about to play still matches the
+            # part it claims to show. `drums restore` is in PIPELINE and the
+            # candidate render is not, so Rebuild can leave the two out of step.
+            "candidate": candidate_state(song),
             "midi": midi_path.name if midi_path.exists() else "",
             "sections": [{
                 "name": span.name,
@@ -203,7 +295,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 "cand_url": f"/clips/{song.slug}/{clip_name(span, 'cand')}",
                 "ref_url": f"/clips/{song.slug}/{clip_name(span, 'ref')}",
             } for span in spans],
-            "notes": [note.to_dict() for note in notes],
+            "notes": notes_payload(notes),
             "grid": grid,
             # Per side, so a blank canvas names its own missing file instead
             # of one string listing both of them.
@@ -223,7 +315,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._error(404, f"no such clip: {rest}")
             return
         target = song.path("qa", "clips", name)
-        if not target.is_file():
+        side = "cand" if name.endswith("-cand.wav") else "ref"
+        if self._clip_is_stale(song, target, side):
             amap = load_align(song.path("practice", "align.yaml"))
             wanted = None
             for span in clip_spans(song, amap):
@@ -248,7 +341,35 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                                (span.reference_start, span.reference_duration))
             review_module.cut_clip(source.path, target,
                                    start=start, duration=duration)
-        self._send(200, target.read_bytes(), "audio/wav")
+        self._send_file(target, "audio/wav")
+
+    @staticmethod
+    def _clip_is_stale(song, target: Path, side: str) -> bool:
+        """Whether *target* has to be cut again before it is served.
+
+        Clips were cut on first request and kept forever, so a re-rendered
+        candidate went on being A/B'd as the audio from *before* the edit --
+        the review loop looking closed while playing a stale part. An mtime
+        check rather than a provenance entry per clip, because every reason the
+        source moved counts: a re-render, a re-separation, a section boundary
+        edited in ``song.yaml`` (which does not move the audio but does move
+        where this clip starts and stops).
+
+        Resolved from the file name rather than from :func:`clip_spans`, which
+        would parse the whole 310-anchor align map -- and a scrub through one
+        clip is a stream of range requests, every one of them landing here.
+        """
+        from .review import clip_sources
+
+        if not target.is_file():
+            return True
+        cut_at = target.stat().st_mtime
+        source = clip_sources(song).get(side)
+        watched = [song.directory / "song.yaml"]
+        if source is not None and source.available:
+            watched.append(Path(source.path))
+        return any(path.is_file() and path.stat().st_mtime > cut_at
+                   for path in watched)
 
     # ── POST ────────────────────────────────────────────────────────────────
     def do_POST(self) -> None:  # noqa: N802 - stdlib naming
@@ -270,6 +391,10 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 self._run(song, body)
             elif path == "/api/note":
                 self._note(song, body)
+            elif path == "/api/note/remove":
+                self._remove_note(song, body)
+            elif path == "/api/note/status":
+                self._note_status(song, body)
             elif path == "/api/promote":
                 self._promote(song)
             elif path == "/api/export-section":
@@ -349,7 +474,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     def _note(self, song, body: dict) -> None:
         from datetime import date
 
-        from .review import NOTE_KINDS, Note, add_note
+        from .review import NOTE_KINDS, Note, add_note, notes_payload
 
         kind = str(body.get("kind", "other"))
         if kind not in NOTE_KINDS:
@@ -365,12 +490,30 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             comment=str(body.get("comment", "")),
             created=date.today().isoformat(),
         ))
-        self._json({"notes": [note.to_dict() for note in notes]})
+        self._json({"notes": notes_payload(notes)})
 
+    def _remove_note(self, song, body: dict) -> None:
+        """Drop one note. For an entry filed by mistake, not for one that
+        turned out to be nothing -- that is what dismissing is."""
+        from .review import notes_payload, remove_note
+
+        self._json({"notes": notes_payload(
+            remove_note(song, str(body.get("key", ""))))})
+
+    def _note_status(self, song, body: dict) -> None:
+        from .review import notes_payload, set_note_status
+
+        self._json({"notes": notes_payload(set_note_status(
+            song, str(body.get("key", "")), str(body.get("status", ""))))})
 
     def _promote(self, song) -> None:
         from .manifest import save_song
-        from .review import load_review, promote_notes, write_ledger
+        from .review import (
+            load_review,
+            notes_payload,
+            promote_notes,
+            write_ledger,
+        )
 
         version, notes = load_review(song.path("qa", "review.yaml"))
         promoted, skipped = promote_notes(song, notes)
@@ -379,7 +522,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             save_song(song)
             write_ledger(song, notes, version=version)
         self._json({"promoted": promoted, "skipped": skipped,
-                    "notes": [note.to_dict() for note in notes]})
+                    "notes": notes_payload(notes)})
 
     def _export_section(self, song, body: dict) -> None:
         """Write one section's MIDI slice where EZdrummer's browser can see it.

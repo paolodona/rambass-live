@@ -14,6 +14,11 @@
     --accent:#8e97f2; --accent-soft:rgba(142,151,242,.14);
     --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
     --mono:ui-monospace,Menlo,Consolas,monospace;
+    /* One gutter for every row of the review stack -- waveform lanes, ruler
+       and instrument grid alike. It used to be 170px+12 for the lanes and
+       90px+14 for the grid, so a grid canvas was 78px wider than the waveform
+       above it and a hit did not sit under its own transient. */
+    --gutter:150px; --gutter-gap:12px;
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); }
@@ -103,38 +108,98 @@
   /* review view */
   .abwrap { border:1px solid var(--border); border-radius:12px;
             background:var(--panel); padding:20px 24px; margin-top:16px; }
-  .lane { display:flex; align-items:center; gap:12px; margin-bottom:6px; }
-  .lane .who { width:170px; flex:none; font-size:12px; color:var(--text-dim); }
+  /* Every canvas the eye compares vertically lives in here, and nothing else
+     does: one positioning context, so the playhead is one element measured
+     once. */
+  #stack { position:relative; }
+  /* The three row kinds are the same geometry on purpose. Note the border on
+     *all* canvases, transparent where it is not wanted: `box-sizing:border-box`
+     is global, so a canvas with a border has a clientWidth 2px smaller than one
+     without, and 2px is a visible misalignment at this scale. */
+  .lane, .ruler, .gridrow { display:flex; align-items:center;
+                            gap:var(--gutter-gap); }
+  .lane .who, .ruler .who, .gridrow .who { width:var(--gutter); flex:none; }
+  /* Every one of them is clickable, and they all mean the same thing:
+     put the playhead here. `touch-action:none` so a drag on a laptop
+     trackpad scrubs instead of scrolling the page under the pointer. */
+  .lane canvas, .ruler canvas, .gridrow canvas {
+      flex:1; min-width:0; border:1px solid transparent; border-radius:6px;
+      cursor:pointer; touch-action:none; }
+  .lane { margin-bottom:6px; }
+  .lane .who { font-size:12px; color:var(--text-dim); }
   .lane .who b { color:var(--text); font-weight:500; }
-  .lane canvas { flex:1; height:52px; background:var(--raised);
-                 border-radius:6px; border:1px solid var(--border-soft); }
+  .lane canvas { height:52px; background:var(--raised);
+                 border-color:var(--border-soft); }
   .lane.active canvas { border-color:var(--accent); }
-  .ruler { display:flex; align-items:center; gap:12px; }
-  .ruler .who { width:170px; flex:none; font-family:var(--mono); font-size:10px;
+  .ruler .who { font-family:var(--mono); font-size:10px;
                 color:var(--text-faint); text-align:right; padding-right:4px; }
-  .ruler canvas { flex:1; height:24px; }
+  .ruler canvas { height:30px; }
+  .gridrow { margin:8px 0; }
+  .gridrow .who { font-size:12.5px; color:var(--text-dim);
+                  overflow:hidden; text-overflow:ellipsis;
+                  white-space:nowrap; }
+  .gridrow canvas { height:26px; background:var(--raised); }
+  /* Which instrument a note is about. The row is the label, so the row is the
+     clue -- a note used to be filed against "crash" with nothing on screen
+     saying so. */
+  .gridrow.picked .who { color:var(--accent); }
+  .gridrow.picked canvas { border-color:var(--accent); }
+  /* One line for the whole stack, which is only possible because both lanes
+     map musical position linearly (the reference take breathes, and that is
+     accepted here -- see docs/review-ui.md). Moved by transform: a frame loop
+     that redrew four canvases would be a redraw per frame for nothing. */
+  .playhead { position:absolute; top:0; bottom:0; width:2px;
+              background:var(--accent); opacity:.85; pointer-events:none;
+              /* +1px for the canvas border: `clientWidth`, which the
+                 transform is measured in, is the content box. */
+              left:calc(var(--gutter) + var(--gutter-gap) + 1px);
+              will-change:transform; }
   .transport { display:flex; align-items:center; justify-content:center;
                gap:14px; margin-top:14px; font-size:12px; color:var(--text-faint); }
-  .gridbox { border:1px solid var(--border); border-radius:12px;
-             background:var(--panel); padding:16px 24px; margin-top:16px; }
-  .gridrow { display:flex; align-items:center; gap:14px; margin:8px 0; }
-  .gridrow .who { width:90px; flex:none; font-size:12.5px; color:var(--text-dim); }
-  .gridrow canvas { flex:1; height:26px; background:var(--raised);
-                    border-radius:6px; }
   .notesbox { border:1px solid var(--border); border-radius:12px;
               background:var(--panel); padding:16px 22px; margin-top:16px; }
   .notesbox input[type=text] { flex:1; background:var(--raised);
       border:1px solid var(--border); border-radius:7px; padding:10px 12px;
       color:var(--text); font-family:var(--sans); font-size:13px; outline:none; }
+  .notesbox select { background:var(--raised); border:1px solid var(--border);
+      border-radius:7px; padding:8px 10px; color:var(--text);
+      font-family:var(--mono); font-size:12px; outline:none; }
+  .notesbox .filing { display:flex; align-items:center; gap:10px;
+      margin-top:10px; font-size:12px; color:var(--text-faint); }
   .pill { padding:7px 11px; border-radius:6px; background:var(--raised);
           border:1px solid var(--border); color:var(--text-dim);
           font-size:11.5px; cursor:pointer; }
   .pill.on { background:var(--accent); color:#151726; border-color:var(--accent); }
-  .chip { display:inline-flex; align-items:center; gap:8px; padding:7px 12px;
-          background:var(--raised); border:1px solid var(--border-soft);
-          border-radius:7px; font-size:12px; margin:4px 6px 0 0;
-          color:var(--text-dim); }
-  .chip .at { font-family:var(--mono); color:var(--text-faint); }
+  /* A list, read top to bottom. These were inline pills, which pile up
+     horizontally and wrap mid-sentence -- unreadable once a section has more
+     than about three of them, and with nowhere to put a per-note control. */
+  .notelist { margin-top:12px; border:1px solid var(--border-soft);
+              border-radius:8px; overflow:hidden; }
+  .note { display:flex; align-items:baseline; gap:12px; padding:9px 12px;
+          font-size:12.5px; color:var(--text-dim);
+          border-bottom:1px solid var(--border-soft); }
+  .note:last-child { border-bottom:none; }
+  .note:nth-child(even) { background:rgba(255,255,255,.015); }
+  .note .at { font-family:var(--mono); color:var(--text); width:64px;
+              flex:none; text-align:right; }
+  .note .kind { font-family:var(--mono); font-size:11px; width:96px;
+                flex:none; color:var(--text-faint); }
+  .note .inst { width:104px; flex:none; color:var(--text); }
+  .note .inst.none { color:var(--text-faint); font-style:italic; }
+  .note .said { flex:1; color:var(--text-dim); min-width:0; }
+  .note .badge { font-family:var(--mono); font-size:10.5px; padding:2px 7px;
+                 border-radius:5px; flex:none; }
+  .note .badge.promoted { background:rgba(63,207,142,.16); color:var(--green); }
+  .note .badge.dismissed { background:var(--raised); color:var(--text-faint); }
+  .note.dismissed .said, .note.dismissed .inst { text-decoration:line-through;
+                                                 color:var(--text-faint); }
+  .note .acts { flex:none; display:flex; gap:6px; }
+  .note .act { font-family:var(--mono); font-size:11px; padding:3px 8px;
+               border:1px solid var(--border); border-radius:5px;
+               background:var(--raised); color:var(--text-dim);
+               cursor:pointer; }
+  .note .act:hover { color:var(--text); border-color:var(--text-faint); }
+  .note .act.drop:hover { color:var(--red); border-color:var(--red); }
   .hintstrip { position:fixed; right:28px; bottom:22px; display:flex;
                align-items:center; gap:8px; padding:9px 13px;
                background:var(--raised); border:1px solid var(--border);
@@ -159,6 +224,11 @@
     <tr><td><span class="kbd">s</span></td><td>switch which sample is audible (candidate &harr; reference)</td></tr>
     <tr><td><span class="kbd">n</span> / <span class="kbd">p</span></td><td>next / previous section</td></tr>
     <tr><td><span class="kbd">,</span> / <span class="kbd">.</span></td><td>previous / next bar inside the section</td></tr>
+    <tr><td><span class="kbd">click</span></td><td>put the playhead there &mdash; on either
+      waveform, the ruler or any instrument row; drag to scrub. Snaps to the
+      song's grid; hold <span class="kbd">alt</span> to place it exactly.
+      Clicking an <b>instrument row</b> also files the next note against that
+      instrument</td></tr>
     <tr><td><span class="kbd">l</span></td><td>toggle loop</td></tr>
     <tr><td><span class="kbd">m</span> / <span class="kbd">x</span></td><td>log a missing-hit / extra-hit note at the playhead</td></tr>
     <tr><td><span class="kbd">Enter</span> / <span class="kbd">Esc</span></td><td>commit / discard the open note</td></tr>
@@ -518,6 +588,33 @@ async function renderReview(slug) {
   view.mount();
 }
 
+/* How coarse the three line weights are per canvas kind. One palette, so a
+   bar line reads as a bar line whichever row the eye is on. */
+const LANE_GRID  = {bar:"#454c5b", beat:"#343b47", sub:"#292e37"};
+const RULER_GRID = {bar:"#3b414e", beat:"#2e343e", sub:"#262b33", top:10};
+const ROW_GRID   = {bar:"#3f4653", beat:"#2f353f", sub:"#272c34"};
+/* Device pixels per CSS pixel. Fixed, not `devicePixelRatio`: the canvases are
+   drawn once per repaint and 2x is sharp enough on the machine this runs on,
+   while a fractional ratio puts a 1px grid line between two pixels. */
+const DPR = 2;
+/* How many peak buckets a clip is reduced to. Fixed, so the cache survives a
+   resize -- the whole point of caching is not decoding 12 seconds of audio to
+   answer a window drag. */
+const BUCKETS = 600;
+
+function peaksOf(buffer) {
+  const samples = buffer.getChannelData(0);
+  const per = Math.max(1, Math.floor(samples.length / BUCKETS));
+  const out = new Float32Array(BUCKETS);
+  for (let i = 0; i < BUCKETS; i++) {
+    const from = i * per, to = Math.min(samples.length, from + per);
+    let peak = 0;
+    for (let j = from; j < to; j += 4) peak = Math.max(peak, Math.abs(samples[j]));
+    out[i] = peak;
+  }
+  return out;
+}
+
 class ReviewView {
   constructor(slug, data) {
     this.slug = slug; this.data = data;
@@ -525,12 +622,28 @@ class ReviewView {
     this.noteKind = "missing-hit";
     this.cand = new Audio(); this.ref = new Audio();
     this.cand.preload = this.ref.preload = "auto";
+    /* Decoded peaks per clip URL. A repaint is an ordinary event now -- a
+       resize, a section change, peaks landing -- and re-fetching and
+       re-decoding the wav for each one is what made a redraw expensive enough
+       to avoid, which is why a window resize used to leave every canvas at its
+       old width and the whole stack misaligned. */
+    this.peakCache = {};
+    this.marks = [];
+    this.frame = 0;
+    this.scrubbing = false;
   }
   get section() { return this.data.sections[this.index]; }
 
   mount() {
     const pills = ["missing-hit","extra-hit","timing","other"].map((kind) =>
       `<span class="pill" data-kind="${kind}">${kind.replace("-", " ")}</span>`).join(" ");
+    /* The whole kit, from `drummap.CANONICAL` via the payload -- which is where
+       `crash_2`, `china` and `splash` have been all along. Blank first: a note
+       with no instrument is a written-down observation, which `promote` leaves
+       alone, and that is a better default than a guess nobody was shown. */
+    const instruments = [`<option value="">— no instrument —</option>`].concat(
+      (this.data.instruments || []).map((name) =>
+        `<option value="${esc(name)}">${esc(name)}</option>`)).join("");
     app.innerHTML = `
       <div class="crumb" onclick="location.hash='#/song/${encodeURIComponent(this.slug)}'">
         &larr; ${esc(this.data.title)} / Drums</div>
@@ -545,34 +658,63 @@ class ReviewView {
         <span><span class="kbd">n</span> next section</span></div>
       ${this.data.approximate ? `<div class="legend" style="border-color:rgba(234,162,62,.4)">
         reference timing is offset-only — <span style="font-family:var(--mono)">rambass align ${esc(this.slug)} --fit</span> makes it exact</div>` : ""}
+      <div id="candidate-warning"></div>
       <div class="abwrap">
-        <div class="lane" id="lane-cand"><div class="who">
-          <b>Candidate</b> · rendered MIDI</div><canvas></canvas></div>
-        <div class="lane" id="lane-ref"><div class="who">
-          <b>Reference</b> · original drums
-          <button class="btn" id="make-ref" style="display:none;margin-left:8px">
-            Separate drum stem</button></div><canvas></canvas></div>
-        <div class="ruler"><div class="who">bar.beat</div><canvas id="ruler"></canvas></div>
+        <div id="stack">
+          <div class="lane" id="lane-cand"><div class="who">
+            <b>Candidate</b> · rendered MIDI</div><canvas></canvas></div>
+          <div class="lane" id="lane-ref"><div class="who">
+            <b>Reference</b> · original drums
+            <button class="btn" id="make-ref" style="display:none;margin-left:8px">
+              Separate drum stem</button></div><canvas></canvas></div>
+          <div class="ruler"><div class="who">bar.beat · Reaper</div>
+            <canvas id="ruler"></canvas></div>
+          <div id="grid"></div>
+          <div class="playhead" id="playhead"></div></div>
         <div class="transport">
           <button class="btn primary" id="play">&#9654;</button>
           <span class="kbd">space</span> play / pause
           <span class="muted">·</span> <span class="kbd">s</span>
           <span id="which">candidate is audible</span>
           <span class="muted">·</span> <span class="kbd">l</span>
-          <span id="loopstate">loop: on</span></div></div>
-      <div class="gridbox">
-        <div class="kicker" style="margin-bottom:6px">instrument grid · aligned to the ruler</div>
-        <div id="grid"></div></div>
+          <span id="loopstate">loop: on</span>
+          <span class="muted">·</span> <span>click a lane to move here:</span>
+          <span id="at" style="font-family:var(--mono);color:var(--text)"></span>
+          </div></div>
       <div class="notesbox">
         <div style="display:flex;align-items:center;gap:10px">
           <input type="text" id="comment" placeholder="what's wrong at this bar…">
-          ${pills}
-          <button class="btn primary" id="save-note">Note</button></div>
+          ${pills}</div>
+        <div class="filing">
+          <span>filing at</span>
+          <b id="note-at" style="color:var(--text);font-family:var(--mono)"></b>
+          <span>on</span>
+          <select id="instrument">${instruments}</select>
+          <span class="muted">click an instrument row to pick it, or the ruler
+            to move the bar</span>
+          <button class="btn primary" id="save-note"
+                  style="margin-left:auto">Note</button></div>
         <div id="chips"></div></div>
-      <div style="margin-top:14px;display:flex;gap:10px">
+      <div class="muted" id="note-flow" style="font-size:12px;margin-top:18px;
+           line-height:1.65">
+        A note on its own changes nothing — it goes in
+        <span style="font-family:var(--mono)">qa/review.yaml</span> to be
+        decided later. <b style="color:var(--text-dim)">Promote</b> turns the
+        confident ones (missing- and extra-hit, with an instrument named) into
+        <span style="font-family:var(--mono)">drums.additions</span> /
+        <span style="font-family:var(--mono)">removals</span> in
+        <span style="font-family:var(--mono)">song.yaml</span> — read the
+        <span style="font-family:var(--mono)">git diff</span>. A timing or
+        velocity complaint is left for your ears. Then
+        <b style="color:var(--text-dim)">Rebuild</b> reapplies them to the MIDI,
+        and the candidate has to be
+        <b style="color:var(--text-dim)">re-rendered</b> before you can hear the
+        change here.</div>
+      <div style="margin-top:12px;display:flex;gap:10px">
         <button class="btn" id="promote">Promote confident notes &rarr; song.yaml</button>
         <button class="btn" id="export">Send section to EZdrummer</button>
-        <button class="btn" id="rebuild">Rebuild · r</button></div>
+        <button class="btn" id="rebuild">Rebuild · r</button>
+        <button class="btn" id="rerender">Re-render candidate</button></div>
       <div class="log" id="log"></div>
       <div class="hintstrip">
         <span class="kbd">space</span><span class="kbd">s</span><span class="kbd">n</span>
@@ -589,8 +731,24 @@ class ReviewView {
     $("#export").addEventListener("click", () => this.exportSection());
     $("#rebuild").addEventListener("click", () => this.rebuild());
     $("#make-ref").addEventListener("click", () => this.makeReference());
+    $("#rerender").addEventListener("click", () => this.rerender());
+    /* Both sides, not just the candidate: a song still waiting for its
+       qa/candidate.wav is reviewed against the reference alone, and with the
+       handler on the candidate only that review never looped -- and the cursor
+       would have stopped dead at the end of the clip. */
     this.cand.addEventListener("ended", () => this.onEnded());
+    this.ref.addEventListener("ended", () => this.onEnded());
+    /* One set of handlers for the whole stack: the lanes, the ruler and every
+       grid row share a mapping, so wherever the click lands it means the same
+       position -- and the grid rows are rebuilt per section, so a listener per
+       canvas would have to be re-attached each time. */
+    const stack = $("#stack");
+    stack.addEventListener("pointerdown", (event) => this.scrubFrom(event, true));
+    stack.addEventListener("pointermove", (event) => this.scrubFrom(event, false));
+    stack.addEventListener("pointerup", () => { this.scrubbing = false; });
+    stack.addEventListener("pointercancel", () => { this.scrubbing = false; });
     this.setKind(this.noteKind);
+    this.showCandidateState();
     this.show();
     window._review = this;
   }
@@ -606,23 +764,389 @@ class ReviewView {
     if (!section) return;
     this.pause();
     $("#sect-name").textContent = section.name;
+    /* Musical bars here, because that is what song.yaml says and this line is
+       about the manifest. The ruler underneath is Reaper's -- see drawRuler. */
     $("#sect-bars").textContent =
       `bar ${section.start_bar}.${section.start_beat} – ${section.end_bar}.${section.end_beat}`;
     this.cand.src = section.cand_url;
     this.ref.src = section.ref_url;
     this.applyMute();
-    this.drawWave($("#lane-cand canvas"), section.cand_url, "cand");
-    this.drawWave($("#lane-ref canvas"), section.ref_url, "ref");
+    this._label = "";   // the readouts are change-guarded; this is a new section
+    this.buildGridRows(section);
     this.showMakeRef();
-    this.drawRuler(section);
-    this.drawGrid(section);
+    this.repaint();
+    this.ensurePeaks(section.cand_url, "cand");
+    this.ensurePeaks(section.ref_url, "ref");
     this.renderChips();
+  }
+
+  /* Everything the eye compares vertically, redrawn from cache in one place.
+     Called on a section change, when peaks land, and after a resize -- so the
+     four canvas kinds can never be a repaint out of step with each other. */
+  repaint() {
+    const section = this.section;
+    if (!section) return;
+    this.marks = this.beatMarks(section);
+    this.paintLane("cand");
+    this.paintLane("ref");
+    this.drawRuler(section);
+    (this.data.grid[section.name] || []).forEach((row, i) =>
+      this.paintGridRow(row, i, section));
+    this.updatePlayhead();
   }
 
   move(direction) {
     this.index = Math.min(this.data.sections.length - 1,
                           Math.max(0, this.index + direction));
     this.show();
+  }
+
+  /* ── where a musical position is, across the stack ───────────────
+     In BEATS through the section, never in bars. A section need not start on
+     a bar line (Manlio's verse-2 is 20.3) and need not span whole bars
+     (closing-fill is 77.3-79.1, one and a half), so `end_bar - start_bar` --
+     which every drawer here used to compute -- counts that section as two
+     bars and puts every line and every hit in the wrong place. */
+  get beatsPerBar() { return this.data.beats_per_bar || 4; }
+
+  sectionBeats(section) {
+    return Math.max(1e-6,
+      (section.end_bar - section.start_bar) * this.beatsPerBar
+      + (section.end_beat - section.start_beat));
+  }
+  beatOffset(section, bar, beat) {
+    return (bar - section.start_bar) * this.beatsPerBar
+           + (beat - section.start_beat);
+  }
+  fracFor(section, bar, beat) {
+    return this.beatOffset(section, bar, beat) / this.sectionBeats(section);
+  }
+  positionAt(fraction) {
+    const section = this.section, beats = this.beatsPerBar;
+    const fromBarOne = (section.start_beat - 1)
+                       + fraction * this.sectionBeats(section);
+    const whole = Math.floor(fromBarOne / beats);
+    return {bar: section.start_bar + whole,
+            beat: fromBarOne - whole * beats + 1};
+  }
+
+  /* Every beat line in the section, the closing one included so the span ends
+     on a bar line rather than in mid air. Walks and rolls the bar over, for
+     the same reason as above: there is no bar count to divide by. */
+  beatMarks(section) {
+    const beats = this.beatsPerBar, total = this.sectionBeats(section);
+    const marks = [];
+    let bar = section.start_bar, beat = section.start_beat;
+    if (Math.abs(beat - Math.round(beat)) > 1e-6) {
+      // A section starting off the beat still needs its own left edge drawn.
+      marks.push({bar: bar, beat: beat, frac: 0, line: false});
+      beat = Math.ceil(beat);
+    }
+    for (let guard = 0; guard <= Math.ceil(total) + beats; guard++) {
+      if (beat > beats + 1e-6) { beat -= beats; bar += 1; }
+      const offset = this.beatOffset(section, bar, beat);
+      if (offset > total + 1e-6) break;
+      marks.push({bar: bar, beat: beat, frac: offset / total,
+                  line: Math.abs(beat - 1) < 1e-6});
+      beat += 1;
+    }
+    return marks;
+  }
+
+  sizeCanvas(canvas) {
+    canvas.width = Math.max(1, Math.round(canvas.clientWidth * DPR));
+    canvas.height = Math.max(1, Math.round(canvas.clientHeight * DPR));
+    const context = canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    return context;
+  }
+
+  /* The one grid, on every canvas in the stack: bar line, beat line, and the
+     song's own subdivision (`drums.subdivision` -- 3 on Manlio, which is a
+     shuffle, so the subtle lines are where its hats actually sit). Lines are
+     dropped rather than crowded: 48 beats of a 12-bar section in 1100px has
+     no room for a line per triplet. */
+  drawBeatGrid(context, section, palette) {
+    const width = context.canvas.width, height = context.canvas.height;
+    const top = palette.top || 0;
+    const subdivision = Math.max(1, this.data.subdivision || 1);
+    const perBeat = width / this.sectionBeats(section);
+    const subs = perBeat / subdivision >= 7 * DPR ? subdivision : 1;
+    this.marks.forEach((mark, i) => {
+      const x = mark.frac * width;
+      if (subs > 1 && i + 1 < this.marks.length) {
+        const next = this.marks[i + 1].frac * width;
+        context.fillStyle = palette.sub;
+        for (let k = 1; k < subs; k++)
+          context.fillRect(x + (next - x) * k / subs, top, 1, height - top);
+      }
+      const thick = mark.line ? 2 : 1;
+      context.fillStyle = mark.line ? palette.bar : palette.beat;
+      context.fillRect(Math.min(x, width - thick), top, thick, height - top);
+    });
+  }
+
+  /* Grid first, waveform over it: the lines are a background to read the
+     transients against, not something drawn on top of them. */
+  paintLane(side) {
+    const lane = $(`#lane-${side} canvas`);
+    if (!lane) return;
+    const context = this.sizeCanvas(lane);
+    const section = this.section;
+    const source = (this.data.sources || {})[side];
+    if (source && !source.available) return this.drawNoClip(context, source);
+    const entry = this.peakCache[section[`${side}_url`]];
+    if (entry && entry.failed)
+      return this.drawNoClip(context, source || {hint: "no clip yet"});
+    this.drawBeatGrid(context, section, LANE_GRID);
+    if (!entry || !entry.peaks) return;  // still decoding; repainted when it lands
+    const width = lane.width, height = lane.height;
+    const step = width / entry.peaks.length;
+    context.fillStyle = "#7d85a3";
+    entry.peaks.forEach((peak, i) => {
+      const bar = Math.max(3, peak * (height - 8));
+      context.fillRect(i * step, (height - bar) / 2,
+                       Math.max(1, step * 0.7), bar);
+    });
+  }
+
+  async ensurePeaks(url, side) {
+    if (url in this.peakCache) return;
+    this.peakCache[url] = {peaks: null, failed: false};
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error();
+      const buffer = await new AudioContext().decodeAudioData(
+        await response.arrayBuffer());
+      this.peakCache[url] = {peaks: peaksOf(buffer), failed: false};
+    } catch (error) {
+      this.peakCache[url] = {peaks: null, failed: true};
+    }
+    /* Only if we are still looking at it: n/p while a clip decodes would
+       otherwise paint the previous section's waveform over the new one. */
+    if (this.section && this.section[`${side}_url`] === url) this.paintLane(side);
+  }
+
+  drawNoClip(context, source) {
+    const height = context.canvas.height;
+    context.fillStyle = "#565c66"; context.font = `${9 * DPR}px system-ui`;
+    /* the CLI's own message, wrapped — one wording for both front ends. */
+    const words = (source.hint || "no clip yet").split(/\s+/);
+    let line = "", y = height * 0.42;
+    for (const word of words) {
+      const next = line ? line + " " + word : word;
+      if (context.measureText(next).width > context.canvas.width - 32) {
+        context.fillText(line, 16, y); line = word; y += 13 * DPR;
+      } else { line = next; }
+      if (y > height - 8) break;
+    }
+    if (line && y <= height - 8) context.fillText(line, 16, y);
+  }
+
+  /* Reaper's numbers, because this is the ruler read next to Reaper's own and
+     `qa/review.md` already prints them. The count-in is added HERE and nowhere
+     else -- the same one-conversion-at-the-edge rule `restore.checklist`
+     follows, and the reason a stored note stays musical. */
+  drawRuler(section) {
+    const canvas = $("#ruler");
+    if (!canvas) return;
+    const context = this.sizeCanvas(canvas);
+    this.drawBeatGrid(context, section, RULER_GRID);
+    const countIn = this.data.count_in_bars || 0;
+    const width = canvas.width, beats = this.beatsPerBar;
+    context.font = `${9.5 * DPR}px ui-monospace`;
+    const label = (mark) =>
+      `${mark.bar + countIn}.${Number(mark.beat.toFixed(2))}`;
+    const widest = this.marks.reduce(
+      (most, mark) => Math.max(most, context.measureText(label(mark)).width), 1);
+    /* The coarsest step whose labels clear their own width by half again.
+       theme-finale is 48 beats in ~1100px, where a label per beat cannot fit;
+       theme-intro-stop is 8, where it easily can. A fixed step is unreadable
+       on one and wasteful on the other. */
+    const perBeat = width / this.sectionBeats(section);
+    const steps = [1, beats, 2 * beats, 4 * beats, 8 * beats];
+    const step = steps.find((n) => perBeat * n >= widest * 1.5)
+                 || steps[steps.length - 1];
+    const firstLine = (this.marks.find((mark) => mark.line) || {}).bar;
+    context.fillStyle = "#868d99";
+    let lastX = -Infinity;
+    this.marks.forEach((mark, i) => {
+      const keep = i === 0 || (step < beats
+        ? true
+        : mark.line && (mark.bar - firstLine) % (step / beats) === 0);
+      if (!keep) return;
+      const x = mark.frac * width;
+      if (x - lastX < widest * 1.2) return;
+      if (x > width - widest * 0.7) return;  // no half-drawn label at the edge
+      context.fillText(label(mark), x + 4, canvas.height - 6);
+      lastX = x;
+    });
+  }
+
+  buildGridRows(section) {
+    const grid = this.data.grid[section.name] || [];
+    const box = $("#grid");
+    box.innerHTML = grid.length
+      ? grid.map((row, i) =>
+          `<div class="gridrow"><div class="who" title="${esc(row.instrument)}"
+           >${esc(row.instrument)}</div><canvas data-row="${i}"></canvas></div>`
+        ).join("")
+      : `<div class="muted" style="font-size:12px;padding:6px 0">
+           no MIDI hits in this span (or no drums-quantized.mid yet)</div>`;
+  }
+
+  paintGridRow(row, index, section) {
+    const canvas = $("#grid").querySelector(`canvas[data-row="${index}"]`);
+    if (!canvas) return;
+    const context = this.sizeCanvas(canvas);
+    this.drawBeatGrid(context, section, ROW_GRID);
+    const width = canvas.width, height = canvas.height;
+    context.fillStyle = "#c7cbd3";
+    row.ticks.forEach((tick) => {
+      const frac = this.fracFor(section, tick.bar, tick.beat);
+      if (frac < -0.001 || frac > 1.001) return;
+      const bar = 10 + (tick.velocity / 127) * (height - 18);
+      // Centred on its own grid line, which is the alignment this is all for.
+      const x = Math.min(Math.max(frac * width - 2, 0), width - 4);
+      context.fillRect(x, (height - bar) / 2, 4, bar);
+    });
+  }
+
+  /* ── the playhead ─────────────────────────────────
+     One element for the whole stack. Both lanes map musical position
+     linearly, so one line is honest for all four rows -- the reference take
+     breathes and its line can sit up to ~90ms from where the beat was
+     actually played, which docs/review-ui.md records as accepted. */
+  clock() {
+    /* The candidate is the musical clock. The reference stands in when there
+       is no qa/candidate.wav yet, so the cursor is never dead on a song that
+       has not been rendered. */
+    if (this.cand.duration) return this.cand;
+    if (this.ref.duration) return this.ref;
+    return null;
+  }
+  fraction() {
+    const clock = this.clock();
+    if (!clock || !clock.duration) return 0;
+    return Math.min(1, Math.max(0, clock.currentTime / clock.duration));
+  }
+  updatePlayhead() {
+    const line = $("#playhead"), lane = $("#lane-cand canvas");
+    if (!line || !lane) return;
+    const x = this.fraction() * lane.clientWidth;
+    line.style.transform = `translateX(${x.toFixed(2)}px)`;
+    // Only on a change: this runs every frame while playing.
+    const at = $("#at"), label = this.playheadLabel();
+    if (at && label !== this._label) {
+      at.textContent = label;
+      const target = $("#note-at");
+      if (target) target.textContent = this.noteTarget();
+      this._label = label;
+    }
+  }
+  startFrames() {
+    if (this.frame) return;
+    const tick = () => {
+      this.updatePlayhead();
+      this.frame = this.playing ? requestAnimationFrame(tick) : 0;
+    };
+    this.frame = requestAnimationFrame(tick);
+  }
+  stopFrames() {
+    if (this.frame) cancelAnimationFrame(this.frame);
+    this.frame = 0;
+    /* Written once more on the way out: a stopped playhead still has to say
+       where you are, or `,` / `.` moves nothing visible. */
+    this.updatePlayhead();
+  }
+  /* Click or drag anywhere on the stack to put the playhead there. *start* is
+     false for a move, which only scrubs while a drag is already under way --
+     otherwise merely crossing the canvas would drag the playhead about. */
+  scrubFrom(event, start) {
+    if (!start && !this.scrubbing) return;
+    const canvas = event.target.closest && event.target.closest("canvas");
+    if (!canvas) return;
+    event.preventDefault();
+    if (start) {
+      this.scrubbing = true;
+      /* So a drag that wanders off the canvas -- or off the stack -- keeps
+         following the pointer instead of stopping at the edge. */
+      if (canvas.setPointerCapture) canvas.setPointerCapture(event.pointerId);
+    }
+    const box = canvas.getBoundingClientRect();
+    // The border is outside the content box `clientWidth` measures.
+    const inset = (box.width - canvas.clientWidth) / 2;
+    const at = (event.clientX - box.left - inset) / (canvas.clientWidth || 1);
+    this.seek(event.altKey ? Math.min(1, Math.max(0, at))
+                           : this.snapFraction(at));
+    if (start) this.pickInstrument(canvas);
+  }
+
+  /* Clicking an instrument row means "here, this instrument": the row is
+     already labelled, so it is the visual clue the panel was missing. A click
+     on a waveform or the ruler is only a position and leaves the pick alone. */
+  pickInstrument(canvas) {
+    const row = canvas.closest(".gridrow");
+    if (!row) return;
+    const name = (this.data.grid[this.section.name] || [])[
+      Number(canvas.dataset.row)];
+    if (!name) return;
+    const chosen = $("#instrument");
+    if (chosen) chosen.value = name.instrument;
+    app.querySelectorAll(".gridrow").forEach(
+      (other) => other.classList.toggle("picked", other === row));
+  }
+
+  /* To the nearest line of the song's own grid. A hit is on the grid -- on
+     Manlio, `drums.subdivision: 3`, so the shuffle's triplets -- and a
+     pixel-exact seek lands between two lines, which is never the position
+     anybody was aiming for. Alt places it exactly. Walks the marks rather than
+     dividing the section, so it is still right for a section that starts off
+     the beat, where the marks are not evenly spaced. */
+  snapFraction(fraction) {
+    const subdivision = Math.max(1, this.data.subdivision || 1);
+    let best = 0, distance = Infinity;
+    this.marks.forEach((mark, i) => {
+      const next = i + 1 < this.marks.length ? this.marks[i + 1].frac : mark.frac;
+      for (let k = 0; k < subdivision; k++) {
+        const at = mark.frac + (next - mark.frac) * k / subdivision;
+        const gap = Math.abs(at - fraction);
+        if (gap < distance) { distance = gap; best = at; }
+      }
+    });
+    return Math.abs(1 - fraction) < distance ? 1 : best;
+  }
+
+  /* Reaper's numbers, and `restore.checklist`'s format -- so a position found
+     by ear here can be typed into `rambass section` or matched against what
+     `rambass drums missing` printed. EVERY bar number a human reads on this
+     screen goes through here; the stored note stays musical, which is the one
+     conversion-at-the-edge rule the rest of the repo follows. */
+  reaperAt(bar, beat) {
+    return `${bar + (this.data.count_in_bars || 0)}.`
+           + `${Math.round((beat || 1) * 1000) / 1000}`;
+  }
+  playheadLabel() {
+    const where = this.positionAt(Math.min(this.fraction(), 0.999999));
+    return this.reaperAt(where.bar, where.beat);
+  }
+  /* Where the Note button will file, in the same numbers as the ruler above
+     it. The chip that came back used to print the stored musical bar, so a
+     note correctly filed at musical 1.1 read "1.1" against a ruler saying
+     3.1 and looked two bars wrong. */
+  noteTarget() { return this.reaperAt(this.playheadBar(), this.playheadBeat()); }
+  chipPosition(note) { return this.reaperAt(note.bar, note.beat || 1); }
+
+  seek(fraction) {
+    const clamped = Math.min(1, Math.max(0, fraction));
+    /* Never *exactly* the end: assigning `currentTime = duration` fires
+       `ended`, so clicking the right-hand edge of a lane restarted the loop
+       from the beginning instead of parking there. */
+    const at = (element) =>
+      Math.max(0, Math.min(clamped * element.duration, element.duration - 0.01));
+    if (this.cand.duration) this.cand.currentTime = at(this.cand);
+    if (this.ref.duration) this.ref.currentTime = at(this.ref);
+    this.updatePlayhead();
   }
 
   /* both elements always play together; s only moves which one is audible,
@@ -649,139 +1173,109 @@ class ReviewView {
   play() {
     this.playing = true; $("#play").innerHTML = "&#10073;&#10073;";
     this.cand.play().catch(() => {}); this.ref.play().catch(() => {});
+    this.startFrames();
   }
   pause() {
     this.playing = false; $("#play").innerHTML = "&#9654;";
     this.cand.pause(); this.ref.pause();
+    this.stopFrames();
   }
   onEnded() {
     if (!this.loop) return this.pause();
+    /* Whichever side ends first restarts both, once: the two clips are not the
+       same length (12.00s against 12.08s on Manlio's verse-1), so both fire
+       within a tenth of a second of each other. */
+    if (this._restarting) return;
+    this._restarting = true;
+    setTimeout(() => { this._restarting = false; }, 150);
     this.cand.currentTime = 0; this.ref.currentTime = 0;
     this.cand.play().catch(() => {}); this.ref.play().catch(() => {});
+    this.updatePlayhead();
   }
   nudgeBar(direction) {
-    const section = this.section;
-    const bars = Math.max(1, section.end_bar - section.start_bar);
-    const step = (this.cand.duration || 0) / bars;
-    const target = Math.max(0,
-      Math.round(this.cand.currentTime / step + direction) * step);
-    this.cand.currentTime = target;
-    if (this.ref.duration && this.cand.duration)
-      this.ref.currentTime = target * (this.ref.duration / this.cand.duration);
+    /* To the next/previous bar LINE, taken off the marks -- not a division of
+       the clip. A section that starts mid-bar has no whole number of bars to
+       step through, which is what the old `duration / bars` arithmetic
+       assumed. */
+    const lines = this.marks.filter((mark) => mark.line);
+    const here = this.fraction();
+    const target = direction < 0
+      ? lines.slice().reverse().find((mark) => mark.frac < here - 0.002)
+      : lines.find((mark) => mark.frac > here + 0.002);
+    this.seek(target ? target.frac : (direction < 0 ? 0 : 1));
   }
-  playheadBar() {
-    const section = this.section;
-    const bars = Math.max(1, section.end_bar - section.start_bar);
-    const through = this.cand.duration
-      ? this.cand.currentTime / this.cand.duration : 0;
-    return Math.min(section.end_bar - 1,
-                    section.start_bar + Math.floor(through * bars));
-  }
-
-  /* Per side, and only ever about *this* side. The old canvas printed one
-     string naming both sources, so a missing candidate read as a missing
-     stem too and there was no way to tell which file to go and make. */
-  async drawWave(canvas, url, side) {
-    const context = canvas.getContext("2d");
-    canvas.width = canvas.clientWidth * 2; canvas.height = 104;
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    const source = (this.data.sources || {})[side];
-    if (source && !source.available) return this.drawNoClip(context, source);
-    try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error();
-      const buffer = await new AudioContext().decodeAudioData(
-        await response.arrayBuffer());
-      const samples = buffer.getChannelData(0);
-      const buckets = 300, per = Math.floor(samples.length / buckets);
-      context.fillStyle = "#7d85a3";
-      for (let i = 0; i < buckets; i++) {
-        let peak = 0;
-        for (let j = 0; j < per; j += 16)
-          peak = Math.max(peak, Math.abs(samples[i * per + j]));
-        const height = Math.max(3, peak * 96);
-        context.fillRect(i * (canvas.width / buckets), (104 - height) / 2,
-                         canvas.width / buckets * 0.7, height);
-      }
-    } catch (error) {
-      this.drawNoClip(context, source || {hint: "no clip yet"});
-    }
-  }
-
-  drawNoClip(context, source) {
-    context.fillStyle = "#565c66"; context.font = "20px system-ui";
-    /* the CLI's own message, wrapped — one wording for both front ends. */
-    const words = (source.hint || "no clip yet").split(/\s+/);
-    let line = "", y = 42;
-    for (const word of words) {
-      const next = line ? line + " " + word : word;
-      if (context.measureText(next).width > context.canvas.width - 32) {
-        context.fillText(line, 16, y); line = word; y += 26;
-      } else { line = next; }
-      if (y > 96) break;
-    }
-    if (line && y <= 96) context.fillText(line, 16, y);
-  }
-
-  drawRuler(section) {
-    const canvas = $("#ruler"), context = canvas.getContext("2d");
-    canvas.width = canvas.clientWidth * 2; canvas.height = 48;
-    const bars = Math.max(1, section.end_bar - section.start_bar);
-    const beats = this.data.beats_per_bar || 4;
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    for (let bar = 0; bar <= bars; bar++) {
-      const x = bar / bars * (canvas.width - 2);
-      context.fillStyle = "#2a2e37";
-      context.fillRect(x, 0, 2, 48);
-      context.fillStyle = "#868d99"; context.font = "19px ui-monospace";
-      if (bar < bars) context.fillText(String(section.start_bar + bar), x + 6, 42);
-      context.fillStyle = "#232730";
-      for (let beat = 1; beat < beats; beat++)
-        context.fillRect(x + beat / beats / bars * (canvas.width - 2), 14, 1, 34);
-    }
-  }
-
-  drawGrid(section) {
-    const grid = this.data.grid[section.name] || [];
-    const box = $("#grid");
-    if (!grid.length) {
-      box.innerHTML = `<div class="muted" style="font-size:12px;padding:6px 0">
-        no MIDI hits in this span (or no drums-quantized.mid yet)</div>`;
-      return;
-    }
-    box.innerHTML = grid.map((row, i) =>
-      `<div class="gridrow"><div class="who">${esc(row.instrument)}</div>
-       <canvas data-row="${i}"></canvas></div>`).join("");
-    const bars = Math.max(1, section.end_bar - section.start_bar);
-    grid.forEach((row, i) => {
-      const canvas = box.querySelector(`canvas[data-row="${i}"]`);
-      const context = canvas.getContext("2d");
-      canvas.width = canvas.clientWidth * 2; canvas.height = 52;
-      context.fillStyle = "#232730";
-      for (let bar = 1; bar < bars; bar++)
-        context.fillRect(bar / bars * canvas.width, 0, 1, 52);
-      context.fillStyle = "#c7cbd3";
-      const beats = this.data.beats_per_bar || 4;
-      row.ticks.forEach((tick) => {
-        const through = ((tick.bar - section.start_bar) +
-                         (tick.beat - 1) / beats) / bars;
-        if (through < -0.001 || through > 1.001) return;
-        const height = 10 + (tick.velocity / 127) * 34;
-        context.fillRect(through * (canvas.width - 4) + 1,
-                         (52 - height) / 2, 4, height);
-      });
-    });
+  playheadBar() { return this.positionAt(Math.min(this.fraction(), 0.999999)).bar; }
+  playheadBeat() {
+    /* Snapped to the song's own subdivision. The ledger stores fractional
+       beats and `review promote` can turn a note into a `drums.additions`
+       entry, so beat 1.0 for everything was a guess the playhead makes
+       unnecessary -- the instrument is still the one left to correct. */
+    const subdivision = Math.max(1, this.data.subdivision || 1);
+    const beat = this.positionAt(Math.min(this.fraction(), 0.999999)).beat;
+    return Math.round((beat - 1) * subdivision) / subdivision + 1;
   }
 
   renderChips() {
     const section = this.section;
     const chips = this.data.notes
       .filter((note) => note.bar >= section.start_bar && note.bar < section.end_bar)
-      .map((note) => `<span class="chip"><span class="at">${note.bar}.${note.beat || 1}</span>
-          ${esc(note.instrument || note.kind)} — ${esc(note.comment || "")}
-          <span class="muted">[${esc(note.status)}]</span></span>`).join("");
-    $("#chips").innerHTML = chips ||
-      `<div class="muted" style="font-size:12px;margin-top:8px">no notes on this section yet</div>`;
+      .map((note) => {
+        /* `open` gets no badge: it is the default and every note starts there,
+           so printing it on every row was a word that said nothing -- and read
+           as a control, which it was not. */
+        const badge = note.status === "open" ? ""
+          : `<span class="badge ${esc(note.status)}">${esc(note.status)}</span>`;
+        /* A promoted note's edit is in song.yaml and `drums restore` applies it
+           blindly, so neither act is offered here -- `remove_note` refuses it
+           too, and says which addition to take out instead. */
+        const acts = note.status === "promoted" ? "" : `
+          <button class="act" data-key="${esc(note.key)}"
+            data-status="${note.status === "dismissed" ? "open" : "dismissed"}"
+            >${note.status === "dismissed" ? "reopen" : "dismiss"}</button>
+          <button class="act drop" data-key="${esc(note.key)}" data-drop
+            title="remove this note from the ledger">&times;</button>`;
+        return `<div class="note ${esc(note.status)}">
+          <span class="at">${this.chipPosition(note)}</span>
+          <span class="kind">${esc(note.kind)}</span>
+          <span class="inst ${note.instrument ? "" : "none"}"
+            >${esc(note.instrument || "unnamed")}</span>
+          <span class="said">${esc(note.comment || "")}</span>
+          ${badge}<span class="acts">${acts}</span></div>`;
+      }).join("");
+    $("#chips").innerHTML = chips
+      ? `<div class="notelist">${chips}</div>`
+      : `<div class="muted" style="font-size:12px;margin-top:10px">no notes on this section yet</div>`;
+    $("#chips").querySelectorAll(".act").forEach((el) =>
+      el.addEventListener("click", () => el.dataset.drop !== undefined
+        ? this.dropNote(el.dataset.key)
+        : this.restatus(el.dataset.key, el.dataset.status)));
+  }
+
+  /* Two different acts, kept apart. Dismissing is a judgement worth keeping --
+     "I listened, it was nothing", which `review_markdown` marks `[-]` and
+     `promote` then skips. Removing is for an entry that should never have
+     existed, and it asks first because the comment is typed by hand. */
+  async dropNote(key) {
+    const note = (this.data.notes || []).find((n) => n.key === key);
+    const said = [
+      `${this.chipPosition(note || {bar: 0})}  ${note ? note.kind : ""}`
+      + `${note && note.instrument ? "  " + note.instrument : ""}`,
+      note && note.comment ? note.comment : "",
+    ].filter(Boolean).join("\n");
+    if (!confirm(["Remove this note?", said,
+                  "It is gone from qa/review.yaml. To keep the record but "
+                  + "retire it, use dismiss instead."].join("\n\n"))) return;
+    await this.reledger("/api/note/remove", {key: key});
+  }
+  async restatus(key, status) {
+    await this.reledger("/api/note/status", {key: key, status: status});
+  }
+  async reledger(endpoint, payload) {
+    try {
+      const result = await api(endpoint, Object.assign({song: this.slug}, payload));
+      this.data.notes = result.notes;
+      this.renderChips();
+    } catch (error) { showProblem(error.message, true); }
   }
 
   quickNote(kind) {
@@ -790,13 +1284,16 @@ class ReviewView {
   }
   async saveNote() {
     const comment = $("#comment").value.trim();
+    const chosen = $("#instrument");
     const payload = {
-      song: this.slug, bar: this.playheadBar(), beat: 1.0,
+      song: this.slug, bar: this.playheadBar(), beat: this.playheadBeat(),
       kind: this.noteKind, comment: comment,
-      instrument: ["missing-hit","extra-hit"].includes(this.noteKind) ? "crash" : "",
+      instrument: chosen ? chosen.value : "",
     };
-    /* the instrument default is a guess to correct in the ledger; the point
-       of m/x is not breaking the listening flow. */
+    /* Whatever the select says, and nothing if it says nothing. It used to
+       hard-code "crash" for a missing/extra hit with nothing on screen saying
+       so, so a note about a splash was filed against a crash and `promote`
+       would have written the wrong instrument into `drums.additions`. */
     try {
       const result = await api("/api/note", payload);
       this.data.notes = result.notes;
@@ -815,6 +1312,40 @@ class ReviewView {
       this.renderChips();
     } catch (error) { log.textContent = "error: " + error.message; }
   }
+  /* Promote, rebuild, and then *this*, which is the step that was missing:
+     `drums restore` is in provenance's PIPELINE and the candidate render is
+     deliberately not (it needs the VST3 plugin, and a QA artifact must not make
+     Rebuild fail on a machine without one). So a rebuild leaves the audio this
+     screen plays a version behind, and nothing said so. */
+  showCandidateState() {
+    const state = this.data.candidate || {};
+    const box = $("#candidate-warning");
+    if (!box) return;
+    if (!state.exists || state.fresh) { box.innerHTML = ""; return; }
+    box.innerHTML = `<div class="legend" style="border-color:rgba(234,162,62,.4)">
+      <span style="color:var(--amber)">${esc(state.why)}</span>
+      <button class="btn amber" id="rerender-now"
+        style="margin-left:auto">Re-render candidate</button></div>`;
+    $("#rerender-now").addEventListener("click", () => this.rerender());
+  }
+
+  async rerender() {
+    const command = (this.data.candidate || {}).command;
+    if (!command) return;
+    const log = $("#log"); log.style.display = "block";
+    log.textContent = command + "… (the plugin takes about a quarter of a "
+      + "minute to load; progress is in the terminal)";
+    showRunning(command);
+    try {
+      const result = await api("/api/run", {song: this.slug, command: command});
+      log.textContent = result.failed
+        ? "failed: " + result.failed
+        : "ok    " + command;
+      if (!result.failed) renderReview(this.slug);
+    } catch (error) { log.textContent = "error: " + error.message; }
+    finally { showRunning(""); }
+  }
+
   /* Only the reference gets a button: `rambass stems` makes that file, and
      nothing in this repo can produce the candidate — it is a bounce through
      the kit in a DAW. A Run button for it would be a lie. */
@@ -855,6 +1386,17 @@ class ReviewView {
     } catch (error) { log.textContent = "error: " + error.message; }
   }
 }
+
+/* One listener for the page, not one per ReviewView: `renderReview` builds a
+   new view on every rebuild, and a listener per instance would accumulate them
+   for the life of the tab. Debounced, because a drag is a hundred events and
+   each one re-sizes and repaints four canvases. */
+let resizeTimer = 0;
+window.addEventListener("resize", () => {
+  if (!window._review || !location.hash.startsWith("#/review/")) return;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => window._review.repaint(), 120);
+});
 
 /* ── keyboard ────────────────────────────────────────────────────────── */
 document.addEventListener("keydown", (event) => {

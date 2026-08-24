@@ -216,6 +216,12 @@ def steps_for(song, stage: str) -> list[StepRow]:
                     f"rambass drums consolidate {slug}",
                     artifact="midi/drums-consolidated.mid",
                     note="mark the sections first: rambass section <bar> <name>"),
+            StepRow("Render a candidate to review",
+                    f"rambass review render {slug}",
+                    artifact="qa/candidate.wav",
+                    note="the drum MIDI through the kit, headless — this is "
+                         "what the A/B plays, and it has to be re-run after "
+                         "every rebuild"),
             StepRow("Missing hits & restore", f"rambass drums restore {slug}",
                     kind="open", artifact="midi/drums-restored.mid",
                     note="needs ears, not a report — opens the review tool"),
@@ -662,6 +668,112 @@ def add_note(song, note: Note) -> list[Note]:
     notes.append(note)
     write_ledger(song, notes, version=version)
     return notes
+
+
+def candidate_state(song) -> dict:
+    """Whether ``qa/candidate.wav`` still matches the MIDI it was rendered from.
+
+    The one fact the review screen needs in order not to lie. Promoting a note
+    makes ``midi/drums-restored.mid`` stale, and `rambass drums restore` --
+    which the Rebuild button runs -- regenerates it; but the candidate is a
+    **QA** artifact and deliberately not in :data:`~rambass.provenance.
+    PIPELINE`, so nothing rebuilds it. Without this the loop reads as closed
+    and is not: promote, rebuild, hear the audio from before the edit, conclude
+    the note did nothing.
+
+    Not added to PIPELINE on purpose. It needs the VST3 plugin, so on a machine
+    without one every extracted song would report a missing artifact and the
+    Rebuild button would fail on a step that is not part of the show -- the same
+    argument that keeps the practice pair out of it.
+    """
+    candidate = song.path("qa", "candidate.wav")
+    midi = song.best_drum_midi()
+    state = {"exists": candidate.is_file(), "fresh": False, "why": "",
+             "command": f"rambass review render {song.slug}"}
+    if not state["exists"] or not midi.exists():
+        return state
+    if candidate.stat().st_mtime >= midi.stat().st_mtime:
+        state["fresh"] = True
+        return state
+    state["why"] = (f"{midi.name} is newer than the rendered candidate, so the "
+                    f"A/B is playing the part from before it was rebuilt")
+    return state
+
+
+def note_key(note: Note) -> str:
+    """A stable identity for one ledger entry, for a client to hand back.
+
+    ``qa/review.yaml`` has no ids and should not grow any: it is a
+    hand-editable file, and an id is a thing a human editing it has to
+    maintain for no benefit of their own. So identity is the fields somebody
+    filed -- two notes at the same bar about different things are two notes --
+    and a caller names one by handing this back rather than by an index into a
+    list that re-sorts on every write.
+    """
+    return "|".join([str(note.bar), f"{note.beat:g}", note.kind,
+                     note.instrument, note.comment])
+
+
+def _one_note(notes, key: str) -> int:
+    """The index of the note *key* names, or raise saying it is not there."""
+    for index, note in enumerate(notes):
+        if note_key(note) == key:
+            return index
+    raise ProjectError(
+        f"no such note in the ledger: {key!r}. It may have been removed "
+        f"already, or qa/review.yaml edited by hand since this was read — "
+        f"reload the page.")
+
+
+def remove_note(song, key: str) -> list[Note]:
+    """Drop the note *key* names from the ledger. For an entry that should
+    never have existed -- the wrong bar, the wrong instrument -- as opposed to
+    one that turned out to be nothing, which is what ``dismissed`` is for.
+
+    Refuses a **promoted** note: its edit is in ``song.yaml`` now and
+    ``drums restore`` applies that blindly, so dropping the ledger entry would
+    leave the addition in place with nothing on record saying where it came
+    from. The message names the entry to remove instead.
+    """
+    version, notes = load_review(song.path("qa", "review.yaml"))
+    index = _one_note(notes, key)
+    note = notes[index]
+    if note.status == "promoted":
+        where = "drums.removals" if note.kind == "extra-hit" else "drums.additions"
+        raise ProjectError(
+            f"{song.slug}: the note at {note.bar}.{note.beat:g} is promoted, so "
+            f"its edit is in song.yaml. Removing the note would leave the edit "
+            f"behind.\n"
+            f"  take it out of {where} first (bar {note.bar}"
+            f"{f', beat {note.beat:g}' if note.beat != 1.0 else ''}"
+            f"{f', {note.instrument}' if note.instrument else ''}), then "
+            f"rebuild.")
+    del notes[index]
+    write_ledger(song, notes, version=version)
+    return notes
+
+
+def set_note_status(song, key: str, status: str) -> list[Note]:
+    """Move one note between :data:`NOTE_STATUSES`. Dismissing is the
+    "I listened and it was nothing" record, which :func:`promote_notes` then
+    skips because it only ever touches an open note."""
+    if status not in NOTE_STATUSES:
+        raise ProjectError(
+            f"status {status!r}: expected one of {', '.join(NOTE_STATUSES)}")
+    version, notes = load_review(song.path("qa", "review.yaml"))
+    notes[_one_note(notes, key)].status = status
+    write_ledger(song, notes, version=version)
+    return notes
+
+
+def notes_payload(notes) -> list[dict]:
+    """The ledger as a client sees it: each note plus the key that names it.
+
+    Not in :meth:`Note.to_dict`, which is the on-disk shape -- the key is
+    derived from the fields around it, so writing it into the YAML would be a
+    second copy of them to fall out of step.
+    """
+    return [{**note.to_dict(), "key": note_key(note)} for note in notes]
 
 
 def rebuild_song(song, *, project_root, dry_run: bool = False,
