@@ -11,6 +11,26 @@ from rambass.manifest import STAGES, Section, Song, save_song
 from rambass.project import Project
 
 
+@pytest.fixture(autouse=True)
+def no_windows_pop_open(monkeypatch):
+    """Nothing in a test run may open a file manager or a browser.
+
+    `/api/export-section` reveals the folder it just wrote, which is right when a
+    human clicked Export and wrong 40 times a suite: a full `pytest` opened a
+    File Explorer window on every ``pytest-of-paolo/.../midi/sections`` tmp dir
+    it created. Autouse, and patched at the seam rather than in one test, so a
+    new endpoint that reveals something cannot bring the windows back.
+    """
+    import webbrowser
+
+    from rambass import console
+
+    revealed: list[Path] = []
+    monkeypatch.setattr(console, "reveal_in_file_manager", revealed.append)
+    monkeypatch.setattr(webbrowser, "open", lambda *a, **k: True)
+    return revealed
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> Project:
     """A minimal but complete repository layout in a tmp dir."""
