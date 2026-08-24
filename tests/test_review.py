@@ -529,3 +529,50 @@ def test_clips_without_a_stem_names_the_stems_command(cwd_song, capsys):
     _touch(cwd_song.path("qa", "candidate.wav"), "not-really-audio")
     assert main(["review", "clips", cwd_song.slug]) == 2
     assert "rambass stems" in capsys.readouterr().err
+
+
+# ── the instrument grid, and the section export ──────────────────────────────
+
+
+def _perf(song):
+    from rambass.midiio import DrumPerformance, Hit
+
+    timeline = song.timeline()
+    at = timeline.bar_beat_to_seconds
+    hits = [
+        Hit("kick", at(9, 1.0), 100),
+        Hit("snare", at(9, 3.0), 104),
+        Hit("hihat_closed", at(10, 1.0), 80),
+        Hit("kick", at(20, 1.0), 100),      # outside verse (bars 9-16)
+    ]
+    return DrumPerformance(hits, timeline)
+
+
+def _span(song, name="verse", start=9, end=17):
+    from rambass.review import ClipSpan
+
+    timeline = song.timeline()
+    a, b = timeline.bar_beat_to_seconds(start, 1.0), timeline.bar_beat_to_seconds(end, 1.0)
+    return ClipSpan(name=name, start_bar=start, start_beat=1.0,
+                    end_bar=end, end_beat=1.0, candidate_start=a,
+                    duration=b - a, reference_start=a, reference_duration=b - a,
+                    approximate=False)
+
+
+def test_grid_rows_filter_to_the_span_and_keep_canonical_order(song):
+    from rambass.review import grid_rows
+
+    rows = grid_rows(_perf(song), _span(song))
+    assert [row["instrument"] for row in rows] == ["kick", "snare", "hihat_closed"]
+    kick = rows[0]["ticks"]
+    assert kick == [{"bar": 9, "beat": 1.0, "velocity": 100}]
+
+
+def test_section_performance_shifts_the_slice_to_zero(song):
+    from rambass.review import section_performance
+
+    sliced = section_performance(_perf(song), _span(song))
+    assert len(sliced.hits) == 3
+    assert min(hit.time for hit in sliced.hits) == pytest.approx(0.0)
+    # EZdrummer's browser plays a groove from its own zero; a slice that
+    # kept absolute song time would import with nine bars of silence.

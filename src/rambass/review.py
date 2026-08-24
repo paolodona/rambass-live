@@ -724,3 +724,45 @@ def song_screen(song, report) -> dict:
         "counts": counts,
         "open_notes": sum(1 for n in notes if n.status == "open"),
     }
+
+
+def grid_rows(performance, span: ClipSpan) -> list[dict]:
+    """The instrument grid for one span: a row per canonical name with hits.
+
+    This is the toms-and-cymbals visibility Reaper's default drum view does
+    not give — one row per *instrument name*, in kit order, straight off the
+    MIDI. It shows what the MIDI says, mislabels included: the grid surfaces
+    problems, it does not independently verify instrument identity.
+    """
+    from .drummap import CANONICAL
+
+    timeline = performance.timeline
+    lo = span.candidate_start - 1e-9
+    hi = span.candidate_start + span.duration - 1e-9
+    by_instrument: dict[str, list[dict]] = {}
+    for hit in performance.sorted_hits():
+        if not lo <= hit.time < hi:
+            continue
+        bar, beat = timeline.seconds_to_bar_beat(hit.time)
+        by_instrument.setdefault(hit.instrument, []).append(
+            {"bar": bar, "beat": round(beat, 3), "velocity": hit.velocity})
+    order = {name: index for index, name in enumerate(CANONICAL)}
+    return [{"instrument": name, "ticks": ticks}
+            for name, ticks in sorted(by_instrument.items(),
+                                      key=lambda kv: order.get(kv[0], 999))]
+
+
+def section_performance(performance, span: ClipSpan):
+    """The hits inside *span*, shifted so the span starts at zero.
+
+    EZdrummer's browser plays a groove from its own zero; a slice keeping
+    absolute song time would import with the whole preceding song as silence.
+    """
+    from .midiio import DrumPerformance
+
+    lo = span.candidate_start - 1e-9
+    hi = span.candidate_start + span.duration - 1e-9
+    hits = [hit.moved_to(hit.time - span.candidate_start)
+            for hit in performance.hits if lo <= hit.time < hi]
+    return DrumPerformance(hits, performance.timeline,
+                           f"{performance.name} - {span.name}")

@@ -102,6 +102,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 self._json(self._dashboard())
             elif path.startswith("/api/song/"):
                 self._song_screen(path.removeprefix("/api/song/"))
+            elif path.startswith("/api/review/"):
+                self._review(path.removeprefix("/api/review/"))
             elif path.startswith("/clips/"):
                 self._clip(path.removeprefix("/clips/"))
             else:
@@ -136,6 +138,47 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._error(404, f"no such song: {slug}")
             return
         self._json(song_screen(song, stale_report(song)))
+
+    def _review(self, slug: str) -> None:
+        """Everything the A/B review screen needs, addressed on both clocks."""
+        from .align import load_align
+        from .drummap import load_drum_map
+        from .midiio import read_drum_midi
+        from .review import clip_name, clip_spans, grid_rows, load_review
+
+        song = _find_song(self.project, slug)
+        if song is None:
+            self._error(404, f"no such song: {slug}")
+            return
+        amap = load_align(song.path("practice", "align.yaml"))
+        spans = clip_spans(song, amap)
+
+        grid: dict = {}
+        midi_path = song.best_drum_midi()
+        if midi_path.exists():
+            performance = read_drum_midi(
+                midi_path, load_drum_map(song.drum_map, self.project))
+            performance.timeline = song.timeline()
+            grid = {span.name: grid_rows(performance, span) for span in spans}
+
+        _, notes = load_review(song.path("qa", "review.yaml"))
+        self._json({
+            "slug": song.slug,
+            "title": song.title,
+            "approximate": bool(spans and spans[0].approximate),
+            "beats_per_bar": song.timeline().time_signature[0],
+            "subdivision": song.drum_subdivision,
+            "midi": midi_path.name if midi_path.exists() else "",
+            "sections": [{
+                "name": span.name,
+                "start_bar": span.start_bar, "start_beat": span.start_beat,
+                "end_bar": span.end_bar, "end_beat": span.end_beat,
+                "cand_url": f"/clips/{song.slug}/{clip_name(span, 'cand')}",
+                "ref_url": f"/clips/{song.slug}/{clip_name(span, 'ref')}",
+            } for span in spans],
+            "notes": [note.to_dict() for note in notes],
+            "grid": grid,
+        })
 
     def _clip(self, rest: str) -> None:
         """``/clips/<slug>/<clip-name>.wav`` — cut lazily on first request."""
@@ -187,6 +230,10 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 self._rebuild(song, body)
             elif path == "/api/note":
                 self._note(song, body)
+            elif path == "/api/promote":
+                self._promote(song)
+            elif path == "/api/export-section":
+                self._export_section(song, body)
             else:
                 self._error(404, f"no such action: {path}")
         except ProjectError as exc:
@@ -223,6 +270,65 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             created=date.today().isoformat(),
         ))
         self._json({"notes": [note.to_dict() for note in notes]})
+
+
+    def _promote(self, song) -> None:
+        from .manifest import save_song
+        from .review import load_review, promote_notes, write_ledger
+
+        version, notes = load_review(song.path("qa", "review.yaml"))
+        promoted, skipped = promote_notes(song, notes)
+        if promoted:
+            song.validate()
+            save_song(song)
+            write_ledger(song, notes, version=version)
+        self._json({"promoted": promoted, "skipped": skipped,
+                    "notes": [note.to_dict() for note in notes]})
+
+    def _export_section(self, song, body: dict) -> None:
+        """Write one section's MIDI slice where EZdrummer's browser can see it.
+
+        Not drag-and-drop out of the browser — a file in a folder, which is
+        what already works: EZdrummer 3 reads plain .mid from a linked folder
+        (drums-rebuild.md). Opening the folder is best-effort and local-only.
+        """
+        import subprocess
+        import sys
+
+        from .align import load_align
+        from .drummap import load_drum_map
+        from .midiio import read_drum_midi, write_drum_midi
+        from .project import slugify
+        from .review import clip_spans, section_performance
+
+        wanted = str(body.get("section", ""))
+        amap = load_align(song.path("practice", "align.yaml"))
+        span = next((s for s in clip_spans(song, amap) if s.name == wanted),
+                    None)
+        if span is None:
+            self._error(404, f"no such section: {wanted!r}")
+            return
+        midi_path = song.best_drum_midi()
+        if not midi_path.exists():
+            raise ProjectError(
+                f"{song.slug}: no drum MIDI to slice — run the drum pipeline "
+                f"first")
+        drum_map = load_drum_map(song.drum_map, self.project)
+        performance = read_drum_midi(midi_path, drum_map)
+        performance.timeline = song.timeline()
+        target = song.path("midi", "sections", f"{slugify(wanted)}.mid")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        write_drum_midi(target, section_performance(performance, span),
+                        drum_map)
+        opener = {"win32": "explorer", "darwin": "open"}.get(
+            sys.platform, "xdg-open")
+        try:
+            subprocess.Popen([opener, str(target.parent)],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except OSError:
+            pass  # headless, or no opener: the path in the reply is enough
+        self._json({"path": str(target.relative_to(song.directory))})
 
 
 def make_server(project: Project, *, port: int = DEFAULT_PORT,

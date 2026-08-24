@@ -159,3 +159,69 @@ def test_a_note_posted_from_the_browser_lands_in_the_ledger(served, song):
     assert data["notes"]
     _, notes = load_review(song.path("qa", "review.yaml"))
     assert notes and notes[0].bar == 43 and notes[0].section == "chorus"
+
+
+@pytest.fixture
+def reviewable(served, song):
+    """The served project, with an alignment map and a real quantized MIDI."""
+    base, _ = served
+    (song.directory / "practice").mkdir(parents=True, exist_ok=True)
+    (song.directory / "practice" / "align.yaml").write_text(
+        yaml.safe_dump({"source": "x.wav", "anchors": [
+            {"bar": 1, "at": 0.5}, {"bar": 33, "at": 65.0}]}),
+        encoding="utf-8")
+    from rambass.midiio import DrumPerformance, Hit, write_drum_midi
+
+    timeline = song.timeline()
+    at = timeline.bar_beat_to_seconds
+    performance = DrumPerformance(
+        [Hit("kick", at(9, 1.0), 100), Hit("snare", at(9, 3.0), 104)], timeline)
+    write_drum_midi(song.drum_midi_path("quantized"), performance)
+    return base, song
+
+
+def test_the_review_payload_addresses_both_clocks(reviewable):
+    base, song = reviewable
+    data = _get(base, f"/api/review/{song.slug}")
+    verse = next(s for s in data["sections"] if s["name"] == "verse")
+    assert verse["cand_url"].startswith(f"/clips/{song.slug}/")
+    assert verse["ref_url"] != verse["cand_url"]
+    assert data["approximate"] is False
+    assert data["beats_per_bar"] == 4
+    kicks = [row for row in data["grid"]["verse"] if row["instrument"] == "kick"]
+    assert kicks and kicks[0]["ticks"][0]["bar"] == 9
+
+
+def test_review_without_an_alignment_map_is_a_400_naming_the_fix(served, song):
+    base, _ = served
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        _get(base, f"/api/review/{song.slug}")
+    assert caught.value.code == 400
+    assert "align" in json.loads(caught.value.read().decode("utf-8"))["error"]
+
+
+def test_export_section_writes_a_zero_based_slice(reviewable):
+    base, song = reviewable
+    from rambass.drummap import GENERAL_MIDI
+    from rambass.midiio import read_drum_midi
+
+    data = _post(base, "/api/export-section",
+                 {"song": song.slug, "section": "verse"})
+    path = song.directory / data["path"]
+    assert path.exists()
+    sliced = read_drum_midi(path, GENERAL_MIDI)
+    assert len(sliced.hits) == 2
+    assert min(hit.time for hit in sliced.hits) < 0.05
+
+
+def test_promote_over_http_updates_ledger_and_manifest(reviewable):
+    base, song = reviewable
+    from rambass.manifest import load_song
+
+    _post(base, "/api/note", {
+        "song": song.slug, "bar": 43, "kind": "missing-hit",
+        "instrument": "crash", "velocity": 105, "comment": "into the lift"})
+    data = _post(base, "/api/promote", {"song": song.slug})
+    assert data["promoted"] == 1
+    assert load_song(song.directory).drum_additions
+    assert data["notes"][0]["status"] == "promoted"
