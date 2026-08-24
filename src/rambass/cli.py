@@ -860,6 +860,176 @@ def cmd_drums_missing(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_review_rebuild(args: argparse.Namespace) -> int:
+    """Run every stale or missing pipeline step for a song, in order.
+
+    The console's rebuild button, as a command — and a command *first*, so a
+    terminal gets exactly what the button does. It packages `rambass stale`'s
+    judgement without changing it: `stale` and `missing` steps run, via the
+    exact commands that report already prints; `edited` and `unknown` are
+    reported and never touched, because a hand edit's risk runs the opposite
+    way — re-running the step throws it away. `--force <artifact>` overrides
+    for one artifact at a time, and writes a `.bak` first: a one-key rebuild
+    must not make that mistake easier to make than the terminal already does.
+    """
+    from . import review
+
+    project = _project()
+    failed = False
+    for song in _songs(project, args.song, args.album, False):
+        result = review.rebuild_song(
+            song, project_root=project.root, dry_run=args.dry_run,
+            force=args.force, step=args.step)
+        if result["backup"]:
+            _say(f"{song.slug}: kept a copy of the hand-edited file at "
+                 f"{result['backup']}")
+        if not result["commands"]:
+            _say(f"{song.slug}: nothing stale or missing — nothing to rebuild")
+        elif args.dry_run:
+            _say(f"{song.slug}: would run, in order:")
+            for command in result["commands"]:
+                _say(f"   {command}")
+        else:
+            _say(f"{song.slug}: ran {result['ran']} of "
+                 f"{len(result['commands'])} steps")
+            if result["failed"]:
+                _say(f"   FAILED: {result['failed']} — stopping here; the "
+                     f"steps after it still need their inputs")
+                failed = True
+        for held in result["held"]:
+            _say(f"   left alone ({held['state']}): {held['artifact']} — "
+                 f"{'; '.join(held['reasons'])}")
+    return 1 if failed else 0
+
+
+def cmd_review_serve(args: argparse.Namespace) -> int:
+    """Start the console: the dashboard, stage screens and the A/B review tool.
+
+    A local page over the same data the CLI prints — `rambass status` is the
+    grid, `rambass stale` is the rings, review.py is every button. Local only.
+    """
+    from .console import serve
+
+    serve(_project(), port=args.port, setlist=args.setlist,
+          open_browser=not args.no_browser)
+    return 0
+
+
+def cmd_review_clips(args: argparse.Namespace) -> int:
+    """Cut the A/B clips: one candidate/reference pair per section.
+
+    The candidate is on the fixed grid (the Stage 9 bounce starts at musical
+    bar 1); the reference breathes, so its positions come from
+    practice/align.yaml — the same map the practice warp uses. Wavs land under
+    qa/clips/, which the global *.wav ignore already keeps out of git.
+    """
+    from .align import load_align
+    from .review import (
+        candidate_path, clip_name, clip_spans, cut_clip, reference_path,
+    )
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        candidate = candidate_path(song, args.candidate)
+        reference = reference_path(song)
+        amap = load_align(song.path("practice", "align.yaml"))
+        spans = clip_spans(song, amap)
+        target_dir = song.path("qa", "clips")
+        for span in spans:
+            cut_clip(candidate, target_dir / clip_name(span, "cand"),
+                     start=span.candidate_start, duration=span.duration)
+            cut_clip(reference, target_dir / clip_name(span, "ref"),
+                     start=span.reference_start,
+                     duration=span.reference_duration)
+        _say(f"{song.title}: {len(spans)} section pairs -> {target_dir}"
+             + ("  (reference timing is offset-only — fit "
+                "`rambass align --fit` for exact positions)"
+                if spans and spans[0].approximate else ""))
+    return 0
+
+
+def cmd_review_note(args: argparse.Namespace) -> int:
+    """Log one review note against a bar, without opening the console.
+
+    Keeps the ledger scriptable: what the browser posts and what this writes
+    are the same `qa/review.yaml`, so a note taken at a rehearsal on a phone
+    over SSH counts exactly as much as one clicked in.
+    """
+    from datetime import date
+
+    from .review import NOTE_KINDS, Note, add_note
+
+    project = _project()
+    song = load_song(project.find_song_dir(args.song))
+    bar, beat = parse_position(args.bar)
+    quoted = f"{bar}.{beat:g}"
+    if args.reaper_bar:
+        bar -= song.count_in_bars
+        if bar < 1:
+            raise ProjectError(
+                f"Reaper bar {quoted} is inside the {song.count_in_bars}-bar "
+                f"count-in, so it is before the music starts")
+    if args.kind not in NOTE_KINDS:
+        raise ProjectError(
+            f"--kind {args.kind!r}: expected one of {', '.join(NOTE_KINDS)}")
+
+    add_note(song, Note(
+        bar=bar, beat=beat, kind=args.kind, instrument=args.instrument,
+        velocity=args.velocity, comment=args.comment,
+        created=date.today().isoformat()))
+    _say(f"{song.title}: noted {args.kind} at bar {bar} beat {beat:g}"
+         + (f" (Reaper {quoted})" if args.reaper_bar else "")
+         + f" -> {song.path('qa', 'review.yaml')}")
+    return 0
+
+
+def cmd_review_promote(args: argparse.Namespace) -> int:
+    """Turn confident open notes into ``drums.additions`` / ``drums.removals``.
+
+    Machine proposes, `git diff` reviews, `drums restore` applies — the same
+    split `drums missing --propose` already uses. Timing and velocity
+    complaints stay in the ledger for a human.
+    """
+    from .review import load_review, promote_notes, write_ledger
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        version, notes = load_review(song.path("qa", "review.yaml"))
+        if not notes:
+            _say(f"{song.slug}: no notes to promote")
+            continue
+        promoted, skipped = promote_notes(song, notes)
+        if promoted:
+            song.validate()
+            save_song(song)
+            write_ledger(song, notes, version=version)
+            _say(f"{song.title}: promoted {promoted} into song.yaml "
+                 f"({skipped} left for your ears) — read the diff, then "
+                 f"`rambass drums restore {song.slug}`")
+        else:
+            _say(f"{song.title}: nothing confident enough to promote "
+                 f"({skipped} left for your ears)")
+    return 0
+
+
+def cmd_review_status(args: argparse.Namespace) -> int:
+    """Open-note counts per song — the review work still owed."""
+    from .review import load_review
+
+    project = _project()
+    for song in _songs(project, args.song, args.album,
+                       args.all or not (args.song or args.album)):
+        _, notes = load_review(song.path("qa", "review.yaml"))
+        if not notes:
+            continue
+        counts = {"open": 0, "promoted": 0, "dismissed": 0}
+        for note in notes:
+            counts[note.status] = counts.get(note.status, 0) + 1
+        _say(f"{song.album}/{song.slug}: {counts['open']} open, "
+             f"{counts['promoted']} promoted, {counts['dismissed']} dismissed")
+    return 0
+
+
 def cmd_drums_restore(args: argparse.Namespace) -> int:
     """Stage 7: reapply the hand edits declared in ``song.yaml``.
 
@@ -1019,6 +1189,8 @@ def cmd_click(args: argparse.Namespace) -> int:
             accent_downbeat=bool(song.click.get("accent_downbeat", True)),
             level_db=args.level,
         )
+        if not args.out:
+            _stamp(song, target, "click", [])
         _say(f"{song.title}: {bars} bars at {song.bpm:g} BPM -> {target.name} "
              f"(starts at bar 1 — the count-in is the sticks stem)")
     _say()
@@ -1138,6 +1310,7 @@ def cmd_gx100_midi(args: argparse.Namespace) -> int:
         target, events = write_patch_midi(
             song.path("midi", "gx100.mid"), song, program_map, lead_ms=args.lead_ms
         )
+        _stamp(song, target, "gx100 midi", [])
         _say(f"{song.title}: {target}")
         for event in events:
             _say(f"   bar {event.bar:>4}  {event.memory:<7} "
@@ -1462,6 +1635,7 @@ def cmd_video_ass(args: argparse.Namespace) -> int:
             ),
             encoding="utf-8",
         )
+        _stamp(song, target, "video ass", [song.path("lyrics.srt")])
         _say(f"{song.title}: {origin} -> {target}  ({len(cues)} cues"
              + (f", title card for {card_seconds:.1f}s" if card_seconds else "")
              + ")")
@@ -1521,6 +1695,8 @@ def cmd_video_render(args: argparse.Namespace) -> int:
             style=style,
             crf=args.crf,
         )
+        _stamp(song, ass_path, "video ass", [song.path("lyrics.srt")])
+        _stamp(song, target, "video render", [ass_path])
         _say(f"→ {target}")
         _mark(song, "video")
     return 0
@@ -2095,6 +2271,68 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--file")
     p.add_argument("--set-default", action="store_true")
     p.set_defaults(func=cmd_drums_remap)
+
+    review = sub.add_parser(
+        "review", help="the project console: rebuilds, notes, A/B review")
+    review_sub = review.add_subparsers(dest="review_command")
+
+    p = review_sub.add_parser(
+        "rebuild",
+        help="run every stale/missing pipeline step for a song, in order",
+    )
+    p.add_argument("song", nargs="*", help="song reference (slug, album/slug or path)")
+    p.add_argument("--album", help="operate on every song in this album")
+    p.add_argument("--step", help="run only the step with this name")
+    p.add_argument("--force", metavar="ARTIFACT",
+                   help="rebuild one edited/unknown artifact anyway "
+                        "(a .bak of the file is kept)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="print the commands and run nothing")
+    p.set_defaults(func=cmd_review_rebuild)
+
+    p = review_sub.add_parser(
+        "serve", help="start the console (dashboard, stage screens, A/B review)")
+    p.add_argument("--port", type=int, default=8433)
+    p.add_argument("--setlist", default="gig",
+                   help="which running order the dashboard rows follow")
+    p.add_argument("--no-browser", action="store_true",
+                   help="do not open a browser tab")
+    p.set_defaults(func=cmd_review_serve)
+
+    p = review_sub.add_parser(
+        "clips", help="cut per-section A/B clips (candidate vs original drums)")
+    _add_song_args(p)
+    p.add_argument("--candidate",
+                   help="the rendered-MIDI wav (default: qa/candidate.wav, "
+                        "then render/<slug>.wav)")
+    p.set_defaults(func=cmd_review_clips)
+
+    p = review_sub.add_parser(
+        "note", help="log one review note against a bar (qa/review.yaml)")
+    p.add_argument("song")
+    p.add_argument("bar", help="musical bar.beat (22.3); --reaper-bar converts")
+    p.add_argument("comment")
+    p.add_argument("--kind", default="other",
+                   help="missing-hit | extra-hit | wrong-instrument | timing "
+                        "| velocity | other")
+    p.add_argument("--instrument", default="",
+                   help="canonical name (crash, kick, ...) when the note is "
+                        "about one hit")
+    p.add_argument("--velocity", type=int, default=0)
+    p.add_argument("--reaper-bar", action="store_true",
+                   help="the bar is a ruler reading; subtract the count-in")
+    p.set_defaults(func=cmd_review_note)
+
+    p = review_sub.add_parser(
+        "promote",
+        help="turn confident open notes into drums.additions / removals")
+    _add_song_args(p)
+    p.set_defaults(func=cmd_review_promote)
+
+    p = review_sub.add_parser(
+        "status", help="open-note counts per song")
+    _add_song_args(p)
+    p.set_defaults(func=cmd_review_status)
 
     p = sub.add_parser(
         "click",

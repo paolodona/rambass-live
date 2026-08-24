@@ -100,6 +100,8 @@ Layered so the cheap deterministic parts have no heavy dependencies:
 | `arrange.py` | reviews a running order against set-list practice | — |
 | `restore.py` | Stage 7: declared articulation, the missing-hits ledger, hand edits | — |
 | `provenance.py` | which derived files are stale, and which of three reasons | pyyaml |
+| `review.py` | the console's data layer: rebuild selection, step tables, notes ledger, A/B clip spans | pyyaml |
+| `console.py` | the console's local HTTP server (`rambass review serve`), thin over `review.py` | stdlib |
 | `align.py` | bars ↔ seconds *in the recording*, and warping onto the grid | numpy |
 | `audio.py` | ffmpeg decode/encode, WAV write, loudness | numpy |
 | `analyze.py` | tempo/beat/drift detection | **librosa** |
@@ -348,7 +350,9 @@ exactly."* So:
 
 **Sections need not start on a bar line, and `consolidate` handles that itself.**
 Paolo: *"with odd timing we will rarely fit into a .1 start of section
-generally"*. Manlio's verse-2 runs from bar 20 beat 3 to bar 32 beat 3. The
+generally"*. Manlio's verse-2 runs from bar 20 beat 3 to bar 28 beat 3 (its
+lift carries on to 32.3 as its own section — see songs/tutti-in-fila/09-manlio/song.yaml,
+which is the ground truth when a doc disagrees). The
 repetitions still tile the **bar** grid — a one-bar figure repeats every bar
 whichever beat the section began on, because a section boundary does not move
 where beat 1 is — but each slot is judged against the repetitions it *could*
@@ -422,4 +426,11 @@ it can be deleted once GitHub's default branch is `main`.
   On this machine ffmpeg 9.0 is installed under
   `%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_...\bin` and winget
   linked none of it, so every audio command failed with an install hint for
-  something already installed. Point the variable at the folder.
+  something already installed. Point the variable at the folder — persistently,
+  at User scope, or the same error is back in the next shell. `audio.locate_tool`
+  also searches the two winget portable roots as a **last** resort, so an
+  unconfigured machine works too; that order (override, PATH, discovery) is
+  deliberate and tested. A set-but-wrong override stays an error rather than
+  falling through to either, and `doctor` names the route it took, because
+  labelling a discovery "(via RAMBASS_FFMPEG)" sends the reader to inspect a
+  variable that is not set.

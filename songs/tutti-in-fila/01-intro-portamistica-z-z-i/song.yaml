@@ -16,6 +16,8 @@ drums:
   origin: extracted
   kit: ''
   map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
 source:
   audio: 01 Intro Portamistica Z.Z.I..wav
   url: https://drive.google.com/file/d/1pyAsgAIqjmbIFb344fc21raB4fG_f3ui/view
@@ -34,10 +36,17 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: ''
+  energy: 3
+  heaviness: 3
+  standing: known
+  role: ''
+  note: ''
 status:
   source: n/a
   analyze: n/a
-  stems: n/a
+  stems: done
   drums_midi: n/a
   quantize: n/a
   kit: n/a

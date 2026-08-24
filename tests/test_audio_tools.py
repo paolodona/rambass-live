@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from rambass.audio import AudioError, ffmpeg_path, ffprobe_path
+from rambass.audio import AudioError, ffmpeg_path, ffprobe_path, locate_tool
 
 
 # ── RAMBASS_FFMPEG ───────────────────────────────────────────────────────────
@@ -71,14 +71,154 @@ def test_a_wrong_override_says_so_instead_of_falling_through(monkeypatch, tmp_pa
     assert "RAMBASS_FFMPEG" in str(caught.value)
 
 
-def test_the_install_hint_survives_when_nothing_is_set(monkeypatch):
+def test_the_install_hint_survives_when_nothing_is_set(monkeypatch, tmp_path):
+    """The winget roots are pointed at nothing on purpose: with three routes to
+    resolution, "nothing is set" means all three are empty, and on a machine
+    that really has the package folder this test would otherwise pass or fail
+    depending on whose laptop ran it."""
     monkeypatch.delenv("RAMBASS_FFMPEG", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "empty"))
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "empty"))
     monkeypatch.setattr("shutil.which", lambda *a, **k: None)
     with pytest.raises(AudioError) as caught:
         ffmpeg_path()
     message = str(caught.value)
     assert "winget install Gyan.FFmpeg" in message
     assert "RAMBASS_FFMPEG" in message, "the override is only useful if it is mentioned"
+
+
+# ── the winget package folder, as a last resort ───────────────────────────────
+#
+# Belt and braces for the case above: on this machine winget created no shims at
+# all (`WinGet\Links` is empty), so whether ffmpeg is findable came down to the
+# PATH a process happened to inherit -- and a process older than the PATH edit,
+# or one started with a scrubbed environment, inherits nothing. Rather than
+# require an environment variable on every machine that will ever run this, look
+# in the two places winget actually puts portable packages before giving up.
+#
+# Last resort on purpose. It runs only when the override is unset and PATH has
+# nothing, so it can never override a deliberate choice -- see the two tests
+# below that pin that ordering down.
+
+
+def _winget_bin(root: Path, package: str, build: str, *, scope: str = "user") -> Path:
+    r"""The real winget portable layout, which differs between the two scopes.
+
+    `portablePackageUserRoot` defaults to `%LOCALAPPDATA%\Microsoft\WinGet`,
+    `portablePackageMachineRoot` to `%PROGRAMFILES%\WinGet` -- no `Microsoft`
+    segment in the machine one. A single pattern for both finds nothing on a
+    machine-scope install, and the mistake is invisible in a test that builds
+    the tree it expects.
+    """
+    prefix = root / "Microsoft" / "WinGet" if scope == "user" else root / "WinGet"
+    binaries = prefix / "Packages" / package / build / "bin"
+    binaries.mkdir(parents=True, exist_ok=True)
+    for name in ("ffmpeg", "ffprobe"):
+        binary = binaries / (f"{name}.exe" if _windows() else name)
+        binary.write_text("", encoding="utf-8")
+        binary.chmod(0o755)
+    return binaries
+
+
+def test_the_winget_package_folder_is_searched_when_nothing_else_has_it(
+    monkeypatch, tmp_path,
+):
+    binaries = _winget_bin(
+        tmp_path, "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe",
+        "ffmpeg-9.0-full_build",
+    )
+    monkeypatch.delenv("RAMBASS_FFMPEG", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("shutil.which", lambda *a, **k: None)
+    assert Path(ffmpeg_path()).parent == binaries
+    assert Path(ffprobe_path()).parent == binaries, "ffprobe sits beside it"
+
+
+def test_the_machine_scope_winget_root_is_searched_too(monkeypatch, tmp_path):
+    """`winget install --scope machine` puts portables under Program Files."""
+    binaries = _winget_bin(tmp_path / "pf", "Gyan.FFmpeg_x", "ffmpeg-9.0-full_build",
+                           scope="machine")
+    monkeypatch.delenv("RAMBASS_FFMPEG", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "empty"))
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "pf"))
+    monkeypatch.setattr("shutil.which", lambda *a, **k: None)
+    assert Path(ffmpeg_path()).parent == binaries
+
+
+def test_path_beats_the_winget_fallback(monkeypatch, tmp_path):
+    """A linked ffmpeg is a decision; a package folder left on disk is not. If
+    discovery could outrank PATH, upgrading ffmpeg by hand would silently keep
+    running the old winget copy."""
+    _winget_bin(tmp_path, "Gyan.FFmpeg_x", "ffmpeg-9.0-full_build")
+    monkeypatch.delenv("RAMBASS_FFMPEG", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("shutil.which", lambda name, *a, **k: f"/usr/bin/{name}")
+    assert ffmpeg_path() == "/usr/bin/ffmpeg"
+
+
+def test_a_wrong_override_is_not_rescued_by_discovery(monkeypatch, tmp_path):
+    """Same argument as falling through to PATH: if a typo in the variable is
+    quietly papered over, the variable stops meaning anything and the reader is
+    never told it is wrong."""
+    _winget_bin(tmp_path, "Gyan.FFmpeg_x", "ffmpeg-9.0-full_build")
+    monkeypatch.setenv("RAMBASS_FFMPEG", str(tmp_path / "nope"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("shutil.which", lambda *a, **k: None)
+    with pytest.raises(AudioError) as caught:
+        ffmpeg_path()
+    assert "RAMBASS_FFMPEG" in str(caught.value)
+
+
+def test_the_newest_build_wins_when_an_upgrade_left_the_old_one_behind(
+    monkeypatch, tmp_path,
+):
+    """`winget upgrade` does not always remove the previous build directory, and
+    the folder name cannot be sorted: "ffmpeg-10.0-full_build" sorts *before*
+    "ffmpeg-9.0-full_build", so a lexicographic pick would run last year's
+    build for the rest of the decade. Newest mtime, not highest name."""
+    old = _winget_bin(tmp_path, "Gyan.FFmpeg_x", "ffmpeg-9.0-full_build")
+    new = _winget_bin(tmp_path, "Gyan.FFmpeg_x", "ffmpeg-10.0-full_build")
+    suffix = ".exe" if _windows() else ""
+    import os as _os
+
+    _os.utime(old / f"ffmpeg{suffix}", (1_000_000, 1_000_000))
+    _os.utime(new / f"ffmpeg{suffix}", (2_000_000, 2_000_000))
+    monkeypatch.delenv("RAMBASS_FFMPEG", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("shutil.which", lambda *a, **k: None)
+    assert Path(ffmpeg_path()).parent == new
+
+
+def test_nothing_anywhere_still_reaches_the_install_hint(monkeypatch, tmp_path):
+    monkeypatch.delenv("RAMBASS_FFMPEG", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "empty"))
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "empty"))
+    monkeypatch.setattr("shutil.which", lambda *a, **k: None)
+    with pytest.raises(AudioError) as caught:
+        ffmpeg_path()
+    assert "winget install Gyan.FFmpeg" in str(caught.value)
+
+
+def test_the_route_taken_is_reported_so_doctor_can_say_which(monkeypatch, tmp_path):
+    """`doctor` prints how ffmpeg was found, and "(via RAMBASS_FFMPEG)" for a
+    file discovery found on its own sends the reader to check a variable that is
+    not set. So resolution reports its route rather than doctor guessing it."""
+    _winget_bin(tmp_path, "Gyan.FFmpeg_x", "ffmpeg-9.0-full_build")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.setattr("shutil.which", lambda *a, **k: None)
+
+    monkeypatch.delenv("RAMBASS_FFMPEG", raising=False)
+    assert locate_tool("ffmpeg").route == "winget"
+
+    monkeypatch.setattr("shutil.which", lambda name, *a, **k: f"/usr/bin/{name}")
+    assert locate_tool("ffmpeg").route == "path"
+
+    monkeypatch.setenv("RAMBASS_FFMPEG", str(_winget_roots_probe(tmp_path)))
+    assert locate_tool("ffmpeg").route == "env"
+
+
+def _winget_roots_probe(root: Path) -> Path:
+    return next((root / "Microsoft" / "WinGet" / "Packages").glob("*/*/bin"))
 
 
 # ── the report counts what is in the part, not what a band produced ──────────

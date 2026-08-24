@@ -193,6 +193,25 @@ def test_staleness_flows_downstream(song):
     assert any("drums-quantized" in reason for reason in downstream.reasons)
 
 
+def test_an_edited_artifact_stays_edited_when_its_input_goes_stale(song):
+    """`edited` outranks the cascade. Both read as "rebuild me", but they demand
+    opposite handling: a stale file is safe to regenerate, an edited one holds
+    hand work that regeneration destroys. If the cascade downgraded edited to
+    stale, a one-key rebuild would flatten a hand edit whenever anything
+    upstream of it moved — found writing exactly that rebuild."""
+    raw = _touch(song.directory / "midi" / "drums-raw.mid")
+    quantized = _touch(song.directory / "midi" / "drums-quantized.mid")
+    consolidated = _touch(song.directory / "midi" / "drums-consolidated.mid")
+    stamp(song, quantized, step="drums clean", inputs=[raw])
+    stamp(song, consolidated, step="drums consolidate", inputs=[quantized])
+    raw.write_text("changed", encoding="utf-8")
+    consolidated.write_text("drawn in reaper", encoding="utf-8")
+
+    entry = {s.artifact: s for s in stale_report(song)}["midi/drums-consolidated.mid"]
+    assert entry.state == "edited"
+    assert any("drums-quantized" in reason for reason in entry.reasons)
+
+
 def test_the_report_is_in_pipeline_order(song):
     order = [entry.artifact for entry in stale_report(song)]
     assert order.index("midi/drums-raw.mid") < order.index(

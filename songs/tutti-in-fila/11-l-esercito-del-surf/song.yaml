@@ -16,6 +16,8 @@ drums:
   origin: extracted
   kit: ''
   map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
 source:
   audio: 11 L'Esercito Del Surf.wav
   url: https://drive.google.com/file/d/1qDI8VqlExf8k18BGqF7WT-HE2GEAVxUG/view
@@ -44,7 +46,7 @@ character:
 status:
   source: todo
   analyze: todo
-  stems: todo
+  stems: done
   drums_midi: todo
   quantize: todo
   kit: todo

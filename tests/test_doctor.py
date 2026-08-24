@@ -16,6 +16,7 @@ not believe it.
 from __future__ import annotations
 
 from rambass import doctor
+from rambass.audio import FFMPEG_ENV
 
 
 def _check(checks, name):
@@ -23,9 +24,11 @@ def _check(checks, name):
 
 
 def test_ffmpeg_found_only_through_the_override_still_reads_as_ok(monkeypatch):
+    from rambass.audio import ToolLocation
+
     monkeypatch.setattr("shutil.which", lambda name, *a, **k: None)
-    monkeypatch.setattr(doctor, "_tool_path",
-                        lambda name: f"/somewhere/{name}")
+    monkeypatch.setattr(doctor, "_locate",
+                        lambda name: ToolLocation(f"/somewhere/{name}", "env"))
     monkeypatch.setattr(doctor, "_version", lambda cmd: "ffmpeg version 9.0")
     checks = doctor.run_checks()
     assert _check(checks, "ffmpeg").ok
@@ -35,7 +38,10 @@ def test_ffmpeg_found_only_through_the_override_still_reads_as_ok(monkeypatch):
 def test_the_detail_says_where_it_was_found(monkeypatch):
     """So that "it works here but not in my other shell" is one line to diagnose."""
     monkeypatch.setattr("shutil.which", lambda name, *a, **k: None)
-    monkeypatch.setattr(doctor, "_tool_path", lambda name: rf"C:\ff\bin\{name}.exe")
+    from rambass.audio import ToolLocation
+
+    monkeypatch.setattr(doctor, "_locate",
+                        lambda name: ToolLocation(rf"C:\ff\bin\{name}.exe", "env"))
     monkeypatch.setattr(doctor, "_version", lambda cmd: "")
     detail = _check(doctor.run_checks(), "ffmpeg").detail
     assert "C:\\ff\\bin\\ffmpeg.exe" in detail
@@ -49,7 +55,7 @@ def test_genuinely_missing_ffmpeg_still_fails(monkeypatch):
     def absent(name):
         raise AudioError("nope")
 
-    monkeypatch.setattr(doctor, "_tool_path", absent)
+    monkeypatch.setattr(doctor, "_locate", absent)
     check = _check(doctor.run_checks(), "ffmpeg")
     assert not check.ok
     assert "not found" in check.detail.lower()
@@ -61,7 +67,7 @@ def test_the_fix_mentions_the_override(monkeypatch):
     from rambass.audio import AudioError
 
     monkeypatch.setattr("shutil.which", lambda name, *a, **k: None)
-    monkeypatch.setattr(doctor, "_tool_path",
+    monkeypatch.setattr(doctor, "_locate",
                         lambda name: (_ for _ in ()).throw(AudioError("nope")))
     assert "RAMBASS_FFMPEG" in _check(doctor.run_checks(), "ffmpeg").fix
 
@@ -70,7 +76,50 @@ def test_the_version_probe_uses_the_resolved_path(monkeypatch):
     """Not the bare name: if it is not on PATH, `ffmpeg -version` cannot run."""
     seen: list[list[str]] = []
     monkeypatch.setattr("shutil.which", lambda name, *a, **k: None)
-    monkeypatch.setattr(doctor, "_tool_path", lambda name: rf"C:\ff\{name}.exe")
+    from rambass.audio import ToolLocation
+
+    monkeypatch.setattr(doctor, "_locate",
+                        lambda name: ToolLocation(rf"C:\ff\{name}.exe", "env"))
     monkeypatch.setattr(doctor, "_version", lambda cmd: seen.append(cmd) or "v")
     doctor.run_checks()
     assert [rf"C:\ff\ffmpeg.exe", "-version"] in seen
+
+
+# ── which of the three routes found it ───────────────────────────────────────
+#
+# Resolution has three: the override, PATH, and a search of the winget package
+# folders. The label has to name the right one -- "(via RAMBASS_FFMPEG)" printed
+# for a discovery sends the reader to inspect a variable that is not set, which
+# is the same class of wrong turn as the "not on PATH" message above.
+
+
+def test_a_winget_discovery_is_not_labelled_as_the_override(monkeypatch):
+    from rambass.audio import ToolLocation
+
+    monkeypatch.setattr(doctor, "_locate",
+                        lambda name: ToolLocation(rf"C:\pkgs\{name}.exe", "winget"))
+    monkeypatch.setattr(doctor, "_version", lambda cmd: "ffmpeg version 9.0")
+    detail = _check(doctor.run_checks(), "ffmpeg").detail
+    assert f"via {FFMPEG_ENV}" not in detail, "the variable did not do this work"
+    assert "winget" in detail.lower(), "say what did, so it can be pinned"
+
+
+def test_the_override_route_still_says_so(monkeypatch):
+    from rambass.audio import ToolLocation
+
+    monkeypatch.setattr(doctor, "_locate",
+                        lambda name: ToolLocation(rf"C:\ff\bin\{name}.exe", "env"))
+    monkeypatch.setattr(doctor, "_version", lambda cmd: "ffmpeg version 9.0")
+    assert "RAMBASS_FFMPEG" in _check(doctor.run_checks(), "ffmpeg").detail
+
+
+def test_a_plain_path_find_is_labelled_with_nothing(monkeypatch):
+    """The unremarkable case stays quiet; a note on every line is a note nobody
+    reads."""
+    from rambass.audio import ToolLocation
+
+    monkeypatch.setattr(doctor, "_locate",
+                        lambda name: ToolLocation(f"/usr/bin/{name}", "path"))
+    monkeypatch.setattr(doctor, "_version", lambda cmd: "ffmpeg version 9.0")
+    detail = _check(doctor.run_checks(), "ffmpeg").detail
+    assert detail == "ffmpeg version 9.0"

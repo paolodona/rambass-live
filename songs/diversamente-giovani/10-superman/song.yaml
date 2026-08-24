@@ -16,6 +16,8 @@ drums:
   origin: backing-track
   kit: BFD3 superman.bfd3
   map: bfd3
+  subdivision: 4
+  cymbal_subdivision: 2
 source:
   audio: 10_Superman_MST1.wav
   url: https://drive.google.com/file/d/1I1BXgEizv6RxGMm23SIheg3RWJGRHMto/view
@@ -44,7 +46,7 @@ character:
 status:
   source: todo
   analyze: done
-  stems: n/a
+  stems: done
   drums_midi: n/a
   quantize: n/a
   kit: n/a
