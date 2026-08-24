@@ -1,0 +1,61 @@
+# What a review pass heard, bar by bar. Musical bars (no count-in).
+# Promote a note into drums.additions / drums.removals with
+# `rambass review promote`; qa/review.md is this file for reading
+# next to the Reaper ruler.
+version: drums-quantized.mid
+notes:
+- bar: 1
+  beat: 2.0
+  section: theme-intro
+  kind: missing-hit
+  instrument: crash_2
+  status: promoted
+  created: '2026-08-24'
+- bar: 1
+  beat: 2.0
+  section: theme-intro
+  kind: extra-hit
+  instrument: hihat_open
+  status: promoted
+  created: '2026-08-24'
+- bar: 1
+  beat: 3.0
+  section: theme-intro
+  kind: missing-hit
+  instrument: crash
+  status: promoted
+  created: '2026-08-24'
+- bar: 2
+  beat: 4.0
+  section: theme-intro
+  kind: other
+  comment: tom fill missing at 4.4
+  status: open
+  created: '2026-08-24'
+- bar: 3
+  section: theme-intro
+  kind: missing-hit
+  instrument: crash
+  status: promoted
+  created: '2026-08-24'
+- bar: 3
+  beat: 2.0
+  section: theme-intro
+  kind: missing-hit
+  instrument: crash_2
+  status: promoted
+  created: '2026-08-24'
+- bar: 4
+  beat: 2.0
+  section: theme-intro-stop
+  kind: missing-hit
+  instrument: sidestick
+  status: open
+  created: '2026-08-24'
+- bar: 5
+  beat: 4.0
+  section: theme-intro-stop
+  kind: extra-hit
+  instrument: hihat_closed
+  status: open
+  created: '2026-08-24'

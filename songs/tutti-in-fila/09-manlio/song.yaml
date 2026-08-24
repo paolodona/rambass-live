@@ -67,6 +67,26 @@ drums:
     instrument: crash
     velocity: 111
     note: proposed by drums missing (theme-finale) - check by ear
+  - bar: 1
+    beat: 2.0
+    instrument: crash_2
+    note: promoted from qa/review.yaml
+  - bar: 1
+    beat: 3.0
+    instrument: crash
+    note: promoted from qa/review.yaml
+  - bar: 3
+    instrument: crash
+    note: promoted from qa/review.yaml
+  - bar: 3
+    beat: 2.0
+    instrument: crash_2
+    note: promoted from qa/review.yaml
+  removals:
+  - bar: 1
+    beat: 2.0
+    instrument: hihat_open
+    note: promoted from qa/review.yaml
 source:
   audio: 09 Manlio.wav
   url: https://drive.google.com/file/d/1kDxz8I6egN0FwbGrWVPuxGJcFnvUn9rI/view

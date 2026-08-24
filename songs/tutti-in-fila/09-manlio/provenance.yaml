@@ -59,12 +59,12 @@ midi/drums-restored.mid:
     midi/drums-consolidated.mid: cde4ee300c0bbe83
   manifest:
     bars: 282b639f9f9d4d15
-    drums/additions: 8ee473396544c27e
+    drums/additions: 09d0dbac79042fa3
     drums/map: c253d20d4554684f
-    drums/removals: 6a3a80ad810fe5b6
+    drums/removals: a3fb2328b873f8d9
     tempo: 72321402045f8010
   scalars: {}
-  self: 7d994cf3e86f772c
+  self: d1081bed41a3723a
   step: drums restore
   version: 0.1.0
 practice/align.yaml:
