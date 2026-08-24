@@ -426,4 +426,11 @@ it can be deleted once GitHub's default branch is `main`.
   On this machine ffmpeg 9.0 is installed under
   `%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg_...\bin` and winget
   linked none of it, so every audio command failed with an install hint for
-  something already installed. Point the variable at the folder.
+  something already installed. Point the variable at the folder — persistently,
+  at User scope, or the same error is back in the next shell. `audio.locate_tool`
+  also searches the two winget portable roots as a **last** resort, so an
+  unconfigured machine works too; that order (override, PATH, discovery) is
+  deliberate and tested. A set-but-wrong override stays an error rather than
+  falling through to either, and `doctor` names the route it took, because
+  labelling a discovery "(via RAMBASS_FFMPEG)" sends the reader to inspect a
+  variable that is not set.

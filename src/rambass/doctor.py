@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 
-from .audio import AudioError, FFMPEG_ENV, _tool_path
+from .audio import AudioError, FFMPEG_ENV, locate_tool as _locate
 
 
 @dataclass
@@ -44,25 +43,33 @@ def run_checks() -> list[Check]:
         "everything", "install Python 3.10 or newer",
     ))
 
-    # Through audio._tool_path, not shutil.which, so this agrees with the code
+    # Through audio.locate_tool, not shutil.which, so this agrees with the code
     # that actually runs the tools. Asked directly, `which` says "not on PATH"
     # for an ffmpeg that RAMBASS_FFMPEG has already located and that every audio
     # command is happily using -- and a pre-flight check which disagrees with the
-    # thing it is checking is worse than no check.
+    # thing it is checking is worse than no check. The route comes back from the
+    # resolver for the same reason: doctor guessing it printed "(via
+    # RAMBASS_FFMPEG)" for anything `which` could not see, which would now be a
+    # lie for a winget discovery and send the reader to inspect an unset variable.
+    routes = {
+        "env": f"  (via {FFMPEG_ENV})",
+        "winget": f"  (found in the winget package folder; set {FFMPEG_ENV} to pin it)",
+        "path": "",
+    }
     for tool, needed in (("ffmpeg", "decoding audio, rendering video"),
                          ("ffprobe", "reading durations")):
         try:
-            path = _tool_path(tool)
+            location = _locate(tool)
         except AudioError:
-            path = ""
-        if path:
-            version = _version([path, "-version"])
-            where = "" if shutil.which(tool) else f"  (via {FFMPEG_ENV})"
-            detail = f"{version or path}{where}" if version else f"{path}{where}"
+            location = None
+        if location is not None:
+            version = _version([location.path, "-version"])
+            where = routes.get(location.route, "")
+            detail = f"{version or location.path}{where}"
         else:
             detail = "not found on PATH"
         checks.append(Check(
-            tool, bool(path), detail, needed,
+            tool, location is not None, detail, needed,
             "brew install ffmpeg  (macOS)  ·  apt install ffmpeg  (Linux)  ·  "
             f"winget install Gyan.FFmpeg  (Windows).  Already installed but not "
             f"linked? Set {FFMPEG_ENV} to the folder holding it.",

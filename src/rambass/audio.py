@@ -12,6 +12,7 @@ import shutil
 import struct
 import subprocess
 import wave
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -41,43 +42,119 @@ def require_module(name: str, extra: str):
 #: nothing links it. Either the directory or the binary itself.
 FFMPEG_ENV = "RAMBASS_FFMPEG"
 
+#: Where winget puts portable packages, searched as a last resort so that a
+#: machine with ffmpeg installed and nothing linked works with no environment
+#: variable at all -- which is the state a laptop arrives at a venue in.
+#:
+#: The two scopes do not share a layout: ``portablePackageUserRoot`` defaults to
+#: ``%LOCALAPPDATA%\Microsoft\WinGet`` and ``portablePackageMachineRoot`` to
+#: ``%PROGRAMFILES%\WinGet``, with no ``Microsoft`` segment in the second, so
+#: one pattern for both silently finds nothing on a machine-scope install.
+#:
+#: Explicit patterns rather than ``**``: this runs before every audio command
+#: that has to fall this far, and it must not walk a disk.
+WINGET_ROOTS = (
+    ("LOCALAPPDATA", "Microsoft/WinGet"),
+    ("PROGRAMFILES", "WinGet"),
+)
+WINGET_PATTERNS = (
+    "Packages/Gyan.FFmpeg*/*/bin/{exe}",
+    "Packages/Gyan.FFmpeg*/bin/{exe}",
+    "Links/{exe}",
+)
 
-def _tool_path(name: str) -> str:
-    """*name* from :data:`FFMPEG_ENV` if it is set, else from PATH.
 
-    A set-but-wrong override is an error rather than a silent fall-through to
-    PATH: otherwise a typo in the variable produces "ffmpeg is not on PATH",
-    which sends the reader to check the one thing that was never the problem.
+@dataclass(frozen=True)
+class ToolLocation:
+    """Where a tool was found, and which of the three routes found it.
+
+    The route is not decoration: ``doctor`` prints it, and labelling a discovery
+    "(via RAMBASS_FFMPEG)" sends the reader to inspect a variable that is not
+    set -- the same wrong turn as telling them to install what they have.
+    """
+
+    path: str
+    route: str  # "env" | "path" | "winget"
+
+
+def _binary_in(directory: Path, name: str) -> Path | None:
+    for suffix in (".exe", ""):
+        candidate = directory / f"{name}{suffix}"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _winget_candidates(name: str) -> list[Path]:
+    """Every *name* under a winget portable root, newest build first.
+
+    Sorted by mtime and not by folder name: ``winget upgrade`` does not always
+    remove the previous build directory, and "ffmpeg-10.0-full_build" sorts
+    *before* "ffmpeg-9.0-full_build", so a lexicographic pick would keep running
+    an old build for the rest of the decade.
+    """
+    found: list[Path] = []
+    for variable, prefix in WINGET_ROOTS:
+        root = os.environ.get(variable, "").strip()
+        if not root:
+            continue
+        base = Path(root) / prefix
+        if not base.is_dir():
+            continue
+        for pattern in WINGET_PATTERNS:
+            for suffix in (".exe", ""):
+                found.extend(
+                    hit for hit in base.glob(pattern.format(exe=f"{name}{suffix}"))
+                    if hit.is_file()
+                )
+    unique = {hit.resolve(): hit for hit in found}
+    return sorted(unique.values(), key=lambda hit: hit.stat().st_mtime, reverse=True)
+
+
+def locate_tool(name: str) -> ToolLocation:
+    """Find *name*, reporting which route found it.
+
+    FFMPEG_ENV first, then PATH, then the winget package folders. That order is
+    deliberate at both ends. A set-but-wrong override is an error rather than a
+    fall-through -- to PATH *or* to discovery -- because otherwise a typo in the
+    variable produces "ffmpeg is not on PATH", which sends the reader to check
+    the one thing that was never the problem. And discovery is last because a
+    linked ffmpeg is a decision while a package folder left on disk is not: if
+    discovery outranked PATH, upgrading ffmpeg by hand would silently keep
+    running the winget copy.
     """
     override = os.environ.get(FFMPEG_ENV, "").strip().strip('"')
     if override:
         base = Path(override)
-        candidates = [base] if base.is_file() else []
+        if base.is_file() and base.stem == name:
+            return ToolLocation(str(base), "env")
         directory = base.parent if base.is_file() else base
-        for suffix in (".exe", ""):
-            candidates.append(directory / f"{name}{suffix}")
-        for candidate in candidates:
-            if candidate.is_file():
-                # A directory override names ffmpeg; ffprobe sits beside it.
-                found = candidate if candidate.stem == name else None
-                if found is None:
-                    continue
-                return str(found)
+        found = _binary_in(directory, name)
+        if found is not None:
+            # A directory override names ffmpeg; ffprobe sits beside it.
+            return ToolLocation(str(found), "env")
         raise AudioError(
             f"{FFMPEG_ENV} is set to {override!r} but there is no {name} there.\n"
             f"  it should be the ffmpeg directory, or the ffmpeg binary itself"
         )
     path = shutil.which(name)
-    if not path:
-        raise AudioError(
-            f"{name} is not on PATH. Install it:\n"
-            "  macOS:   brew install ffmpeg\n"
-            "  Linux:   apt install ffmpeg\n"
-            "  Windows: winget install Gyan.FFmpeg\n"
-            f"Already installed? Set {FFMPEG_ENV} to the folder holding it "
-            f"(or to the binary) instead of editing PATH."
-        )
-    return path
+    if path:
+        return ToolLocation(path, "path")
+    for candidate in _winget_candidates(name):
+        return ToolLocation(str(candidate), "winget")
+    raise AudioError(
+        f"{name} is not on PATH. Install it:\n"
+        "  macOS:   brew install ffmpeg\n"
+        "  Linux:   apt install ffmpeg\n"
+        "  Windows: winget install Gyan.FFmpeg\n"
+        f"Already installed? Set {FFMPEG_ENV} to the folder holding it "
+        f"(or to the binary) instead of editing PATH.\n"
+        f"  (PATH and the winget package folders were both searched.)"
+    )
+
+
+def _tool_path(name: str) -> str:
+    return locate_tool(name).path
 
 
 def ffmpeg_path() -> str:

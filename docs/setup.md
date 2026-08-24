@@ -65,23 +65,38 @@ and does not always link them, so `where ffmpeg` finds nothing and every audio
 command reports an install hint for something already present.
 
 Point `RAMBASS_FFMPEG` at that folder — or at the binary itself — rather than
-editing the system PATH:
+editing the system PATH. Set it **persistently**, at User scope, so every
+process started afterwards inherits it — a `$env:`/`export` assignment dies with
+the shell, which is how the same error comes back tomorrow:
 
 ```powershell
-$env:RAMBASS_FFMPEG = "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0-full_build\bin"
+$bin = (Resolve-Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Gyan.FFmpeg_*\ffmpeg-*-full_build\bin").Path
+[Environment]::SetEnvironmentVariable('RAMBASS_FFMPEG', $bin, 'User')
+$env:RAMBASS_FFMPEG = $bin   # and for the shell you are in now
 ```
 
-```bash
-export RAMBASS_FFMPEG="$LOCALAPPDATA\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0-full_build\\bin"
-```
+An already-running process — a terminal left open, Reaper, an editor — keeps the
+environment block it was launched with, so restart *that* process rather than
+hunting for a second bug. In Git Bash the value must stay in **Windows** form:
+it is handed to Python, and Python on Windows cannot open a `/c/...` path.
 
-In Git Bash it must stay in **Windows** form: the value is handed to Python, and
-Python on Windows cannot open a `/c/...` path.
+A `winget upgrade` renames the version-bearing folder, which invalidates the
+variable — re-run the two lines above after one.
 
-A set-but-wrong value is an error rather than a silent fall-through to PATH,
-because otherwise a typo in the variable reports "ffmpeg is not on PATH" and
-sends you to check the one thing that was never the problem.
+A set-but-wrong value is an error rather than a silent fall-through — to PATH or
+to the search below — because otherwise a typo in the variable reports "ffmpeg is
+not on PATH" and sends you to check the one thing that was never the problem.
 
-`rambass doctor` resolves it the same way the audio code does and says which
-route it took, so `[ok ] ffmpeg ... (via RAMBASS_FFMPEG)` means the override is
-doing the work.
+`rambass doctor` resolves ffmpeg exactly as the audio code does — the override,
+then PATH, then a search of the two winget portable roots
+(`%LOCALAPPDATA%\Microsoft\WinGet`, `%PROGRAMFILES%\WinGet`) — and says which
+route found it. So `[ok ] ffmpeg ... (via RAMBASS_FFMPEG)` means the override is
+doing the work, and `(found in the winget package folder...)` means nothing is
+set and discovery caught it. That last case works, but pin it with the variable:
+the search is a safety net for a machine nobody has configured, not the intended
+route, and it is one `winget upgrade` away from looking at a stale build folder.
+
+Discovery runs only when the override is unset *and* PATH has nothing. It cannot
+outrank either, deliberately: a linked ffmpeg is a decision, a package folder
+left on disk is not, so an ffmpeg installed by hand is never quietly replaced by
+the winget copy.
