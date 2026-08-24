@@ -16,6 +16,8 @@ drums:
   origin: extracted
   kit: ''
   map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
 source:
   audio: 04 Ampiamente Contestabile.wav
   url: https://drive.google.com/file/d/1unOVxfwmB5-GWHuM34lN83ROf4pUghJf/view
@@ -44,7 +46,7 @@ character:
 status:
   source: todo
   analyze: todo
-  stems: todo
+  stems: done
   drums_midi: todo
   quantize: todo
   kit: todo

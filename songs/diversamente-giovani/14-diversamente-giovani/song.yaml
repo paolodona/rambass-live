@@ -16,6 +16,8 @@ drums:
   origin: backing-track
   kit: ''
   map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
 source:
   audio: 14_Diversamente Giovani_MST1.wav
   url: https://drive.google.com/file/d/1nx0t_LnDTLkUFKt1XIkI0u3OpfmX4WA4/view
@@ -44,7 +46,7 @@ character:
 status:
   source: todo
   analyze: done
-  stems: n/a
+  stems: done
   drums_midi: n/a
   quantize: n/a
   kit: n/a

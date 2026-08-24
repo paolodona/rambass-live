@@ -16,6 +16,8 @@ drums:
   origin: extracted
   kit: ''
   map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
 source:
   audio: 10 La Canzone Del Solero.mp3
   url: https://drive.google.com/file/d/1Q7B8pr8zLBp_-Bbh62MAfMkYJ0w4VfrD/view
@@ -34,10 +36,17 @@ gx100:
 video:
   style: lyrics
   lyrics: lyrics.md
+character:
+  genre: ''
+  energy: 3
+  heaviness: 3
+  standing: known
+  role: ''
+  note: ''
 status:
   source: n/a
   analyze: n/a
-  stems: n/a
+  stems: done
   drums_midi: n/a
   quantize: n/a
   kit: n/a

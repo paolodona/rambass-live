@@ -16,6 +16,8 @@ drums:
   origin: extracted
   kit: ''
   map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
 source:
   audio: 03 Tutti In Fila.wav
   url: https://drive.google.com/file/d/1BfM_6UEy5hCaWfU53XR3SwMUJXNhzvDj/view
