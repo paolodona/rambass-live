@@ -71,3 +71,8 @@ rambass.local.toml
 # file to leave sitting beside the real ones.
 songs/*/*/midi/drums-*-16ths.mid
 songs/*/*/midi/drums-*-prepasses.mid
+
+# Backups a forced rebuild writes. `review.rebuild_song` copies an artifact to
+# <name>.bak before --force overwrites it, which is the right bargain -- but the
+# copy is not a deliverable, and render/click.wav.bak is not caught by *.wav.
+songs/**/*.bak
