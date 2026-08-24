@@ -14,7 +14,12 @@ from __future__ import annotations
 import pytest
 
 from rambass.provenance import PIPELINE, Staleness, stale_report, stamp, step_for
-from rambass.review import rebuild_selection, run_rebuild, steps_for
+from rambass.review import (
+    rebuild_selection,
+    run_rebuild,
+    song_screen,
+    steps_for,
+)
 
 
 def _touch(path, text="x"):
@@ -576,3 +581,131 @@ def test_section_performance_shifts_the_slice_to_zero(song):
     assert min(hit.time for hit in sliced.hits) == pytest.approx(0.0)
     # EZdrummer's browser plays a groove from its own zero; a slice that
     # kept absolute song time would import with nine bars of silence.
+
+
+# ── step state for the rows provenance does not track ────────────────────────
+#
+# A row with no provenance artifact used to report `state: ""`, which the
+# console's `stepIcon` renders as the same grey dot it uses for a stage that
+# does not apply. So "the mix is in place" and "not applicable" looked
+# identical, and — worse — the analyze row always showed a todo dot with a Run
+# button next to it, which is what invited the click that overwrote Manlio's
+# settled 60.0 BPM with a re-detected 60.02. These rows carry their own state.
+
+
+def test_the_source_row_reads_the_file_on_disk(song):
+    """The mix's presence *is* the completion test for that step."""
+    (song.dir / "source").mkdir(parents=True, exist_ok=True)
+    assert steps_for(song, "source")[0].state == "missing"
+    (song.dir / "source" / "09 Manlio.wav").write_bytes(b"RIFF----WAVE")
+    assert steps_for(song, "source")[0].state == "ok"
+
+
+def test_the_source_row_honours_an_explicit_source_audio(song):
+    """`source.audio` names the file; a name that is not there is not ok."""
+    (song.dir / "source").mkdir(parents=True, exist_ok=True)
+    (song.dir / "source" / "09 Manlio.wav").write_bytes(b"RIFF----WAVE")
+    song.source_audio = "not-here.wav"
+    assert steps_for(song, "source")[0].state == "missing"
+    song.source_audio = "09 Manlio.wav"
+    assert steps_for(song, "source")[0].state == "ok"
+
+
+def test_the_analyze_row_reads_the_manifests_own_status(song):
+    """A settled tempo must not read as an unfinished step."""
+    song.status["analyze"] = "todo"
+    assert steps_for(song, "analyze")[0].state == "missing"
+    song.status["analyze"] = "done"
+    assert steps_for(song, "analyze")[0].state == "ok"
+
+
+def test_the_optional_a_cappella_reference_stays_untracked(song):
+    """Optional means optional: it must not nag with a todo dot."""
+    song.drums_origin = "a-cappella"
+    assert steps_for(song, "source")[0].state == ""
+
+
+def test_song_screen_carries_a_rows_own_state_when_provenance_has_none(song):
+    (song.dir / "source").mkdir(parents=True, exist_ok=True)
+    (song.dir / "source" / "mix.wav").write_bytes(b"RIFF----WAVE")
+    song.status["analyze"] = "done"
+    screens = {s["stage"]: s for s in song_screen(song, [])["screens"]}
+    assert screens["source"]["steps"][0]["state"] == "ok"
+    assert screens["analyze"]["steps"][0]["state"] == "ok"
+
+
+def test_a_row_naming_an_untracked_artifact_falls_back_to_the_file(song):
+    """`render/sticks.wav` is the one row that names an artifact no
+    :data:`~rambass.provenance.PIPELINE` step produces, so it never got an
+    entry and read as the grey n/a dot -- for a file sitting on disk next to
+    the click track. Existence is the only fact available for it, so use it."""
+    (song.dir / "render").mkdir(parents=True, exist_ok=True)
+    sticks = [r for r in steps_for(song, "render") if "sticks" in r.artifact]
+    assert len(sticks) == 1, "the count-in row stopped naming render/sticks.wav"
+
+    screens = {s["stage"]: s for s in song_screen(song, [])["screens"]}
+    row = [s for s in screens["render"]["steps"] if "sticks" in s["artifact"]][0]
+    assert row["state"] == "missing"
+
+    (song.dir / "render" / "sticks.wav").write_bytes(b"RIFF----WAVE")
+    screens = {s["stage"]: s for s in song_screen(song, [])["screens"]}
+    row = [s for s in screens["render"]["steps"] if "sticks" in s["artifact"]][0]
+    assert row["state"] == "ok"
+
+
+def test_a_tracked_artifact_still_takes_its_state_from_provenance(song):
+    """The disk fallback must not shout over a real verdict: a click track that
+    provenance calls `unknown` stays `unknown`, not `ok`, however present it is."""
+    from rambass.provenance import Staleness
+
+    (song.dir / "render").mkdir(parents=True, exist_ok=True)
+    (song.dir / "render" / "click.wav").write_bytes(b"RIFF----WAVE")
+    report = [Staleness(artifact="render/click.wav", step="click",
+                        command="rambass click x", state="unknown",
+                        reasons=["no provenance recorded"])]
+    screens = {s["stage"]: s for s in song_screen(song, report)["screens"]}
+    row = [s for s in screens["render"]["steps"] if "click" in s["artifact"]][0]
+    assert row["state"] == "unknown"
+
+
+def test_a_manual_row_with_no_artifact_stays_untracked(song):
+    """"Bounce the base" is a human act with nothing to look for. It keeps the
+    grey dot -- that dot is only wrong when something *could* have been checked."""
+    rows = {r.label: r for r in steps_for(song, "render")}
+    bounce = [r for r in rows.values() if "ounce" in r.label][0]
+    assert bounce.artifact == "" and bounce.state == ""
+
+
+# ── which clip source is missing, and whether a button can make it ───────────
+
+
+def test_clip_sources_reports_each_side_independently(cwd_song):
+    """A missing candidate must not be reported as a missing reference.
+
+    The two sides fail for unrelated reasons and have unrelated fixes: the
+    stem is one command away, the candidate is a bounce out of a DAW. One
+    combined error message is what left both canvases blank with the same
+    string while the stem was already on disk."""
+    from rambass.review import clip_sources
+
+    _touch(cwd_song.path("stems", "drums.wav"), "not-really-audio")
+    sources = clip_sources(cwd_song)
+
+    assert sources["ref"].path == cwd_song.path("stems", "drums.wav")
+    assert sources["cand"].path is None
+    assert "qa/candidate.wav" in sources["cand"].hint
+
+
+def test_only_the_reference_side_offers_a_command(cwd_song):
+    """`rambass stems` makes the stem; nothing here makes the bounce.
+
+    The candidate is a render through the kit in a DAW, so a Run button for it
+    would be a lie. The reference's command is the same string the stems step
+    row puts on the song screen, which is what `run_step_command` whitelists."""
+    from rambass.review import clip_sources, steps_for
+
+    sources = clip_sources(cwd_song)
+    assert sources["cand"].command == ""
+    assert sources["ref"].command == f"rambass stems {cwd_song.slug} --drums-only"
+    assert sources["ref"].command in {
+        row.command for row in steps_for(cwd_song, "stems")}

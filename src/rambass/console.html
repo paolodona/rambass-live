@@ -38,6 +38,11 @@
   .dot.na   { background:transparent; border:1.5px solid var(--grey); }
   .dot.stale  { box-shadow:0 0 0 3px rgba(234,162,62,.38); }
   .dot.edited { box-shadow:0 0 0 3px rgba(142,151,242,.38); }
+  /* Built, but nothing recorded what from. A filled dot because the file is
+     really there, hollow-ringed because we cannot vouch for it -- and above
+     all not `.dot.na`, which said "not applicable" about a click track that
+     exists and is already in the Reaper project. */
+  .dot.unknown { background:var(--grey); box-shadow:0 0 0 3px rgba(140,140,150,.30); }
   .row { display:flex; align-items:center; border-bottom:1px solid var(--border-soft); }
   .row:last-child { border-bottom:none; }
   .row.head { background:var(--raised); }
@@ -294,6 +299,7 @@ function stepIcon(step) {
   if (step.state === "ok") return `<span class="dot done"></span>`;
   if (step.state === "stale") return `<span class="dot done stale"></span>`;
   if (step.state === "edited") return `<span class="dot done edited"></span>`;
+  if (step.state === "unknown") return `<span class="dot unknown"></span>`;
   return `<span class="dot na"></span>`;
 }
 
@@ -322,6 +328,9 @@ async function renderSong(slugAndQuery) {
         ? `<div class="warn">${esc(step.reasons.join("; ") || "stale")}</div>`
         : step.state === "edited"
         ? `<div class="warn">hand-edited — a rebuild will not touch this without --force</div>`
+        : step.state === "unknown"
+        ? `<div class="warn">on disk, but no provenance — built before this was
+             recorded, or by hand. Re-run it to make it checkable.</div>`
         : step.note ? `<div class="note">${esc(step.note)}</div>`
         : step.command ? `<div class="note">${esc(step.command)}</div>` : "";
       return `<div class="step">${stepIcon(step)}
@@ -436,7 +445,9 @@ class ReviewView {
         <div class="lane" id="lane-cand"><div class="who">
           <b>Candidate</b> · rendered MIDI</div><canvas></canvas></div>
         <div class="lane" id="lane-ref"><div class="who">
-          <b>Reference</b> · original drums</div><canvas></canvas></div>
+          <b>Reference</b> · original drums
+          <button class="btn" id="make-ref" style="display:none;margin-left:8px">
+            Separate drum stem</button></div><canvas></canvas></div>
         <div class="ruler"><div class="who">bar.beat</div><canvas id="ruler"></canvas></div>
         <div class="transport">
           <button class="btn primary" id="play">&#9654;</button>
@@ -473,6 +484,7 @@ class ReviewView {
     $("#promote").addEventListener("click", () => this.promote());
     $("#export").addEventListener("click", () => this.exportSection());
     $("#rebuild").addEventListener("click", () => this.rebuild());
+    $("#make-ref").addEventListener("click", () => this.makeReference());
     this.cand.addEventListener("ended", () => this.onEnded());
     this.setKind(this.noteKind);
     this.show();
@@ -495,8 +507,9 @@ class ReviewView {
     this.cand.src = section.cand_url;
     this.ref.src = section.ref_url;
     this.applyMute();
-    this.drawWave($("#lane-cand canvas"), section.cand_url);
-    this.drawWave($("#lane-ref canvas"), section.ref_url);
+    this.drawWave($("#lane-cand canvas"), section.cand_url, "cand");
+    this.drawWave($("#lane-ref canvas"), section.ref_url, "ref");
+    this.showMakeRef();
     this.drawRuler(section);
     this.drawGrid(section);
     this.renderChips();
@@ -561,10 +574,15 @@ class ReviewView {
                     section.start_bar + Math.floor(through * bars));
   }
 
-  async drawWave(canvas, url) {
+  /* Per side, and only ever about *this* side. The old canvas printed one
+     string naming both sources, so a missing candidate read as a missing
+     stem too and there was no way to tell which file to go and make. */
+  async drawWave(canvas, url, side) {
     const context = canvas.getContext("2d");
     canvas.width = canvas.clientWidth * 2; canvas.height = 104;
     context.clearRect(0, 0, canvas.width, canvas.height);
+    const source = (this.data.sources || {})[side];
+    if (source && !source.available) return this.drawNoClip(context, source);
     try {
       const response = await fetch(url);
       if (!response.ok) throw new Error();
@@ -582,10 +600,23 @@ class ReviewView {
                          canvas.width / buckets * 0.7, height);
       }
     } catch (error) {
-      context.fillStyle = "#565c66"; context.font = "20px system-ui";
-      context.fillText("no clip yet — bounce qa/candidate.wav and run " +
-                       "rambass stems for the reference", 16, 60);
+      this.drawNoClip(context, source || {hint: "no clip yet"});
     }
+  }
+
+  drawNoClip(context, source) {
+    context.fillStyle = "#565c66"; context.font = "20px system-ui";
+    /* the CLI's own message, wrapped — one wording for both front ends. */
+    const words = (source.hint || "no clip yet").split(/\s+/);
+    let line = "", y = 42;
+    for (const word of words) {
+      const next = line ? line + " " + word : word;
+      if (context.measureText(next).width > context.canvas.width - 32) {
+        context.fillText(line, 16, y); line = word; y += 26;
+      } else { line = next; }
+      if (y > 96) break;
+    }
+    if (line && y <= 96) context.fillText(line, 16, y);
   }
 
   drawRuler(section) {
@@ -678,6 +709,26 @@ class ReviewView {
         `for your ears) — read the git diff, then rebuild (r)`;
       this.data.notes = result.notes;
       this.renderChips();
+    } catch (error) { log.textContent = "error: " + error.message; }
+  }
+  /* Only the reference gets a button: `rambass stems` makes that file, and
+     nothing in this repo can produce the candidate — it is a bounce through
+     the kit in a DAW. A Run button for it would be a lie. */
+  showMakeRef() {
+    const source = (this.data.sources || {}).ref || {};
+    $("#make-ref").style.display =
+      (!source.available && source.command) ? "" : "none";
+  }
+  async makeReference() {
+    const command = ((this.data.sources || {}).ref || {}).command;
+    if (!command) return;
+    const log = $("#log"); log.style.display = "block";
+    log.textContent = command + "…";
+    try {
+      const result = await api("/api/run", {song: this.slug, command: command});
+      log.textContent = result.failed
+        ? "failed: " + result.failed : "ok    " + command;
+      if (!result.failed) renderReview(this.slug);
     } catch (error) { log.textContent = "error: " + error.message; }
   }
   async exportSection() {

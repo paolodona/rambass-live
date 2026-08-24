@@ -486,3 +486,107 @@ def test_promote_over_http_updates_ledger_and_manifest(reviewable):
     assert data["promoted"] == 1
     assert load_song(song.directory).drum_additions
     assert data["notes"][0]["status"] == "promoted"
+
+
+def test_the_page_gives_an_unprovenanced_file_its_own_dot(served):
+    """`render/click.wav` is on disk and in the Reaper project, but it was
+    built before provenance existed, so `stale_report` calls it `unknown`.
+    `stepIcon` had no branch for that, so it fell through to the same hollow
+    grey dot the console draws for a stage that does not apply -- and the click
+    step read as "not applicable" for a song that has a click. Pinned on the
+    served text, because there is no browser here."""
+    base, _ = served
+    with urllib.request.urlopen(base + "/") as response:
+        page = response.read().decode("utf-8")
+
+    assert '"unknown"' in page, "stepIcon does not branch on the unknown state"
+    assert ".dot.unknown" in page, "the unknown state has no dot of its own"
+    assert "no provenance" in page, "nothing on the page explains an unknown"
+
+
+# ── a blank canvas has to say which of the two sources is missing ────────────
+
+
+@pytest.fixture
+def stem_only(reviewable, monkeypatch):
+    """Manlio's real state: a separated drum stem, no bounced candidate."""
+    base, song = reviewable
+    path = song.path("stems", "drums.wav")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("not-really-audio", encoding="utf-8")
+
+    from rambass import review as review_module
+
+    cut: list[tuple] = []
+
+    def fake_cut(source, target, *, start, duration):
+        # No ffmpeg in this suite; what is under test is which source got
+        # picked, not the trim.
+        cut.append((str(source), float(start), float(duration)))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"RIFF....WAVE")
+
+    monkeypatch.setattr(review_module, "cut_clip", fake_cut)
+    return base, song, cut
+
+
+def test_a_missing_candidate_does_not_blank_the_reference(stem_only):
+    """The reference clip is servable whenever the stem is on disk.
+
+    Both sources used to be resolved eagerly into one tuple, so
+    `candidate_path`'s ProjectError killed the request for the *other* side
+    too -- and the reference canvas went blank for a file that was there."""
+    base, song, cut = stem_only
+    data = _get(base, f"/api/review/{song.slug}")
+    verse = next(s for s in data["sections"] if s["name"] == "verse")
+
+    with urllib.request.urlopen(base + verse["ref_url"]) as response:
+        assert response.status == 200
+    assert cut and cut[0][0].endswith("drums.wav")
+
+
+def test_a_missing_candidate_clip_is_409_and_names_the_bounce(stem_only):
+    """404 means "no such clip"; this one exists and has no source yet."""
+    base, song, _ = stem_only
+    data = _get(base, f"/api/review/{song.slug}")
+    verse = next(s for s in data["sections"] if s["name"] == "verse")
+
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        urllib.request.urlopen(base + verse["cand_url"])
+    assert caught.value.code == 409
+    assert "qa/candidate.wav" in json.loads(
+        caught.value.read().decode("utf-8"))["error"]
+
+
+def test_the_review_payload_says_which_side_is_missing(stem_only):
+    """So the canvas draws the real reason, not one string naming both."""
+    base, song, _ = stem_only
+    sources = _get(base, f"/api/review/{song.slug}")["sources"]
+
+    assert sources["ref"]["available"] is True
+    assert sources["cand"]["available"] is False
+    assert "qa/candidate.wav" in sources["cand"]["hint"]
+    assert sources["cand"]["command"] == ""
+
+
+def test_the_reference_side_offers_the_stems_command(reviewable):
+    """A button can make this one, and `/api/run` already whitelists it."""
+    base, song = reviewable
+    from rambass.provenance import stale_report
+    from rambass.review import runnable_commands
+
+    sources = _get(base, f"/api/review/{song.slug}")["sources"]
+    assert sources["ref"]["available"] is False
+    assert sources["ref"]["command"] in runnable_commands(
+        song, stale_report(song))
+
+
+def test_the_canvas_draws_a_per_side_reason_and_a_run_button(served):
+    """No browser here, so pin the wiring the same way the busy row is."""
+    base, _ = served
+    with urllib.request.urlopen(base + "/") as response:
+        page = response.read().decode("utf-8")
+
+    assert "data.sources" in page, "the canvas never reads per-side availability"
+    assert 'id="make-ref"' in page, "no button for the source a command can make"
+    assert "/api/run" in page

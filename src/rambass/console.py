@@ -156,7 +156,13 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         from .align import load_align
         from .drummap import load_drum_map
         from .midiio import read_drum_midi
-        from .review import clip_name, clip_spans, grid_rows, load_review
+        from .review import (
+            clip_name,
+            clip_sources,
+            clip_spans,
+            grid_rows,
+            load_review,
+        )
 
         song = _find_song(self.project, slug)
         if song is None:
@@ -190,18 +196,17 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             } for span in spans],
             "notes": [note.to_dict() for note in notes],
             "grid": grid,
+            # Per side, so a blank canvas names its own missing file instead
+            # of one string listing both of them.
+            "sources": {side: source.to_dict()
+                        for side, source in clip_sources(song).items()},
         })
 
     def _clip(self, rest: str) -> None:
         """``/clips/<slug>/<clip-name>.wav`` — cut lazily on first request."""
+        from . import review as review_module
         from .align import load_align
-        from .review import (
-            candidate_path,
-            clip_name,
-            clip_spans,
-            cut_clip,
-            reference_path,
-        )
+        from .review import clip_name, clip_sources, clip_spans
 
         slug, _, name = rest.partition("/")
         song = _find_song(self.project, slug)
@@ -213,20 +218,27 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             amap = load_align(song.path("practice", "align.yaml"))
             wanted = None
             for span in clip_spans(song, amap):
-                for side, source in (("cand", candidate_path(song)),
-                                     ("ref", reference_path(song))):
+                for side in ("cand", "ref"):
                     if clip_name(span, side) == name:
-                        wanted = (span, side, source)
+                        wanted = (span, side)
             if wanted is None:
                 self._error(404, f"no such clip: {name}")
                 return
-            span, side, source = wanted
-            if side == "cand":
-                cut_clip(source, target, start=span.candidate_start,
-                         duration=span.duration)
-            else:
-                cut_clip(source, target, start=span.reference_start,
-                         duration=span.reference_duration)
+            span, side = wanted
+            # Resolved here and per side: building both sources up front meant
+            # a missing candidate raised for a *reference* request too, and
+            # blanked a canvas whose stem was already on disk.
+            source = clip_sources(song)[side]
+            if not source.available:
+                # 404 is "no such clip"; this one exists and has no source
+                # yet, which is a different thing to tell the reader.
+                self._error(409, source.hint)
+                return
+            start, duration = ((span.candidate_start, span.duration)
+                               if side == "cand" else
+                               (span.reference_start, span.reference_duration))
+            review_module.cut_clip(source.path, target,
+                                   start=start, duration=duration)
         self._send(200, target.read_bytes(), "audio/wav")
 
     # ── POST ────────────────────────────────────────────────────────────────

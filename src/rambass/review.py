@@ -103,6 +103,16 @@ class StepRow:
     (ears, not a report); ``manual`` is a human act the console can only
     describe. *artifact* names the provenance artifact the step produces, so
     the screen can show done-but-stale, or ``""`` when there is none.
+
+    *state* is for the rows :mod:`~rambass.provenance` cannot track, which it
+    would otherwise report as ``""`` -- and the console draws ``""`` as the
+    same grey dot it uses for a stage that does not apply. So a mix that is
+    sitting in ``source/`` looked identical to a stage that will never happen,
+    and the analyze row showed a todo dot beside a Run button however settled
+    its tempo was, which is what invited the click that overwrote Manlio's
+    60.0. A row that can establish its own state says so here, in the
+    vocabulary :func:`~rambass.provenance.stale_report` uses (``ok`` /
+    ``missing``); ``""`` still means genuinely untracked.
     """
 
     label: str
@@ -110,6 +120,7 @@ class StepRow:
     kind: str = "run"
     artifact: str = ""
     note: str = ""
+    state: str = ""
 
 
 #: The dashboard's drum columns collapse onto one screen: on Tutti in Fila
@@ -137,6 +148,8 @@ def steps_for(song, stage: str) -> list[StepRow]:
             return [StepRow("Title card", f"rambass video card {slug}",
                             note="the a-cappella songs need a card and nothing else")]
         if stage == "source":
+            # No state: optional means optional, and a todo dot here would nag
+            # about something CLAUDE.md calls a finished state already.
             return [StepRow("Reference recording in source/", kind="manual",
                             note="optional — for rehearsal only")]
         if stage == "rehearsed":
@@ -144,11 +157,19 @@ def steps_for(song, stage: str) -> list[StepRow]:
         return []
 
     if stage == "source":
+        # The file being there *is* the completion test for this step, so it is
+        # read off disk rather than from `song.status` -- `rambass mark` is a
+        # human's tick, and this one thing the console can check itself.
         return [StepRow("Original mix in source/", kind="manual",
+                        state="ok" if song.source_path() else "missing",
                         note="the WAV, not the MP3 — separation quality sets "
                              "the ceiling (drums-rebuild.md Stage 0)")]
     if stage == "analyze":
+        # There is no artifact to hash -- the tempo lands in `song.yaml` -- so
+        # the manifest's own status is the only record that it is settled.
         return [StepRow("Find the tempo", f"rambass analyze {slug} --write",
+                        state=("ok" if song.status.get("analyze") == "done"
+                               else "missing"),
                         note="refined against the recording; a bin centre is "
                              "not a measurement")]
     if stage == "stems":
@@ -529,6 +550,58 @@ def candidate_path(song, override=None):
         f"qa/candidate.wav, or pass --candidate <wav>")
 
 
+@dataclass(frozen=True)
+class ClipSource:
+    """One side's audio source, and what to do when it is not there yet.
+
+    The two sides fail for unrelated reasons: the reference stem is one
+    command away, and the candidate is a bounce through the kit in a DAW that
+    nothing here can produce. Reporting them together -- one message naming
+    both, one error that kills both requests -- is how the reference canvas
+    went blank for a `stems/drums.wav` that was already on disk. So each side
+    answers for itself, and only the side a command can make carries one.
+    """
+
+    side: str
+    label: str
+    path: object = None
+    hint: str = ""
+    command: str = ""
+
+    @property
+    def available(self) -> bool:
+        return self.path is not None
+
+    def to_dict(self) -> dict:
+        return {"side": self.side, "label": self.label,
+                "available": self.available, "hint": self.hint,
+                "command": self.command}
+
+
+def clip_sources(song, candidate_override=None) -> dict[str, ClipSource]:
+    """Both clip sources, resolved independently and without raising.
+
+    The hints are :func:`candidate_path`/:func:`reference_path`'s own messages
+    rather than a second wording, so the console and the CLI cannot drift on
+    what to do next.
+    """
+    try:
+        candidate = ClipSource("cand", "candidate",
+                               candidate_path(song, candidate_override))
+    except ProjectError as exc:
+        candidate = ClipSource("cand", "candidate", hint=str(exc))
+    try:
+        reference = ClipSource("ref", "reference", reference_path(song))
+    except ProjectError as exc:
+        # The one side a button can make. It is the stems step row's own
+        # command string, which is what `run_step_command` whitelists -- a
+        # button offering anything else would be refused by the console.
+        reference = ClipSource(
+            "ref", "reference", hint=str(exc),
+            command=f"rambass stems {song.slug} --drums-only")
+    return {"cand": candidate, "ref": reference}
+
+
 def reference_path(song):
     """The original drums to review against: the separated stem."""
     path = song.path("stems", "drums.wav")
@@ -735,6 +808,15 @@ def song_screen(song, report) -> dict:
         for row in steps_for(song, key):
             artifact = row.artifact.format(slug=song.slug)
             entry = by_artifact.get(artifact)
+            # A row can name an artifact that no PIPELINE step produces --
+            # `render/sticks.wav` is the one -- so it never gets an entry and
+            # used to read as the grey n/a dot for a file sitting on disk next
+            # to the click track. Existence is the only fact available for it.
+            # Only as a fallback: a tracked artifact's verdict always wins, or
+            # a present-but-unprovenanced click would report a confident `ok`.
+            state = row.state
+            if entry is None and not state and artifact:
+                state = "ok" if song.path(*artifact.split("/")).exists() else "missing"
             steps.append({
                 "label": row.label, "command": row.command, "kind": row.kind,
                 "note": row.note, "artifact": artifact,
@@ -743,7 +825,7 @@ def song_screen(song, report) -> dict:
                 # meaning the whole chain -- which is how clicking Run on the
                 # click track started a demucs separation.
                 "step": entry.step if entry else "",
-                "state": entry.state if entry else "",
+                "state": entry.state if entry else state,
                 "reasons": entry.reasons if entry else [],
             })
         status = (song.status.get(stage, "todo") if key != "drums" else
