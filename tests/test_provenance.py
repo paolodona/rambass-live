@@ -375,6 +375,26 @@ def test_changing_the_backbeat_velocity_makes_the_clean_stale(song):
     assert any("backbeat_velocity" in reason for reason in entry.reasons)
 
 
+def test_declaring_an_accent_makes_the_clean_stale(song):
+    """Same argument as backbeat_velocity: the accent is applied during
+    `drums clean`, so declaring one in song.yaml is a reason to rebuild."""
+    from rambass.manifest import save_song
+
+    raw = _touch(song.directory / "midi" / "drums-raw.mid")
+    quantized = _touch(song.directory / "midi" / "drums-quantized.mid")
+    stamp(song, raw, step="drums transcribe", inputs=[])
+    stamp(song, quantized, step="drums clean", inputs=[raw])
+
+    song.drum_accents = {"kick": 100}
+    save_song(song)
+
+    states = {s.artifact: s for s in stale_report(song)}
+    assert states["midi/drums-raw.mid"].state == "ok"
+    entry = states["midi/drums-quantized.mid"]
+    assert entry.state == "stale"
+    assert any("accents" in reason for reason in entry.reasons)
+
+
 # ── the Reaper project has to get the *finished* part ────────────────────────
 #
 # `reaper build` defaulted to drums-quantized.mid, which is the part before the
