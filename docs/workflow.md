@@ -135,10 +135,17 @@ docs/drums-rebuild.md — so it is set by ear, once, in `song.yaml`.
 ### 5. Sections, then the pattern vote
 
 ```
-rambass section 04-titolo 22.3 verse-2      # Reaper bar.beat; it converts
+rambass section 04-titolo 22.3 verse-2 --reaper-bar   # the ruler's bar.beat
+rambass section-rm 04-titolo 22.3 --reaper-bar        # ...and undoing one
 rambass sections 04-titolo                  # review the list against the drums
 rambass drums consolidate 04-titolo         # Stage 6
 ```
+
+Replacing a section at a position it already holds keeps that section's
+`backbeat` and `note` — correcting a name must not un-declare an arrangement.
+Pass `--backbeat ''` to clear one on purpose. The console's sections screen
+(docs/review-ui.md) is the same three commands with the list in front of you and
+the count-in taken off for you.
 
 `consolidate` replaces each section with the pattern its own repetitions agree
 on. It **removes the fills and the crashes by design** — a fill is the bar that

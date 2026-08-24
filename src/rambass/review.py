@@ -147,6 +147,12 @@ class StepRow:
     artifact: str = ""
     note: str = ""
     state: str = ""
+    #: For ``kind="open"``: the hash route this row opens, and the button's
+    #: words. There are two openers now -- the drum review tool and the sections
+    #: editor -- so neither the route nor the label can stay written into the one
+    #: branch of the page that draws them.
+    target: str = ""
+    open_label: str = ""
 
 
 #: The dashboard's drum columns collapse onto one screen: on Tutti in Fila
@@ -212,10 +218,19 @@ def steps_for(song, stage: str) -> list[StepRow]:
             StepRow("Clean: de-flam, quantise, velocities",
                     f"rambass drums clean {slug}",
                     artifact="midi/drums-quantized.mid"),
-            StepRow("Sections & consolidate",
-                    f"rambass drums consolidate {slug}",
+            # Two jobs, and they were one row: marking a section is a hand
+            # edit to song.yaml, consolidating is a derived rebuild off it.
+            StepRow("Sections", kind="open", target="sections",
+                    open_label="Edit sections",
+                    state="ok" if song.sections else "missing",
+                    note="the named parts, on Reaper's ruler — identical names "
+                         "are pooled into one part by consolidate, so give two "
+                         "sections the same name only when you mean that"),
+            StepRow("Consolidate", f"rambass drums consolidate {slug}",
                     artifact="midi/drums-consolidated.mid",
-                    note="mark the sections first: rambass section <bar> <name>"),
+                    note="one pattern per section, voted across its "
+                         "repetitions — goes stale when the section list "
+                         "changes"),
             StepRow("Render a candidate to review",
                     f"rambass review render {slug}",
                     artifact="qa/candidate.wav",
@@ -223,7 +238,9 @@ def steps_for(song, stage: str) -> list[StepRow]:
                          "what the A/B plays, and it has to be re-run after "
                          "every rebuild"),
             StepRow("Missing hits & restore", f"rambass drums restore {slug}",
-                    kind="open", artifact="midi/drums-restored.mid",
+                    kind="open", target="review",
+                    open_label="Open review tool",
+                    artifact="midi/drums-restored.mid",
                     note="needs ears, not a report — opens the review tool"),
             StepRow("Choose kit & drum map", kind="manual",
                     note="audition against the song's character block, then "
@@ -248,12 +265,29 @@ def steps_for(song, stage: str) -> list[StepRow]:
                          "the click (drums-rebuild.md Stage 9)"),
         ]
     if stage == "lyrics":
+        # Neither of the first two rows produces a PIPELINE artifact, so
+        # provenance has no verdict for either and both read as the same dot
+        # for ever -- the Whisper row still showing todo straight after a
+        # three-minute run that printed 25 cues and wrote the file. They read
+        # their own state off disk, the way `source` does.
+        #
+        # They are alternatives ("import a hand-timed file ... or draft one
+        # below"), so an imported SRT makes the draft row n/a rather than
+        # done: it was never run. Only the subtitle formats count as timed
+        # cues -- `rambass new` leaves a `lyrics.md` stub in every song
+        # directory, so `lyrics_path()` is non-None for a song with no words
+        # at all, and trusting it would tick the row for the whole repo.
+        hand_timed = any(song.path(name).is_file()
+                         for name in ("lyrics.srt", "lyrics.vtt", "lyrics.lrc"))
+        drafted = song.path("lyrics.draft.srt").is_file()
         return [
             StepRow("Timed cues in lyrics.srt", kind="manual",
+                    state="ok" if hand_timed else "missing",
                     note=f"import a hand-timed file (rambass lyrics import "
                          f"{slug} <file>) or draft one below"),
             StepRow("Draft cues with Whisper",
                     f"rambass lyrics transcribe {slug}",
+                    state="ok" if drafted else "" if hand_timed else "missing",
                     note="a draft to correct, not a result"),
             StepRow("Check the cues", f"rambass lyrics check {slug}"),
         ]
@@ -966,6 +1000,7 @@ def song_screen(song, report) -> dict:
             steps.append({
                 "label": row.label, "command": row.command, "kind": row.kind,
                 "note": row.note, "artifact": artifact,
+                "target": row.target, "open_label": row.open_label,
                 # The provenance step name, which is the key `rebuild_song`
                 # filters on. Without it a Run button can only say "rebuild",
                 # meaning the whole chain -- which is how clicking Run on the

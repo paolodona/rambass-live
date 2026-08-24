@@ -201,6 +201,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 self._song_screen(path.removeprefix("/api/song/"))
             elif path.startswith("/api/review/"):
                 self._review(path.removeprefix("/api/review/"))
+            elif path.startswith("/api/sections/"):
+                self._sections(path.removeprefix("/api/sections/"))
             elif path.startswith("/clips/"):
                 self._clip(path.removeprefix("/clips/"))
             else:
@@ -303,6 +305,33 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                         for side, source in clip_sources(song).items()},
         })
 
+    def _sections(self, slug: str) -> None:
+        """The section list, its spans and the checker's findings.
+
+        Straight over :func:`~rambass.sections.section_table`, which is also
+        what `rambass sections` prints -- so the screen and the terminal cannot
+        disagree about where a section is or how long it runs.
+        """
+        from .drummap import load_drum_map
+        from .midiio import read_drum_midi
+        from .sections import section_table
+
+        song = _find_song(self.project, slug)
+        if song is None:
+            self._error(404, f"no such song: {slug}")
+            return
+        # The pattern findings need a transcription; without one they are
+        # skipped rather than guessed at, exactly as `cmd_sections` does.
+        performance = None
+        midi_path = song.best_drum_midi()
+        if midi_path.exists():
+            performance = read_drum_midi(
+                midi_path, load_drum_map(song.drum_map, self.project))
+            performance.timeline = song.timeline()
+        table = section_table(song, performance)
+        table["midi"] = midi_path.name if midi_path.exists() else ""
+        self._json(table)
+
     def _clip(self, rest: str) -> None:
         """``/clips/<slug>/<clip-name>.wav`` — cut lazily on first request."""
         from . import review as review_module
@@ -389,6 +418,10 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 self._rebuild(song, body)
             elif path == "/api/run":
                 self._run(song, body)
+            elif path == "/api/section":
+                self._add_section(song, body)
+            elif path == "/api/section/remove":
+                self._remove_section(song, body)
             elif path == "/api/note":
                 self._note(song, body)
             elif path == "/api/note/remove":
@@ -470,6 +503,42 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 project_root=self.project.root, report=stale_report(song)))
         finally:
             self._release(song)
+
+    def _section_table(self, song) -> None:
+        """Reply with the fresh table, so the screen re-renders off the answer."""
+        from .sections import section_table
+
+        self._json(section_table(song))
+
+    def _add_section(self, song, body: dict) -> None:
+        """Add or replace one section. The Reaper->musical subtraction happens
+        in `to_musical` and nowhere else; `add_section` is what keeps the
+        section's `backbeat` and `note` across a rename."""
+        from .manifest import save_song
+        from .project import parse_position
+        from .sections import add_section, to_musical
+
+        bar, beat = parse_position(str(body.get("position", "")))
+        bar = to_musical(song, bar, reaper=bool(body.get("reaper")))
+        name = str(body.get("name", "")).strip()
+        if not name:
+            raise ProjectError("a section needs a name")
+        backbeat = body.get("backbeat")
+        add_section(song, bar=bar, beat=beat, name=name,
+                    backbeat=None if backbeat is None else str(backbeat))
+        save_song(song)
+        self._section_table(song)
+
+    def _remove_section(self, song, body: dict) -> None:
+        from .manifest import save_song
+        from .project import parse_position
+        from .sections import remove_section, to_musical
+
+        bar, beat = parse_position(str(body.get("position", "")))
+        bar = to_musical(song, bar, reaper=bool(body.get("reaper")))
+        remove_section(song, bar=bar, beat=beat)
+        save_song(song)
+        self._section_table(song)
 
     def _note(self, song, body: dict) -> None:
         from datetime import date

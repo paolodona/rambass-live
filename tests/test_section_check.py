@@ -296,3 +296,170 @@ def test_the_sections_command_never_writes(song, project, monkeypatch):
     main(["sections", song.slug])
     assert (song.dir / "song.yaml").read_text(encoding="utf-8") == before
     assert len(load_song(song.dir).sections) == 3
+
+
+# ── editing the section list ─────────────────────────────────────────────────
+#
+# `rambass section` could add or replace and had no way to remove, and the
+# replace rebuilt the Section from scratch -- so re-marking a section to fix its
+# name dropped `backbeat` and `note` with it. On Manlio that silently
+# un-declares three verses of side-sticks, which CLAUDE.md records as
+# arrangement structure settled by ear once, not a threshold. These are the
+# edits both `rambass section` and the console's sections screen go through.
+
+
+def _sectioned(song, *pairs):
+    """*song* with exactly these (bar, beat, name) sections."""
+    from rambass.manifest import Section
+
+    song.sections = [Section(name=name, bar=bar, beat=beat)
+                     for bar, beat, name in pairs]
+    return song
+
+
+def test_replacing_a_section_keeps_its_backbeat_and_note(song):
+    """The bug. Manlio's verse-2 carries `backbeat: sidestick`, and re-marking
+    it to correct a typo threw that away -- changing the rendered part, with
+    nothing in the diff explaining why the clicks had gone."""
+    from rambass.manifest import Section
+    from rambass.sections import add_section
+
+    song.sections = [Section(name="verse-2", bar=20, beat=3.0,
+                             backbeat="sidestick", note="cross-stick throughout")]
+
+    add_section(song, bar=20, beat=3.0, name="verse-two")
+
+    assert len(song.sections) == 1
+    kept = song.sections[0]
+    assert kept.name == "verse-two"
+    assert kept.backbeat == "sidestick"
+    assert kept.note == "cross-stick throughout"
+
+
+def test_an_explicit_backbeat_still_wins_over_the_one_carried_forward(song):
+    """Carrying it forward must not make it unsettable -- a verse re-heard as
+    played on the head has to be able to say so."""
+    from rambass.manifest import Section
+    from rambass.sections import add_section
+
+    song.sections = [Section(name="verse-2", bar=20, beat=3.0,
+                             backbeat="sidestick")]
+
+    add_section(song, bar=20, beat=3.0, name="verse-2", backbeat="")
+    assert song.sections[0].backbeat == ""
+
+
+def test_replacing_matches_on_bar_and_beat_together(song):
+    """A 2.5-bar break puts two sections in one bar -- Manlio has exactly
+    that -- so replacing by bar alone would delete the neighbour."""
+    from rambass.sections import add_section
+
+    _sectioned(song, (20, 1.0, "break"), (20, 3.0, "verse-2"))
+
+    add_section(song, bar=20, beat=3.0, name="verse-two")
+
+    assert [(s.bar, s.beat, s.name) for s in song.sections] == [
+        (20, 1.0, "break"), (20, 3.0, "verse-two")]
+
+
+def test_adding_keeps_the_list_in_position_order(song):
+    from rambass.sections import add_section
+
+    _sectioned(song, (1, 1.0, "intro"), (17, 1.0, "chorus"))
+    add_section(song, bar=9, beat=1.0, name="verse")
+
+    assert [s.name for s in song.sections] == ["intro", "verse", "chorus"]
+
+
+def test_an_invalid_position_is_refused_before_it_is_saved(song):
+    """`song.problems()` already knows the rules -- beats are 1-based and the
+    last one is under beats-per-bar + 1 -- so this surfaces them rather than
+    growing a second validator."""
+    from rambass.project import ProjectError
+    from rambass.sections import add_section
+
+    _sectioned(song, (9, 1.0, "verse"))
+    with pytest.raises(ProjectError):
+        add_section(song, bar=9, beat=7.0, name="nope")
+
+
+def test_removing_a_section_returns_the_one_it_took(song):
+    from rambass.sections import remove_section
+
+    _sectioned(song, (1, 1.0, "intro"), (20, 3.0, "verse-2"))
+
+    gone = remove_section(song, bar=20, beat=3.0)
+
+    assert gone.name == "verse-2"
+    assert [s.name for s in song.sections] == ["intro"]
+
+
+def test_removing_what_is_not_there_names_what_is(song):
+    """In Reaper's numbers, because that is what a human is reading off the
+    ruler when they get the position wrong."""
+    from rambass.project import ProjectError
+    from rambass.sections import remove_section
+
+    _sectioned(song, (1, 1.0, "intro"), (9, 1.0, "verse"))
+    with pytest.raises(ProjectError) as caught:
+        remove_section(song, bar=13, beat=1.0)
+
+    message = str(caught.value)
+    assert "no section at" in message
+    # count_in.bars is 2 on the fixture, so musical 1 and 9 are Reaper 3 and 11.
+    assert "3.1" in message and "11.1" in message
+
+
+def test_a_reaper_bar_has_the_count_in_taken_off_it(song):
+    """The subtraction happens once, here, at the edge. Paolo reads 22.3 off
+    the ruler and the manifest stores musical 20.3."""
+    from rambass.sections import to_musical
+
+    assert song.count_in_bars == 2
+    assert to_musical(song, 22, reaper=True) == 20
+    assert to_musical(song, 22, reaper=False) == 22
+
+
+def test_a_reaper_bar_inside_the_count_in_is_refused(song):
+    from rambass.project import ProjectError
+    from rambass.sections import to_musical
+
+    with pytest.raises(ProjectError) as caught:
+        to_musical(song, 2, reaper=True)
+    assert "count-in" in str(caught.value)
+
+
+def test_the_section_table_carries_the_ruler_reading_and_the_span(song):
+    """One source for the CLI listing and the console screen, so the two cannot
+    disagree about where a section is or how long it runs."""
+    from rambass.sections import section_table
+
+    _sectioned(song, (1, 1.0, "intro"), (9, 1.0, "verse"), (17, 1.0, "chorus"))
+    table = section_table(song)
+
+    assert [row["reaper"] for row in table["sections"]] == ["3.1", "11.1", "19.1"]
+    assert [row["span_bars"] for row in table["sections"]] == [8.0, 8.0, 16.0]
+    assert table["count_in_bars"] == 2
+    assert table["names"] == ["chorus", "intro", "verse"]
+
+
+def test_the_section_table_reports_the_checkers_own_findings(song):
+    """Not a second copy of the wording: `check_sections` is the checker and
+    this only carries what it said."""
+    from rambass.sections import check_sections, section_table
+
+    # Two sections with one name and different lengths -- the pooling rule.
+    _sectioned(song, (1, 1.0, "verse"), (9, 1.0, "verse"), (13, 1.0, "outro"))
+    table = section_table(song)
+
+    assert [f["message"] for f in table["findings"]] == [
+        finding.message for finding in check_sections(song)]
+    assert any(f["kind"] == "same-name-different-length" for f in table["findings"])
+
+
+def test_the_table_is_not_a_crash_without_any_sections(song):
+    from rambass.sections import section_table
+
+    song.sections = []
+    table = section_table(song)
+    assert table["sections"] == [] and table["names"] == []

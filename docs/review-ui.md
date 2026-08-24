@@ -387,12 +387,59 @@ noted:
 2. **Transcribe** (`rambass drums transcribe`, or `drums import` for a
    recorded take) — Run.
 3. **Clean** (`rambass drums clean`) — Run.
-4. **Sections & consolidate** (`rambass sections`, `rambass drums
-   consolidate`) — Run, plus the section list itself is edited here (bar,
-   name, declared `backbeat`).
-5. **Missing hits & restore** (`rambass drums missing`, `rambass drums
+4. **Sections** (`rambass sections`) — an **Open**, not a Run: writing the
+   section list is a hand edit to `song.yaml`, not a rebuild. It opens the
+   sections editor, below.
+5. **Consolidate** (`rambass drums consolidate`) — Run. Split from the row
+   above, which used to do both jobs: the note "mark the sections first" was
+   doing the work a UI should, and the dependency between the two — real, and
+   already wired, since the step carries `sections` in its provenance fields —
+   could not be seen while one row was both the cause and the effect.
+6. **Missing hits & restore** (`rambass drums missing`, `rambass drums
    restore`) — this is the step that gets an **Open**, not a Run, because
    deciding what's actually missing needs ears, not a report. It opens:
+
+#### The sections editor
+
+`#/sections/<slug>`, reached from the Sections row. The list with its Reaper
+position, its span in bars (from `consolidation_spans`, the extent
+`consolidate` actually uses, not a rounded one), its name, its declared
+`backbeat` and its note; a form to add or replace one; `×` to remove; and
+`check_sections`'s findings underneath in its own words. Everything on it comes
+from `sections.section_table`, which is also what `rambass sections` prints, so
+the screen and the terminal cannot disagree about where a section is.
+
+**Every bar number on this screen is Reaper's, in and out.** The table reads the
+ruler, the position field is labelled as the ruler, and `sections.to_musical`
+does the one subtraction server-side — which is the point of the screen
+existing: `rambass section` takes musical bars unless you remember
+`--reaper-bar`, so the arithmetic was being done in somebody's head, and that is
+the kind of arithmetic that is right nine times and wrong once. The name field
+is backed by a `datalist` of the existing names, because identical names are
+pooled by `consolidate` into one part and stamped bit-identical — picking an
+existing one is a deliberate act worth making easy, and typing `verse` when you
+meant `verse-2` is a real and silent mistake.
+
+Two defects it exposed, both fixed here rather than worked around:
+
+* **There was no way to remove a section.** `rambass section` only added or
+  replaced, so undoing a mis-typed boundary meant opening `song.yaml` in an
+  editor. `sections.remove_section` and `rambass section-rm` now exist, and the
+  refusal for a position that holds nothing lists the ones that do — in Reaper's
+  numbers, because a human getting this wrong is reading the ruler when they do.
+* **Replacing a section dropped its `backbeat` and `note`.** `cmd_section_add`
+  filtered out the section at that position and appended a fresh `Section`, so
+  correcting a *name* silently un-declared the arrangement. On Manlio that is
+  three verses of side-sticks — settled by ear once, never re-derived from audio
+  (CLAUDE.md) — vanishing with nothing in the diff to explain why the clicks had
+  stopped. `add_section` carries both forward unless they are given explicitly;
+  `--backbeat ''` clears one deliberately.
+
+`sections.py` gained the editors, and its docstring had to be amended: it said
+the module "never edits". That claim is about *inventing* a section — a musical
+judgement no tool should make, and `check_sections` still changes nothing, ever
+— but applying a boundary somebody heard is a different act, and it belongs
+beside the checker rather than in a second module.
 
 #### The drums review tool
 

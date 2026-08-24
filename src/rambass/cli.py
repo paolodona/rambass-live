@@ -23,7 +23,7 @@ from .manifest import (
     load_song,
     save_song,
 )
-from .project import Project, ProjectError, slugify
+from .project import Project, ProjectError, parse_position, slugify
 
 EPILOGUE = """\
 typical order of work for one song:
@@ -1962,34 +1962,6 @@ def cmd_patch_add(args: argparse.Namespace) -> int:
     return 0
 
 
-def parse_position(text: str) -> tuple[int, float]:
-    """``"22.3"`` -> ``(22, 3.0)``. Reaper's own notation for a position.
-
-    Beats are 1-based, so a bare ``"20"`` means bar 20 beat 1. A third part is a
-    fraction of a beat — ``"22.3.5"`` is the second eighth of beat 3 — which a
-    12/8 shuffle needs and a whole beat cannot name.
-    """
-    parts = str(text).strip().split(".")
-    if not 1 <= len(parts) <= 3 or not all(parts):
-        raise ProjectError(
-            f"{text!r} is not a position; write it as Reaper does, bar.beat "
-            f"(for example 22.3), or just the bar"
-        )
-    try:
-        bar = int(parts[0])
-        beat = float(parts[1]) if len(parts) > 1 else 1.0
-        if len(parts) == 3:
-            beat += float(f"0.{parts[2]}")
-    except ValueError:
-        raise ProjectError(
-            f"{text!r} is not a position; write it as Reaper does, bar.beat "
-            f"(for example 22.3), or just the bar"
-        ) from None
-    if bar < 1 or beat < 1:
-        raise ProjectError(f"{text!r}: bars and beats are 1-based")
-    return bar, beat
-
-
 def cmd_sections(args: argparse.Namespace) -> int:
     """List the sections and review them. Suggests; never edits."""
     from .midiio import read_drum_midi
@@ -2039,35 +2011,37 @@ def cmd_sections(args: argparse.Namespace) -> int:
 
 
 def cmd_section_add(args: argparse.Namespace) -> int:
+    from .sections import add_section, to_musical
+
     project = _project()
     song = load_song(project.find_song_dir(args.song))
-
-    # Reaper's bar 1 is the first count-in bar, so its ruler runs count_in bars
-    # ahead of the musical one — reading a section boundary off the screen and
-    # typing it straight in puts every section two bars late. --reaper-bar does
-    # the subtraction, because doing it in your head every time is the kind of
-    # arithmetic that is right nine times and wrong once.
     bar, beat = parse_position(args.bar)
     quoted = f"{bar}.{beat:g}"
-    if args.reaper_bar:
-        bar -= song.count_in_bars
-        if bar < 1:
-            raise ProjectError(
-                f"Reaper bar {quoted} is inside the {song.count_in_bars}-bar "
-                f"count-in, so it is before the music starts"
-            )
-
-    # Matched on bar *and* beat: a 2.5-bar break puts two sections in one bar,
-    # and replacing by bar alone would silently delete the one already there.
-    song.sections = [s for s in song.sections if (s.bar, s.beat) != (bar, beat)]
-    song.sections.append(Section(name=args.name, bar=bar, beat=beat))
-    song.sections.sort(key=lambda s: s.position)
-    song.validate()
+    bar = to_musical(song, bar, reaper=args.reaper_bar)
+    section = add_section(song, bar=bar, beat=beat, name=args.name,
+                          backbeat=args.backbeat)
     save_song(song)
     where = f" (Reaper {quoted})" if args.reaper_bar else ""
     timeline = song.timeline()
     _say(f"{song.title}: bar {bar} beat {beat:g}{where} at "
          f"{timeline.audio_time(bar, beat):.2f}s -> {args.name}")
+    if section.backbeat:
+        _say(f"   backbeat: {section.backbeat}")
+    return 0
+
+
+def cmd_section_remove(args: argparse.Namespace) -> int:
+    """Take a section out. The counterpart `section` never had, so the only way
+    to undo a mis-typed boundary was to open song.yaml in an editor."""
+    from .sections import remove_section, to_musical
+
+    project = _project()
+    song = load_song(project.find_song_dir(args.song))
+    bar, beat = parse_position(args.bar)
+    bar = to_musical(song, bar, reaper=args.reaper_bar)
+    gone = remove_section(song, bar=bar, beat=beat)
+    save_song(song)
+    _say(f"{song.title}: removed {gone.name!r} at bar {bar} beat {beat:g}")
     return 0
 
 
@@ -2645,7 +2619,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reaper-bar", action="store_true",
                    help="the bar number as Reaper shows it, which counts the "
                         "count-in bars; this subtracts them")
+    p.add_argument("--backbeat", default=None,
+                   help="how this section's backbeat is played when no detector "
+                        "can settle it (e.g. sidestick); replacing a section "
+                        "keeps the existing value unless this is given, and "
+                        "--backbeat '' clears it")
     p.set_defaults(func=cmd_section_add)
+
+    p = sub.add_parser("section-rm", help="remove a section marker")
+    p.add_argument("song")
+    p.add_argument("bar", metavar="POSITION",
+                   help="bar, or bar.beat as Reaper writes it (e.g. 22.3)")
+    p.add_argument("--reaper-bar", action="store_true",
+                   help="the bar number as Reaper shows it, which counts the "
+                        "count-in bars; this subtracts them")
+    p.set_defaults(func=cmd_section_remove)
 
     p = sub.add_parser("sections", help="list a song's sections and review them")
     _add_song_args(p)

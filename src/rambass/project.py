@@ -17,6 +17,34 @@ class ProjectError(RuntimeError):
     """Raised for user-facing problems (bad paths, missing songs, ...)."""
 
 
+def parse_position(text: str) -> tuple[int, float]:
+    """``"22.3"`` -> ``(22, 3.0)``. Reaper's own notation for a position.
+
+    Beats are 1-based, so a bare ``"20"`` means bar 20 beat 1. A third part is a
+    fraction of a beat — ``"22.3.5"`` is the second eighth of beat 3 — which a
+    12/8 shuffle needs and a whole beat cannot name.
+
+    Lives here rather than in ``cli.py`` because the console parses the same
+    notation out of a text field, and two parsers for one notation is one too
+    many. ``cli.py`` re-exports it.
+    """
+    bad = (f"{text!r} is not a position; write it as Reaper does, bar.beat "
+           f"(for example 22.3), or just the bar")
+    parts = str(text).strip().split(".")
+    if not 1 <= len(parts) <= 3 or not all(parts):
+        raise ProjectError(bad)
+    try:
+        bar = int(parts[0])
+        beat = float(parts[1]) if len(parts) > 1 else 1.0
+        if len(parts) == 3:
+            beat += float(f"0.{parts[2]}")
+    except ValueError:
+        raise ProjectError(bad) from None
+    if bar < 1 or beat < 1:
+        raise ProjectError(f"{text!r}: bars and beats are 1-based")
+    return bar, beat
+
+
 def slugify(text: str) -> str:
     """Turn a song or album title into a filesystem-safe slug.
 

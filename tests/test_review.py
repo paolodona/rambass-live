@@ -181,9 +181,14 @@ def test_an_extracted_song_gets_the_full_drum_sequence(song):
 
 
 def test_the_review_tool_step_is_an_open_not_a_run(song):
+    """It needs ears, not a report. There are two openers on this screen now --
+    the sections editor is the other -- so each has to name its own route
+    rather than the page assuming the only one is the review tool."""
     rows = steps_for(song, "drums")
-    opens = [row for row in rows if row.kind == "open"]
-    assert len(opens) == 1 and "estore" in opens[0].label
+    opens = {row.target: row for row in rows if row.kind == "open"}
+    assert set(opens) == {"review", "sections"}
+    assert "estore" in opens["review"].label
+    assert all(row.open_label for row in opens.values())
 
 
 def test_a_backing_track_song_has_no_drum_steps(song):
@@ -1059,3 +1064,39 @@ def test_rendering_a_candidate_is_a_step_the_console_may_run(song):
 
     assert (f"rambass review render {song.slug}"
             in runnable_commands(song, stale_report(song)))
+
+
+# ── the lyrics rows: two ways to get cues, neither of them provenanced ───────
+
+
+def test_the_whisper_row_reads_the_draft_on_disk(song):
+    """`lyrics transcribe` writes `lyrics.draft.srt` and nothing in PIPELINE,
+    so provenance has no verdict for the row and it read as a todo dot for
+    ever — including straight after a successful three-minute Whisper run on
+    Manlio that printed 25 cues and wrote the file. The draft's presence is
+    the completion test, exactly as the mix's is for `source`."""
+    rows = {r.label: r for r in steps_for(song, "lyrics")}
+    assert rows["Draft cues with Whisper"].state == "missing"
+    _touch(song.path("lyrics.draft.srt"), "1\n00:00:01,000 --> 00:00:02,000\nx\n")
+    rows = {r.label: r for r in steps_for(song, "lyrics")}
+    assert rows["Draft cues with Whisper"].state == "ok"
+
+
+def test_a_hand_timed_file_makes_the_whisper_row_not_applicable(song):
+    """The two rows are alternatives — "import a hand-timed file or draft one
+    below". With an imported SRT there is nothing to draft, so the draft row
+    goes grey (n/a), not green: it was never run."""
+    _touch(song.path("lyrics.srt"), "1\n00:00:01,000 --> 00:00:02,000\nx\n")
+    rows = {r.label: r for r in steps_for(song, "lyrics")}
+    assert rows["Timed cues in lyrics.srt"].state == "ok"
+    assert rows["Draft cues with Whisper"].state == ""
+
+
+def test_the_lyrics_md_template_is_not_a_timed_cue_file(song):
+    """`rambass new` leaves a `lyrics.md` stub behind, so `lyrics_path()` is
+    non-None for a song with no words at all. Only the hand-timed subtitle
+    formats tick this row, or every song in the repo reads as done."""
+    _touch(song.path("lyrics.md"), "# Tutti In Fila\n\n[bar 1]\n")
+    rows = {r.label: r for r in steps_for(song, "lyrics")}
+    assert rows["Timed cues in lyrics.srt"].state == "missing"
+    assert rows["Draft cues with Whisper"].state == "missing"

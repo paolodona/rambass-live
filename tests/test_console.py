@@ -1448,6 +1448,178 @@ def test_the_screen_says_how_a_note_becomes_a_rebuilt_part():
         assert word in page, f"the chain does not mention {word}"
 
 
+# ── the sections screen ──────────────────────────────────────────────────────
+#
+# Paolo: *"the console has one step "Sections & consolidate ... mark the
+# sections first: rambass section <bar> <name>". This has a single Run action to
+# consolidate. Would we split this into "Sections" with a UI to add named
+# sections (name + starting reaper bar, eg 3.3), and Consolidate separately?
+# (consolidate goes stale if sections change obviously)"*.
+#
+# One row was doing two unrelated jobs: marking a section is a hand edit to
+# song.yaml, consolidating is a derived rebuild. The staleness between them was
+# already wired -- `drums consolidate` carries `sections` in its provenance
+# fields -- but invisible, because the row that edits and the row that reacts
+# were the same row.
+
+
+def test_the_drums_screen_splits_sections_from_consolidate(song):
+    from rambass.review import steps_for
+
+    labels = [step.label for step in steps_for(song, "drums")]
+    assert "Sections" in labels and "Consolidate" in labels
+    assert "Sections & consolidate" not in labels
+    # And in that order: you cannot consolidate a list you have not written.
+    assert labels.index("Sections") < labels.index("Consolidate")
+
+
+def test_the_sections_row_opens_a_screen_and_knows_its_own_state(song):
+    """It produces no artifact, so it establishes its own state -- which is what
+    StepRow.state exists for."""
+    from rambass.review import steps_for
+
+    rows = {step.label: step for step in steps_for(song, "drums")}
+    sections = rows["Sections"]
+    assert sections.kind == "open" and sections.target == "sections"
+    assert sections.state == "ok"          # the fixture song has three
+
+    song.sections = []
+    rows = {step.label: step for step in steps_for(song, "drums")}
+    assert rows["Sections"].state == "missing"
+
+
+def test_consolidate_keeps_its_artifact_and_says_what_makes_it_stale(song):
+    from rambass.review import steps_for
+
+    rows = {step.label: step for step in steps_for(song, "drums")}
+    assert rows["Consolidate"].artifact == "midi/drums-consolidated.mid"
+    assert rows["Consolidate"].kind == "run"
+    assert "stale" in rows["Consolidate"].note
+
+
+def test_the_page_builds_an_open_button_from_its_target():
+    """There are two openers now, so the route cannot stay hardcoded to
+    #/review/ in the one branch that draws them."""
+    page = _page()
+
+    assert "step.target" in page, "the open branch ignores the row's target"
+    assert "step.open_label" in page, "every opener still says 'review tool'"
+    assert "renderSections(decodeURIComponent" in page, (
+        "the router does not know the sections route")
+
+
+def test_the_sections_payload_lists_them_in_reaper_numbers(served, song):
+    base, _ = served
+    data = _get(base, f"/api/sections/{song.slug}")
+
+    assert [row["reaper"] for row in data["sections"]] == ["3.1", "11.1", "19.1"]
+    assert data["count_in_bars"] == 2
+    assert data["names"] == ["chorus", "intro", "verse"]
+    assert "findings" in data
+
+
+def test_a_section_posted_as_a_reaper_bar_is_stored_musical(served, song):
+    """The whole point of the field being labelled Reaper: 22.3 read off the
+    ruler is bar 20 beat 3 in the manifest, and the subtraction happens once,
+    server-side."""
+    from rambass.manifest import load_song
+
+    base, _ = served
+    _post(base, "/api/section", {"song": song.slug, "position": "22.3",
+                                 "reaper": True, "name": "verse-2"})
+
+    stored = load_song(song.directory).sections
+    added = next(s for s in stored if s.name == "verse-2")
+    assert (added.bar, added.beat) == (20, 3.0)
+
+
+def test_replacing_a_section_over_http_keeps_its_backbeat(served, song):
+    """The regression that matters most: renaming Manlio's verse-2 must not
+    un-declare its side-sticks."""
+    from rambass.manifest import Section, load_song, save_song
+
+    base, _ = served
+    song.sections = [Section(name="verse-2", bar=20, beat=3.0,
+                             backbeat="sidestick")]
+    save_song(song)
+
+    _post(base, "/api/section", {"song": song.slug, "position": "22.3",
+                                 "reaper": True, "name": "verse-two"})
+
+    stored = load_song(song.directory).sections
+    assert len(stored) == 1
+    assert (stored[0].name, stored[0].backbeat) == ("verse-two", "sidestick")
+
+
+def test_a_section_can_be_removed_over_http(served, song):
+    from rambass.manifest import load_song
+
+    base, _ = served
+    left = _post(base, "/api/section/remove",
+                 {"song": song.slug, "position": "11.1", "reaper": True})
+
+    assert [row["name"] for row in left["sections"]] == ["intro", "chorus"]
+    assert [s.name for s in load_song(song.directory).sections] == \
+        ["intro", "chorus"]
+
+
+def test_a_position_the_parser_cannot_read_is_a_400_naming_the_form(served, song):
+    base, _ = served
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        _post(base, "/api/section", {"song": song.slug, "position": "bananas",
+                                     "name": "x"})
+    assert caught.value.code == 400
+    assert "bar.beat" in json.loads(caught.value.read().decode("utf-8"))["error"]
+
+
+def test_a_reaper_bar_inside_the_count_in_is_a_400(served, song):
+    base, _ = served
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        _post(base, "/api/section", {"song": song.slug, "position": "2.1",
+                                     "reaper": True, "name": "too-early"})
+    assert caught.value.code == 400
+    assert "count-in" in json.loads(caught.value.read().decode("utf-8"))["error"]
+
+
+def test_editing_a_section_makes_consolidate_stale(served, song):
+    """Paolo's parenthetical, pinned. `drums consolidate` carries `sections` in
+    its provenance fields, so the edit the screen just made is what the Rebuild
+    button on it will act on."""
+    from rambass.provenance import stale_report, stamp
+
+    base, _ = served
+    source = song.drum_midi_path("quantized")
+    target = song.drum_midi_path("consolidated")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"MThd-source")
+    target.write_bytes(b"MThd")
+    stamp(song, target, step="drums consolidate", inputs=[source])
+    assert not [e for e in stale_report(song)
+                if e.artifact == "midi/drums-consolidated.mid"
+                and e.state == "stale"]
+
+    _post(base, "/api/section", {"song": song.slug, "position": "24.1",
+                                 "reaper": True, "name": "bridge"})
+
+    # Reloaded from disk: the POST wrote song.yaml, and the in-memory manifest
+    # this test started with still has the old section list.
+    from rambass.manifest import load_song
+
+    entry = next(e for e in stale_report(load_song(song.directory))
+                 if e.artifact == "midi/drums-consolidated.mid")
+    assert entry.state == "stale"
+    assert any("sections" in reason for reason in entry.reasons), entry.reasons
+
+
+def test_the_sections_screen_is_on_the_page():
+    page = _page()
+
+    assert "renderSections" in page, "no sections screen"
+    assert "/api/section/remove" in page and "/api/section" in page
+    assert "datalist" in page, "the name field does not offer the existing names"
+    assert "reaper" in page.lower()
+
+
 # ── one console per project ──────────────────────────────────────────────────
 #
 # Paolo ended up with two consoles on port 8433 at once: the older one kept

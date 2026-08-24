@@ -156,6 +156,35 @@
               will-change:transform; }
   .transport { display:flex; align-items:center; justify-content:center;
                gap:14px; margin-top:14px; font-size:12px; color:var(--text-faint); }
+  /* the sections editor */
+  .sectionsbox { border:1px solid var(--border); border-radius:12px;
+                 background:var(--panel); margin-top:16px; overflow:hidden; }
+  .sechead, .secrow { display:flex; align-items:baseline; gap:12px;
+                      padding:9px 14px; font-size:12.5px; }
+  .sechead { background:var(--raised); font-family:var(--mono); font-size:11px;
+             color:var(--text-faint); text-transform:uppercase;
+             letter-spacing:.08em; }
+  .secrow { color:var(--text-dim);
+            border-bottom:1px solid var(--border-soft); }
+  .secrow:last-child { border-bottom:none; }
+  .secrow:nth-child(even) { background:rgba(255,255,255,.015); }
+  .sechead .at, .secrow .at { width:56px; flex:none; text-align:right;
+                              font-family:var(--mono); color:var(--text); }
+  .sechead .len, .secrow .len { width:48px; flex:none; text-align:right;
+                                font-family:var(--mono);
+                                color:var(--text-faint); }
+  .sechead .nm, .secrow .nm { width:180px; flex:none; color:var(--text); }
+  .sechead .bb, .secrow .bb { width:96px; flex:none; }
+  .secrow .bb.none { color:var(--border); }
+  .secrow .said { flex:1; color:var(--text-faint); min-width:0; }
+  .secrow .acts { flex:none; display:flex; gap:6px; }
+  .secform { display:flex; align-items:center; gap:10px; padding:12px 14px;
+             border-top:1px solid var(--border); background:var(--raised);
+             flex-wrap:wrap; font-size:12px; color:var(--text-faint); }
+  .secform input, .secform select { background:var(--bg);
+      border:1px solid var(--border); border-radius:7px; padding:8px 10px;
+      color:var(--text); font-family:var(--mono); font-size:12.5px;
+      outline:none; }
   .notesbox { border:1px solid var(--border); border-radius:12px;
               background:var(--panel); padding:16px 22px; margin-top:16px; }
   .notesbox input[type=text] { flex:1; background:var(--raised);
@@ -318,7 +347,9 @@ function route() {
   const hash = location.hash || "#/";
   const song = hash.match(/^#\/song\/(.+)$/);
   const review = hash.match(/^#\/review\/(.+)$/);
+  const sections = hash.match(/^#\/sections\/(.+)$/);
   if (review) return renderReview(decodeURIComponent(review[1]));
+  if (sections) return renderSections(decodeURIComponent(sections[1]));
   if (song) return renderSong(decodeURIComponent(song[1]));
   return renderDashboard();
 }
@@ -408,8 +439,12 @@ async function renderSong(slugAndQuery) {
       let button = "";
       const held = step.state === "unknown" || step.state === "edited";
       if (step.kind === "open")
-        button = `<button class="btn primary"
-          onclick="location.hash='#/review/${encodeURIComponent(slug)}'">Open review tool &rarr;</button>`;
+        /* Two openers now -- the drum review tool and the sections editor --
+           so the route and the words come off the row rather than being
+           written into the one branch that draws them. */
+        button = `<button class="btn primary" data-open
+          data-target="${esc(step.target || "review")}"
+          >${esc(step.open_label || "Open")} &rarr;</button>`;
       else if (step.kind === "run" && held)
         /* A held row used to carry a plain Run, which posted {step} alone --
            and `rebuild_selection` holds `unknown`/`edited`, so that selects
@@ -541,6 +576,10 @@ async function renderSong(slugAndQuery) {
       if (problem) showProblem(problem[0], problem[1]);
     }
   }
+  app.querySelectorAll("[data-open]").forEach((el) =>
+    el.addEventListener("click", () => {
+      location.hash = `#/${el.dataset.target}/${encodeURIComponent(slug)}`;
+    }));
   $("#rebuild-all").addEventListener("click",
     (event) => rebuild({}, null, event.currentTarget));
   app.querySelectorAll("[data-run]").forEach((el) =>
@@ -572,6 +611,147 @@ function forceWarning(el) {
     : `${what} is on disk with no provenance, so nothing can say what built `
       + `it.\n\n${how} rebuilds it, and it is checkable from then on. A copy `
       + `is kept as ${what}.bak.\n\nRun it?`;
+}
+
+/* ── the sections editor ─────────────────────────────────────────────────
+   Its own screen, because a fifteen-row table and the checker's findings do
+   not fit inside a step row. Everything it shows comes from
+   `sections.section_table`, which is also what `rambass sections` prints, so
+   the screen and the terminal cannot disagree about where a section is.
+
+   Every bar number here is **Reaper's**, in and out: the table reads the ruler
+   and the position field is labelled as the ruler, and `to_musical` does the
+   one subtraction server-side. Nothing on this screen is a musical bar. */
+async function renderSections(slug) {
+  app.innerHTML = `<div class="crumb"
+    onclick="location.hash='#/song/${encodeURIComponent(slug)}'">&larr; back</div>`;
+  let data;
+  try { data = await api(`/api/sections/${encodeURIComponent(slug)}`); }
+  catch (err) { app.innerHTML += `<div class="error">${esc(err.message)}</div>`; return; }
+
+  app.innerHTML = `
+    <div class="crumb" onclick="location.hash='#/song/${encodeURIComponent(slug)}'">
+      &larr; ${esc(data.title)} / Sections</div>
+    <h1>Sections <span class="muted" style="font-size:15px">&mdash;
+      bar numbers are Reaper's, with the ${data.count_in_bars}-bar count-in in
+      them, so they match the ruler on screen</span></h1>
+    <div class="sectionsbox">
+      <div class="sechead">
+        <span class="at">reaper</span><span class="len">bars</span>
+        <span class="nm">name</span><span class="bb">backbeat</span>
+        <span class="said"></span><span class="acts"></span></div>
+      <div id="sectable"></div>
+      <div class="secform">
+        <input type="text" id="sec-at" placeholder="22.3" style="width:78px">
+        <input type="text" id="sec-name" list="sec-names" placeholder="verse-2">
+        <datalist id="sec-names">${
+          (data.names || []).map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
+        <select id="sec-backbeat">
+          <option value="">backbeat: as played</option>
+          <option value="sidestick">sidestick</option></select>
+        <button class="btn primary" id="sec-add">Add / replace</button>
+        <span class="muted">a position already in the list is replaced, and
+          keeps its backbeat and note</span></div>
+    </div>
+    <div id="sec-findings"></div>
+    <div id="sec-stale"></div>
+    <div class="log" id="log"></div>`;
+
+  const table = $("#sectable"), findings = $("#sec-findings");
+
+  function draw() {
+    table.innerHTML = data.sections.length
+      ? data.sections.map((row) => `<div class="secrow">
+          <span class="at">${esc(row.reaper)}</span>
+          <span class="len">${row.span_bars.toFixed(2)}</span>
+          <span class="nm">${esc(row.name)}</span>
+          <span class="bb ${row.backbeat ? "" : "none"}"
+            >${esc(row.backbeat || "—")}</span>
+          <span class="said">${esc(row.note || "")}</span>
+          <span class="acts">
+            <button class="act" data-edit="${esc(row.reaper)}">edit</button>
+            <button class="act drop" data-drop="${esc(row.reaper)}"
+              title="remove this section">&times;</button></span></div>`).join("")
+      : `<div class="muted" style="font-size:12px;padding:10px 12px">
+           no sections yet. The whole song is one span until there is one, and
+           consolidate has nothing to pool.</div>`;
+    /* The checker's own words. Sectioning is a musical judgement and this only
+       says where the drums disagree with the list -- see sections.py. */
+    findings.innerHTML = data.findings.length
+      ? `<div class="kicker" style="margin:18px 0 8px">${data.findings.length}
+           finding${data.findings.length === 1 ? "" : "s"} &middot; suggestions
+           only, nothing was changed</div>
+         <div class="notelist">${data.findings.map((f) => `<div class="note">
+           <span class="at">${esc(f.reaper)}</span>
+           <span class="kind" style="width:200px">${esc(f.kind)}</span>
+           <span class="said">${esc(f.message)}</span></div>`).join("")}</div>`
+      : `<div class="muted" style="font-size:12px;margin-top:18px">${
+          data.midi ? "nothing to suggest."
+            : "no drum MIDI yet, so the pattern checks are skipped."}</div>`;
+
+    table.querySelectorAll("[data-edit]").forEach((el) =>
+      el.addEventListener("click", () => {
+        const row = data.sections.find((s) => s.reaper === el.dataset.edit);
+        $("#sec-at").value = row.reaper;
+        $("#sec-name").value = row.name;
+        $("#sec-backbeat").value = row.backbeat || "";
+        $("#sec-name").focus();
+      }));
+    table.querySelectorAll("[data-drop]").forEach((el) =>
+      el.addEventListener("click", () => {
+        const row = data.sections.find((s) => s.reaper === el.dataset.drop);
+        if (!confirm(`Remove ${row.name} at ${row.reaper}?`)) return;
+        post("/api/section/remove", {position: row.reaper, reaper: true});
+      }));
+  }
+
+  /* Consolidate reads the section list, so any edit here makes its output
+     stale -- provenance already knows (its `sections` field), and this is
+     where the change was made, so this is where the rebuild belongs. */
+  function showStale() {
+    $("#sec-stale").innerHTML = `<div class="strip">
+      <div>the section list feeds <span style="font-family:var(--mono)"
+        >rambass drums consolidate</span> &mdash; rebuild it after a change,
+        and check the diff of song.yaml first</div>
+      <button class="btn amber" id="sec-rebuild">Rebuild consolidate</button>
+      </div>`;
+    $("#sec-rebuild").addEventListener("click", async () => {
+      const log = $("#log"); log.style.display = "block";
+      log.textContent = "rebuilding…";
+      try {
+        const result = await api("/api/rebuild",
+                                 {song: slug, step: "drums consolidate"});
+        log.textContent = result.commands.length
+          ? result.commands.map((c, i) =>
+              (i < result.ran ? "ok    " : "FAIL  ") + c).join("\n")
+          : "nothing stale or missing";
+      } catch (error) { log.textContent = "error: " + error.message; }
+    });
+  }
+
+  async function post(endpoint, payload) {
+    try {
+      data = Object.assign(data, await api(
+        endpoint, Object.assign({song: slug}, payload)));
+      draw();
+    } catch (error) { showProblem(error.message, true); }
+  }
+
+  $("#sec-add").addEventListener("click", () => {
+    const at = $("#sec-at").value.trim(), name = $("#sec-name").value.trim();
+    if (!at || !name) return showProblem(
+      "a section needs a position and a name", true);
+    post("/api/section", {position: at, reaper: true, name: name,
+                          backbeat: $("#sec-backbeat").value});
+  });
+  $("#sec-name").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") $("#sec-add").click();
+  });
+
+  window._currentSong = slug;
+  window._review = null;
+  draw();
+  showStale();
 }
 
 /* ── the drums review tool ───────────────────────────────────────────── */

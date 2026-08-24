@@ -1,4 +1,12 @@
-"""Reviewing a song's sections — suggestions with their evidence, never edits.
+"""A song's sections: reviewing them, and applying a human's edits to them.
+
+The review half suggests and never decides, the same philosophy as
+:mod:`rambass.arrange` and for the same reason: sectioning a song is a musical
+judgement and a tool that guessed at it would be wrong in ways that are hard to
+see. :func:`check_sections` therefore changes nothing, ever. What the edit half
+does is apply a boundary somebody *heard* — `add_section`, `remove_section` —
+which is a different act, and it lives here so that all section logic is in one
+module rather than split across two.
 
 Same philosophy as :mod:`rambass.arrange`, and for the same reason: sectioning a
 song is a musical judgement and a tool that guessed at it would be wrong in ways
@@ -27,8 +35,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .manifest import Song
+from .manifest import Section, Song
 from .midiio import DrumPerformance
+from .project import ProjectError
 
 #: A section needs at least this many repetitions of a one-bar unit before
 #: `consolidate` has anything to vote on. Two is the minimum that can disagree.
@@ -302,3 +311,129 @@ def _keep_voices(coverage: dict[str, float]) -> dict[str, float]:
     """Drop the accents and fills — see :data:`ACCENT_VOICES`."""
     return {name: share for name, share in coverage.items()
             if name not in ACCENT_VOICES}
+
+
+# ── applying a human's edits ─────────────────────────────────────────────────
+#
+# Distinct from everything above, and the module docstring's "never edits" still
+# holds for the part that matters: nothing here *decides* where a section goes.
+# These apply a boundary somebody heard, and they live beside the checker so all
+# section logic is in one place -- the same division as `restore.propose_*`
+# (machine proposes) against `drums.additions` (human decides).
+
+
+def to_musical(song: Song, bar: int, *, reaper: bool) -> int:
+    """A bar number as typed -> the musical bar the manifest stores.
+
+    Reaper's bar 1 is the first count-in bar, so its ruler runs
+    ``count_in.bars`` ahead of the manifest's. Reading a boundary off the screen
+    and storing it puts every section that many bars late; the subtraction
+    happens here, at the edge, and nowhere else.
+    """
+    if not reaper:
+        return bar
+    musical = bar - song.count_in_bars
+    if musical < 1:
+        raise ProjectError(
+            f"Reaper bar {bar} is inside the {song.count_in_bars}-bar "
+            f"count-in, so it is before the music starts. Bar "
+            f"{song.count_in_bars + 1} on the ruler is the first bar of the "
+            f"song.")
+    return musical
+
+
+def add_section(song: Song, *, bar: int, beat: float = 1.0, name: str,
+                backbeat: str | None = None, note: str | None = None) -> Section:
+    """Add a section, or replace the one already at that exact position.
+
+    Matched on bar **and** beat: a 2.5-bar break puts two sections in one bar --
+    Manlio has exactly that -- so replacing by bar alone would silently delete
+    the neighbour.
+
+    ``backbeat`` and ``note`` are **carried forward** from the section being
+    replaced unless given explicitly. Rebuilding the Section from scratch is
+    what dropped them, so correcting a name un-declared Manlio's verse
+    side-sticks: arrangement structure settled by ear once (CLAUDE.md), gone
+    from the diff with nothing to explain why the clicks had stopped. Pass
+    ``backbeat=""`` to clear it deliberately.
+
+    Mutates *song* and validates it; the caller saves. Same division as
+    :func:`rambass.review.promote_notes`.
+    """
+    previous = next((s for s in song.sections
+                     if (s.bar, s.beat) == (bar, beat)), None)
+    section = Section(
+        name=name, bar=bar, beat=beat,
+        note=previous.note if note is None and previous else (note or ""),
+        backbeat=(previous.backbeat if backbeat is None and previous
+                  else (backbeat or "")),
+    )
+    song.sections = sorted(
+        [s for s in song.sections if (s.bar, s.beat) != (bar, beat)] + [section],
+        key=lambda s: s.position)
+    song.validate()
+    return section
+
+
+def remove_section(song: Song, *, bar: int, beat: float = 1.0) -> Section:
+    """Take one section out, and return it. Raises when there is none there.
+
+    The refusal lists the positions that *do* exist, in Reaper's numbers,
+    because a human getting this wrong is reading the ruler when they do it.
+    """
+    from .reaper import reaper_position
+
+    gone = next((s for s in song.sections
+                 if (s.bar, s.beat) == (bar, beat)), None)
+    if gone is None:
+        have = ", ".join(reaper_position(song, s) for s in
+                         sorted(song.sections, key=lambda s: s.position))
+        raise ProjectError(
+            f"{song.slug}: no section at bar {bar} beat {beat:g} "
+            f"(Reaper {bar + song.count_in_bars}.{beat:g}). "
+            f"On the ruler there are sections at: {have or 'none'}")
+    song.sections = [s for s in song.sections if s is not gone]
+    song.validate()
+    return gone
+
+
+def section_table(song: Song, performance: DrumPerformance | None = None) -> dict:
+    """The section list as both front ends show it, plus the findings.
+
+    One source for `rambass sections` and the console's sections screen, so the
+    two cannot disagree about where a section is or how long it runs. Lengths
+    come from :meth:`~rambass.manifest.Song.consolidation_spans`, which is the
+    extent ``consolidate`` actually uses -- not a rounded one.
+    """
+    from .reaper import reaper_position
+
+    timeline = song.timeline()
+    ordered = sorted(song.sections, key=lambda s: s.position)
+    spans = {(s.name, s.start_bar, s.start_beat): s
+             for s in song.consolidation_spans()}
+    rows = []
+    for section in ordered:
+        span = spans.get((section.name, section.bar, section.beat))
+        length = 0.0
+        if span is not None:
+            length = ((timeline.bar_beat_to_seconds(span.end_bar, span.end_beat)
+                       - timeline.bar_beat_to_seconds(span.start_bar,
+                                                      span.start_beat))
+                      / timeline.bar_length_seconds(section.bar))
+        rows.append({
+            "name": section.name, "bar": section.bar, "beat": section.beat,
+            "reaper": reaper_position(song, section),
+            "span_bars": round(length, 3),
+            "note": section.note, "backbeat": section.backbeat,
+        })
+    return {
+        "slug": song.slug,
+        "title": song.title,
+        "count_in_bars": song.count_in_bars,
+        "beats_per_bar": timeline.time_signature[0],
+        "bars": song.total_bars(),
+        "sections": rows,
+        "names": sorted({s.name for s in ordered}),
+        "findings": [{"kind": f.kind, "reaper": f.reaper, "message": f.message}
+                     for f in check_sections(song, performance)],
+    }
