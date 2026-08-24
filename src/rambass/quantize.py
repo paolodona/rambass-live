@@ -116,6 +116,30 @@ def _pick(cluster: list[Hit], keep: str) -> Hit:
     return loudest.moved_to(cluster[0].time)
 
 
+@dataclass(frozen=True)
+class UnresolvedHit:
+    """A hit :func:`quantize` left where it was because it sits too far from
+    the grid to snap in good conscience.
+
+    Leaving the hit physically untouched was already right -- forcing
+    anything the tolerance rejects onto a grid line is how a deliberate push,
+    a triplet or a flam gets ironed flat. Leaving it *unnamed* was not:
+    nothing above this function ever saw which hit it was or how far off it
+    sat, so a transcription error and an intentional syncopation landed in the
+    same silent "left alone" count. Every one of these needs a human's call --
+    syncopation, a flam, a triplet, or simply wrong -- and this is the list
+    that lets them get one instead of riding through to the final MIDI
+    unexamined.
+    """
+
+    bar: int
+    beat: float
+    instrument: str
+    velocity: int
+    distance_ms: float
+    tolerance_ms: float
+
+
 def quantize(
     performance: DrumPerformance,
     settings: QuantizeSettings | None = None,
@@ -132,6 +156,7 @@ def quantize(
     total_shift = 0.0
     skipped = 0
     largest = 0.0
+    unresolved: list[UnresolvedHit] = []
 
     for hit in performance.sorted_hits():
         subdivision = settings.subdivision_for(hit.instrument)
@@ -142,6 +167,13 @@ def quantize(
 
         if not settings.force and distance > tolerance:
             skipped += 1
+            bar, beat = timeline.seconds_to_bar_beat(hit.time)
+            unresolved.append(UnresolvedHit(
+                bar=bar, beat=round(beat, 3), instrument=hit.instrument,
+                velocity=hit.velocity,
+                distance_ms=round(distance * 1000.0, 1),
+                tolerance_ms=round(tolerance * 1000.0, 1),
+            ))
             moved.append(hit)
             continue
 
@@ -153,6 +185,7 @@ def quantize(
     report = {
         "hits": len(moved),
         "left_alone": skipped,
+        "unresolved": unresolved,
         "mean_shift_ms": round(1000.0 * total_shift / max(len(moved) - skipped, 1), 2),
         "largest_shift_ms": round(1000.0 * largest, 2),
     }
@@ -349,6 +382,19 @@ def consolidate(
     **This deliberately removes the fills**, which is why Stage 7 says to put
     them back by hand rather than repair them: a fill is by definition the bar
     that does not repeat, so no threshold can keep it and be doing its job.
+
+    **A slot's vote is per instrument, but the stamp is checked as a chord.**
+    Codex's review (Aug 2026) named the risk precisely: voting independently
+    per instrument can combine "the kick from one repetition, the snare ghost
+    note from another, the hats from a third" into something nobody ever
+    played, because two instruments can each individually clear the threshold
+    at a slot without ever landing there in the same bar. So when more than
+    one instrument survives its own vote at a slot, :func:`_resolve_slot_chord`
+    checks whether that combination was actually played together often enough
+    to clear the same threshold as a chord; if not, only the single
+    best-attested instrument is kept and the rest are named in the section's
+    ``demoted`` list rather than stamped on faith. A section with no such
+    conflicts reports no ``demoted`` entries at all.
     """
     settings = settings or ConsolidateSettings()
     timeline = performance.timeline
@@ -378,10 +424,10 @@ def consolidate(
                     for rep in _repetitions(timeline, span, unit, settings.subdivision)]
             if len(reps) < max(settings.min_repeats, 2):
                 continue
-            hits, coverage = _vote(reps, inside, settings)
+            hits, coverage, demoted = _vote(reps, inside, settings)
             score = coverage - (settings.unit_margin if unit > 1 else 0.0)
             if best is None or score > best[0]:
-                best = (score, unit, len(reps), hits, coverage)
+                best = (score, unit, len(reps), hits, coverage, demoted, reps)
 
         if best is None:
             entry["skipped"] = "too short to vote on"
@@ -389,11 +435,21 @@ def consolidate(
             report["untouched"] += len(inside)
             continue
 
-        _, unit, reps_used, hits, coverage = best
+        _, unit, reps_used, hits, coverage, demoted, reps = best
         claimed.extend(extents)
         produced.extend(hits)
         entry.update(unit_bars=unit, repeats=reps_used, hits_after=len(hits),
                      coverage=round(coverage, 3))
+        if demoted:
+            entry["demoted"] = []
+            for item in demoted:
+                rep = next(r for r in reps if r.eligible[item["slot"]])
+                bar_no, beat_no = timeline.seconds_to_bar_beat(rep.grid[item["slot"]])
+                entry["demoted"].append({
+                    "bar": bar_no, "beat": round(beat_no, 3),
+                    "kept": item["kept"], "dropped": item["dropped"],
+                    "joint_coverage": item["joint_coverage"],
+                })
         report["sections"].append(entry)
 
     kept = [h for h in performance.hits
@@ -446,11 +502,42 @@ def _repetitions(
     return out
 
 
+def _resolve_slot_chord(
+    instruments: list[str],
+    votes: dict[tuple[str, int], list[Hit]],
+    chords: list[set[str]],
+    chances: int,
+    slot: int,
+    threshold: float,
+) -> tuple[list[str], list[str], float | None]:
+    """Which of *instruments* -- each already past its own vote at *slot* --
+    were actually played together often enough to be stamped as one chord.
+
+    Each instrument here individually clears the per-slot vote, which is
+    exactly how a fabricated combination sneaks through: a snare and a hi-hat
+    can each independently be "what usually happens" at a slot without ever
+    landing there in the same bar. So the full set is checked against what the
+    repetitions actually played together, and if it does not hold up, only the
+    single best-attested instrument is kept -- the rest are reported, not
+    guessed away. Returns (kept, dropped, joint_coverage); *joint_coverage* is
+    ``None`` when there was only ever one instrument to consider.
+    """
+    if len(instruments) <= 1:
+        return list(instruments), [], None
+    ranked = sorted(instruments, key=lambda i: len(votes[(i, slot)]), reverse=True)
+    needed = set(ranked)
+    joint = sum(1 for chord in chords if needed <= chord)
+    coverage = joint / chances if chances else 0.0
+    if coverage >= threshold:
+        return ranked, [], coverage
+    return ranked[:1], ranked[1:], coverage
+
+
 def _vote(
     reps: list[_Repetition],
     hits: list[Hit],
     settings: ConsolidateSettings,
-) -> tuple[list[Hit], float]:
+) -> tuple[list[Hit], float, list[dict]]:
     """Overlay the repetitions and keep the slots enough of them agree on."""
     slots = min(len(rep.grid) for rep in reps)
     # How many repetitions each slot could have appeared in. A slot at the edge
@@ -459,32 +546,54 @@ def _vote(
     chances = [sum(1 for rep in reps if rep.eligible[i]) for i in range(slots)]
 
     votes: dict[tuple[str, int], list[Hit]] = {}
-    placed = 0
+    # Per slot, what each repetition actually played there together -- not
+    # just which instruments cleared their own vote, but which of them were
+    # ever in the same bar at once. This is what a per-instrument vote alone
+    # cannot see.
+    chords: list[list[set[str]]] = [[] for _ in range(slots)]
     for rep in reps:
         allowed = [i for i in range(slots) if rep.eligible[i]]
         if not allowed:
             continue
+        rep_chord: dict[int, set[str]] = {}
         for hit in hits:
             if not (rep.low - 1e-9 <= hit.time < rep.high - 1e-9):
                 continue
             slot = min(allowed, key=lambda i: abs(rep.grid[i] - hit.time))
             votes.setdefault((hit.instrument, slot), []).append(hit)
-            placed += 1
+            rep_chord.setdefault(slot, set()).add(hit.instrument)
+        for slot in allowed:
+            chords[slot].append(rep_chord.get(slot, set()))
 
-    out: list[Hit] = []
-    agreed = 0
-    for (instrument, slot), group in sorted(votes.items()):
+    placed = sum(len(group) for group in votes.values())
+    qualifying: dict[int, list[str]] = {}
+    for (instrument, slot), group in votes.items():
         # One repetition can hit the same slot twice (a flam the de-flam missed);
         # agreement is about how many *repetitions* played it, not how many hits.
         if not chances[slot] or len(group) / chances[slot] < settings.threshold:
             continue
-        agreed += len(group)
-        velocity = sorted(h.velocity for h in group)[len(group) // 2]
-        for rep in reps:
-            if rep.eligible[slot]:
-                out.append(Hit(instrument, rep.grid[slot], velocity))
+        qualifying.setdefault(slot, []).append(instrument)
+
+    out: list[Hit] = []
+    agreed = 0
+    demoted: list[dict] = []
+    for slot, instruments in sorted(qualifying.items()):
+        keep, dropped, joint_coverage = _resolve_slot_chord(
+            instruments, votes, chords[slot], chances[slot], slot, settings.threshold)
+        if dropped:
+            demoted.append({
+                "slot": slot, "kept": keep[0], "dropped": dropped,
+                "joint_coverage": round(joint_coverage, 3),
+            })
+        for instrument in keep:
+            group = votes[(instrument, slot)]
+            agreed += len(group)
+            velocity = sorted(h.velocity for h in group)[len(group) // 2]
+            for rep in reps:
+                if rep.eligible[slot]:
+                    out.append(Hit(instrument, rep.grid[slot], velocity))
     coverage = agreed / placed if placed else 0.0
-    return out, coverage
+    return out, coverage, demoted
 
 
 def trim_to_bars(

@@ -625,6 +625,11 @@ def cmd_drums_clean(args: argparse.Namespace) -> int:
              f"{report['left_alone']} left alone, "
              f"mean move {report['mean_shift_ms']} ms, "
              f"max {report['largest_shift_ms']} ms")
+        for item in report["unresolved"]:
+            _say(f"      ! {item.bar + song.count_in_bars}.{item.beat:g} "
+                 f"{item.instrument} is {item.distance_ms:g} ms off grid "
+                 f"(tolerance {item.tolerance_ms:g} ms) — needs a call: "
+                 f"syncopation, a flam, or a miss")
 
         if args.accent_kick or args.accent_snare:
             accents = {}
@@ -954,6 +959,13 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
             _say(f"   {entry['name']:<16}{entry['spans']:>6}{entry['repeats']:>6}"
                  f"{entry['unit_bars']:>5}b{entry['hits_before']:>6} ->"
                  f"{entry['hits_after']:>4}{entry['coverage']:>7.0%}")
+            for item in entry.get("demoted", []):
+                _say(f"      ! {entry['name']} {item['bar'] + song.count_in_bars}."
+                     f"{item['beat']:g}: {item['kept']} and "
+                     f"{', '.join(item['dropped'])} each qualify on their own "
+                     f"but only played together {item['joint_coverage']:.0%} "
+                     f"of the time — kept {item['kept']}, dropped "
+                     f"{', '.join(item['dropped'])} for a listen")
         _say(f"   {'total':<16}{'':>6}{'':>6}{'':>6}"
              f"{report['hits_before']:>6} ->{report['hits_after']:>4}"
              f"   ({report['untouched']} outside every section, untouched)")
