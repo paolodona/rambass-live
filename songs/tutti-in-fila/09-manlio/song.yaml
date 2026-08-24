@@ -130,7 +130,7 @@ character:
   role: ''
   note: ''
 status:
-  source: todo
+  source: done
   analyze: done
   stems: done
   drums_midi: wip
@@ -138,7 +138,7 @@ status:
   kit: todo
   render: todo
   lyrics: todo
-  video: todo
+  video: done
   gx100: todo
   rehearsed: todo
 notes: '60 BPM, not 120: the detected pulse was 60.02 and the octave was settled deliberately

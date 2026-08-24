@@ -10,6 +10,8 @@ detected_bpm: 60
 mode: piecewise             # none | offset | piecewise
 anchors:                 # bar -> seconds into the ORIGINAL file
   - {bar: 1, at: 0.692}
+  - {bar: 1, beat: 2, at: 1.834}
+  - {bar: 1, beat: 3, at: 2.856}
   - {bar: 1, beat: 4, at: 3.831}
   - {bar: 2, at: 4.830}
   - {bar: 2, beat: 2, at: 5.782}
@@ -46,8 +48,8 @@ anchors:                 # bar -> seconds into the ORIGINAL file
   - {bar: 10, at: 36.780}
   - {bar: 10, beat: 2, at: 37.779}
   - {bar: 10, beat: 3, at: 38.754}
-  - {bar: 10, beat: 4, at: 39.753}
-  - {bar: 11, at: 40.751}
+  - {bar: 10, beat: 4, at: 39.776}
+  - {bar: 11, at: 40.774}
   - {bar: 11, beat: 2, at: 41.749}
   - {bar: 11, beat: 3, at: 42.794}
   - {bar: 11, beat: 4, at: 43.746}
@@ -67,20 +69,20 @@ anchors:                 # bar -> seconds into the ORIGINAL file
   - {bar: 15, beat: 2, at: 57.702}
   - {bar: 15, beat: 3, at: 58.723}
   - {bar: 15, beat: 4, at: 59.722}
-  - {bar: 16, at: 60.697}
+  - {bar: 16, at: 60.720}
   - {bar: 16, beat: 2, at: 61.719}
   - {bar: 16, beat: 3, at: 62.740}
   - {bar: 16, beat: 4, at: 63.762}
   - {bar: 17, at: 64.760}
   - {bar: 17, beat: 2, at: 65.736}
   - {bar: 17, beat: 3, at: 66.711}
-  - {bar: 17, beat: 4, at: 67.779}
-  - {bar: 18, at: 68.847}
+  - {bar: 17, beat: 4, at: 67.756}
+  - {bar: 18, at: 68.824}
   - {bar: 18, beat: 2, at: 69.799}
   - {bar: 18, beat: 3, at: 70.751}
   - {bar: 18, beat: 4, at: 71.773}
-  - {bar: 19, at: 72.771}
-  - {bar: 19, beat: 2, at: 73.770}
+  - {bar: 19, at: 72.795}
+  - {bar: 19, beat: 2, at: 73.793}
   - {bar: 19, beat: 3, at: 74.768}
   - {bar: 19, beat: 4, at: 75.767}
   - {bar: 20, at: 76.765}
@@ -115,7 +117,7 @@ anchors:                 # bar -> seconds into the ORIGINAL file
   - {bar: 27, beat: 2, at: 105.720}
   - {bar: 27, beat: 3, at: 106.742}
   - {bar: 27, beat: 4, at: 107.741}
-  - {bar: 28, at: 108.739}
+  - {bar: 28, at: 108.716}
   - {bar: 28, beat: 2, at: 109.691}
   - {bar: 28, beat: 3, at: 110.690}
   - {bar: 28, beat: 4, at: 111.711}
@@ -149,7 +151,7 @@ anchors:                 # bar -> seconds into the ORIGINAL file
   - {bar: 35, beat: 4, at: 139.761}
   - {bar: 36, at: 140.759}
   - {bar: 36, beat: 2, at: 141.688}
-  - {bar: 36, beat: 3, at: 142.663}
+  - {bar: 36, beat: 3, at: 142.687}
   - {bar: 36, beat: 4, at: 143.685}
   - {bar: 37, at: 144.684}
   - {bar: 37, beat: 2, at: 145.705}
@@ -166,7 +168,7 @@ anchors:                 # bar -> seconds into the ORIGINAL file
   - {bar: 40, at: 156.828}
   - {bar: 40, beat: 2, at: 157.872}
   - {bar: 40, beat: 3, at: 158.848}
-  - {bar: 40, beat: 4, at: 159.777}
+  - {bar: 40, beat: 4, at: 159.753}
   - {bar: 41, at: 160.705}
   - {bar: 41, beat: 2, at: 161.681}
   - {bar: 41, beat: 3, at: 162.725}
@@ -277,7 +279,7 @@ anchors:                 # bar -> seconds into the ORIGINAL file
   - {bar: 67, beat: 4, at: 267.633}
   - {bar: 68, at: 268.632}
   - {bar: 68, beat: 2, at: 269.607}
-  - {bar: 68, beat: 3, at: 270.605}
+  - {bar: 68, beat: 3, at: 270.629}
   - {bar: 68, beat: 4, at: 271.627}
   - {bar: 69, at: 272.602}
   - {bar: 69, beat: 2, at: 273.601}
@@ -317,4 +319,4 @@ anchors:                 # bar -> seconds into the ORIGINAL file
   - {bar: 77, beat: 4, at: 307.827}
   - {bar: 78, at: 308.872}
   - {bar: 78, beat: 2, at: 309.847}
-residual_ms: {max: 69.7, mean: 13.0, note: "leave-one-out over the anchors -- the gap between them is the only thing interpolation can get wrong"}
+residual_ms: {max: 69.7, mean: 13.2, note: "leave-one-out over the anchors -- the gap between them is the only thing interpolation can get wrong"}
