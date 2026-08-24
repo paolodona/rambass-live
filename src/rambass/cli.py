@@ -855,6 +855,71 @@ def cmd_drums_missing(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_review_rebuild(args: argparse.Namespace) -> int:
+    """Run every stale or missing pipeline step for a song, in order.
+
+    The console's rebuild button, as a command — and a command *first*, so a
+    terminal gets exactly what the button does. It packages `rambass stale`'s
+    judgement without changing it: `stale` and `missing` steps run, via the
+    exact commands that report already prints; `edited` and `unknown` are
+    reported and never touched, because a hand edit's risk runs the opposite
+    way — re-running the step throws it away. `--force <artifact>` overrides
+    for one artifact at a time, and writes a `.bak` first: a one-key rebuild
+    must not make that mistake easier to make than the terminal already does.
+    """
+    import shutil
+
+    from . import review
+    from .provenance import stale_report
+
+    project = _project()
+    failed = False
+    for song in _songs(project, args.song, args.album, False):
+        auto, held = review.rebuild_selection(stale_report(song))
+        if args.step:
+            auto = [e for e in auto if e.step == args.step]
+
+        forced = []
+        if args.force:
+            match = [e for e in held if e.artifact == args.force]
+            if not match:
+                held_names = ", ".join(e.artifact for e in held) or "none"
+                raise ProjectError(
+                    f"--force {args.force}: not a held (edited/unknown) "
+                    f"artifact of {song.slug}. Held right now: {held_names}. "
+                    f"A stale artifact rebuilds without --force.")
+            path = song.path(*args.force.split("/"))
+            if path.exists():
+                backup = path.with_suffix(path.suffix + ".bak")
+                shutil.copy2(path, backup)
+                _say(f"{song.slug}: kept a copy of the hand-edited file at "
+                     f"{backup.name}")
+            forced = match
+
+        todo = auto + forced
+        if not todo:
+            _say(f"{song.slug}: nothing stale or missing — nothing to rebuild")
+        elif args.dry_run:
+            _say(f"{song.slug}: would run, in order:")
+            for entry in todo:
+                _say(f"   {entry.command}")
+        else:
+            report = review.run_rebuild(
+                todo, runner=review.subprocess_runner(project.root))
+            _say(f"{song.slug}: ran {report['ran']} of {len(todo)} steps")
+            if report["failed"]:
+                _say(f"   FAILED: {report['failed']} — stopping here; the "
+                     f"steps after it still need their inputs")
+                failed = True
+
+        for entry in held:
+            if entry in forced:
+                continue
+            _say(f"   left alone ({entry.state}): {entry.artifact} — "
+                 f"{'; '.join(entry.reasons)}")
+    return 1 if failed else 0
+
+
 def cmd_drums_restore(args: argparse.Namespace) -> int:
     """Stage 7: reapply the hand edits declared in ``song.yaml``.
 
@@ -1007,6 +1072,8 @@ def cmd_click(args: argparse.Namespace) -> int:
             accent_downbeat=bool(song.click.get("accent_downbeat", True)),
             level_db=args.level,
         )
+        if not args.out:
+            _stamp(song, target, "click", [])
         _say(f"{song.title}: {bars} bars at {song.bpm:g} BPM -> {target.name} "
              f"(starts at bar 1 — the count-in is the sticks stem)")
     _say()
@@ -1126,6 +1193,7 @@ def cmd_gx100_midi(args: argparse.Namespace) -> int:
         target, events = write_patch_midi(
             song.path("midi", "gx100.mid"), song, program_map, lead_ms=args.lead_ms
         )
+        _stamp(song, target, "gx100 midi", [])
         _say(f"{song.title}: {target}")
         for event in events:
             _say(f"   bar {event.bar:>4}  {event.memory:<7} "
@@ -1450,6 +1518,7 @@ def cmd_video_ass(args: argparse.Namespace) -> int:
             ),
             encoding="utf-8",
         )
+        _stamp(song, target, "video ass", [song.path("lyrics.srt")])
         _say(f"{song.title}: {origin} -> {target}  ({len(cues)} cues"
              + (f", title card for {card_seconds:.1f}s" if card_seconds else "")
              + ")")
@@ -1509,6 +1578,8 @@ def cmd_video_render(args: argparse.Namespace) -> int:
             style=style,
             crf=args.crf,
         )
+        _stamp(song, ass_path, "video ass", [song.path("lyrics.srt")])
+        _stamp(song, target, "video render", [ass_path])
         _say(f"→ {target}")
         _mark(song, "video")
     return 0
@@ -2083,6 +2154,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--file")
     p.add_argument("--set-default", action="store_true")
     p.set_defaults(func=cmd_drums_remap)
+
+    review = sub.add_parser(
+        "review", help="the project console: rebuilds, notes, A/B review")
+    review_sub = review.add_subparsers(dest="review_command")
+
+    p = review_sub.add_parser(
+        "rebuild",
+        help="run every stale/missing pipeline step for a song, in order",
+    )
+    p.add_argument("song", nargs="*", help="song reference (slug, album/slug or path)")
+    p.add_argument("--album", help="operate on every song in this album")
+    p.add_argument("--step", help="run only the step with this name")
+    p.add_argument("--force", metavar="ARTIFACT",
+                   help="rebuild one edited/unknown artifact anyway "
+                        "(a .bak of the file is kept)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="print the commands and run nothing")
+    p.set_defaults(func=cmd_review_rebuild)
 
     p = sub.add_parser(
         "click",

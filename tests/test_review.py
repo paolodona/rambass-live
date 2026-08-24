@@ -1,0 +1,283 @@
+"""The console's data layer: rebuild selection, step tables, notes, clips.
+
+Paolo: *"if changes are made the app can re-run the underlying rambass commands
+so that I can continue editing/testing without any staleness"* — and the safety
+rule that makes a one-key rebuild survivable is provenance.py's own: a `stale`
+or `missing` artifact is safe to rebuild, an `edited` one is a hand edit whose
+risk runs the opposite way, and an `unknown` one cannot be judged at all. The
+first tests here pin that split, because it is exactly the kind of rule a later
+"simplification" would flatten into "rebuild everything red".
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from rambass.provenance import PIPELINE, Staleness, stale_report, stamp, step_for
+from rambass.review import rebuild_selection, run_rebuild, steps_for
+
+
+def _touch(path, text="x"):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _entry(artifact, state, command="rambass do-a-thing x"):
+    return Staleness(artifact=artifact, step=artifact, command=command, state=state)
+
+
+# ── the rebuild selector: what a one-key rebuild may touch ───────────────────
+
+
+def test_only_stale_and_missing_are_auto_rebuilt():
+    entries = [
+        _entry("a.mid", "ok"),
+        _entry("b.mid", "stale"),
+        _entry("c.mid", "missing"),
+        _entry("d.mid", "edited"),
+        _entry("e.mid", "unknown"),
+    ]
+    auto, held = rebuild_selection(entries)
+    assert [e.artifact for e in auto] == ["b.mid", "c.mid"]
+    assert [e.artifact for e in held] == ["d.mid", "e.mid"]
+
+
+def test_the_selection_preserves_pipeline_order():
+    entries = [_entry("z.mid", "stale"), _entry("a.mid", "missing"),
+               _entry("m.mid", "stale")]
+    auto, _ = rebuild_selection(entries)
+    assert [e.artifact for e in auto] == ["z.mid", "a.mid", "m.mid"]
+
+
+def test_an_edited_artifact_is_never_in_the_auto_set_whatever_else_is_true():
+    # The one-line version of the rule. If this fails, the rebuild button can
+    # silently overwrite a hand edit, which is the failure provenance.py's
+    # `edited` state exists to prevent.
+    auto, _ = rebuild_selection([_entry("x.mid", "edited")])
+    assert auto == []
+
+
+# ── running the selection ────────────────────────────────────────────────────
+
+
+def test_run_rebuild_invokes_each_command_in_order(song):
+    ran = []
+    entries = [_entry("a.mid", "stale", "rambass drums clean x"),
+               _entry("b.mid", "missing", "rambass drums restore x")]
+    report = run_rebuild(entries, runner=lambda cmd: (ran.append(cmd), 0)[1])
+    assert ran == ["rambass drums clean x", "rambass drums restore x"]
+    assert report["ran"] == 2 and report["failed"] == ""
+
+
+def test_run_rebuild_stops_at_the_first_failure(song):
+    ran = []
+    entries = [_entry("a.mid", "stale", "rambass one x"),
+               _entry("b.mid", "stale", "rambass two x"),
+               _entry("c.mid", "stale", "rambass three x")]
+    report = run_rebuild(
+        entries, runner=lambda cmd: (ran.append(cmd), 1 if cmd.endswith("two x") else 0)[1])
+    assert ran == ["rambass one x", "rambass two x"]
+    assert report["ran"] == 1 and report["failed"] == "rambass two x"
+
+
+def test_run_rebuild_never_receives_held_entries():
+    # run_rebuild trusts its input, so the selector is the only gate — feed it
+    # the auto side only. This pins the calling convention.
+    auto, held = rebuild_selection([_entry("a.mid", "edited")])
+    report = run_rebuild(auto, runner=lambda cmd: pytest.fail(f"ran {cmd}"))
+    assert report["ran"] == 0
+    assert held
+
+
+# ── {slug} in pipeline artifacts ─────────────────────────────────────────────
+
+
+def test_new_pipeline_steps_template_the_slug():
+    by_name = {s.name: s for s in PIPELINE}
+    assert by_name["video ass"].artifact == "video/{slug}.ass"
+    assert by_name["video render"].artifact == "video/{slug}.mp4"
+    assert by_name["click"].artifact == "render/click.wav"
+    assert by_name["gx100 midi"].artifact == "midi/gx100.mid"
+
+
+def test_a_templated_artifact_resolves_against_the_song(song):
+    artifact = _touch(song.directory / "video" / f"{song.slug}.ass")
+    stamp(song, artifact, step="video ass", inputs=[])
+    entry = {s.artifact: s for s in stale_report(song)}[f"video/{song.slug}.ass"]
+    assert entry.state == "ok"
+
+
+def test_step_for_matches_a_templated_artifact():
+    assert step_for("video/tutti-in-fila.ass", slug="tutti-in-fila").name == "video ass"
+    assert step_for("video/tutti-in-fila.ass") is None
+
+
+def test_a_video_render_goes_stale_when_the_subtitles_change(song):
+    subtitles = _touch(song.directory / "video" / f"{song.slug}.ass")
+    stamp(song, subtitles, step="video ass", inputs=[])
+    rendered = _touch(song.directory / "video" / f"{song.slug}.mp4")
+    stamp(song, rendered, step="video render", inputs=[subtitles])
+    subtitles.write_text("different", encoding="utf-8")
+    states = {s.artifact: s for s in stale_report(song)}
+    assert states[f"video/{song.slug}.mp4"].state == "stale"
+
+
+def test_a_click_goes_stale_when_the_tempo_changes(song):
+    from rambass.manifest import save_song
+
+    artifact = _touch(song.directory / "render" / "click.wav")
+    stamp(song, artifact, step="click", inputs=[])
+    song.bpm = 61.0
+    save_song(song)
+    entry = {s.artifact: s for s in stale_report(song)}["render/click.wav"]
+    assert entry.state == "stale"
+
+
+def test_a_gx100_midi_ignores_a_lyrics_edit(song):
+    from rambass.manifest import save_song
+
+    artifact = _touch(song.directory / "midi" / "gx100.mid")
+    stamp(song, artifact, step="gx100 midi", inputs=[])
+    song.lyrics_file = "different.md"
+    save_song(song)
+    entry = {s.artifact: s for s in stale_report(song)}["midi/gx100.mid"]
+    assert entry.state == "ok"
+
+
+def test_an_a_cappella_song_still_has_nothing_to_rebuild(song):
+    from rambass.manifest import save_song
+
+    song.drums_origin = "a-cappella"
+    save_song(song)
+    assert stale_report(song) == []
+
+
+def test_a_backing_track_song_keeps_its_video_and_gx100_steps(song):
+    from rambass.manifest import save_song
+
+    song.drums_origin = "backing-track"
+    save_song(song)
+    names = {s.step for s in stale_report(song)}
+    assert "video ass" in names and "gx100 midi" in names and "click" in names
+    assert "drums clean" not in names
+
+
+# ── the step tables: what each stage screen lists ────────────────────────────
+
+
+def test_an_extracted_song_gets_the_full_drum_sequence(song):
+    labels = [row.label for row in steps_for(song, "drums")]
+    assert any("ranscribe" in label for label in labels)
+    assert any("onsolidate" in label for label in labels)
+    assert any("estore" in label for label in labels)
+
+
+def test_the_review_tool_step_is_an_open_not_a_run(song):
+    rows = steps_for(song, "drums")
+    opens = [row for row in rows if row.kind == "open"]
+    assert len(opens) == 1 and "estore" in opens[0].label
+
+
+def test_a_backing_track_song_has_no_drum_steps(song):
+    song.drums_origin = "backing-track"
+    assert steps_for(song, "drums") == []
+
+
+def test_an_a_cappella_song_needs_a_title_card_and_nothing_else(song):
+    # CLAUDE.md: `a-cappella` is not an unfinished state.
+    song.drums_origin = "a-cappella"
+    assert steps_for(song, "drums") == []
+    assert steps_for(song, "render") == []
+    video = steps_for(song, "video")
+    assert len(video) == 1 and "card" in video[0].label.lower()
+
+
+def test_every_run_step_command_mentions_the_song(song):
+    for stage in ("drums", "render", "lyrics", "video", "gx100"):
+        for row in steps_for(song, stage):
+            if row.kind == "run":
+                assert song.slug in row.command, (stage, row.label)
+
+
+# ── the CLI command ──────────────────────────────────────────────────────────
+
+
+def _rebuildable(song):
+    """One stamped-then-stale artifact and one hand-edited one."""
+    source = _touch(song.directory / "midi" / "drums-raw.mid")
+    stale = _touch(song.directory / "midi" / "drums-quantized.mid")
+    stamp(song, stale, step="drums clean", inputs=[source])
+    source.write_text("re-transcribed", encoding="utf-8")
+
+    edited = _touch(song.directory / "midi" / "drums-consolidated.mid")
+    stamp(song, edited, step="drums consolidate", inputs=[stale])
+    edited.write_text("drawn in reaper", encoding="utf-8")
+    return stale, edited
+
+
+def test_rebuild_dry_run_prints_the_commands_and_runs_nothing(cwd_song, capsys,
+                                                              monkeypatch):
+    from rambass import review as review_module
+    from rambass.cli import main
+
+    _rebuildable(cwd_song)
+    monkeypatch.setattr(
+        review_module, "subprocess_runner",
+        lambda cwd: pytest.fail("dry run must not build a runner"))
+    assert main(["review", "rebuild", cwd_song.slug, "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert f"rambass drums clean {cwd_song.slug}" in out
+
+
+def test_rebuild_runs_the_auto_set_and_reports_the_held(cwd_song, capsys,
+                                                        monkeypatch):
+    from rambass import review as review_module
+    from rambass.cli import main
+
+    _rebuildable(cwd_song)
+    ran = []
+    monkeypatch.setattr(review_module, "subprocess_runner",
+                        lambda cwd: lambda cmd: (ran.append(cmd), 0)[1])
+    assert main(["review", "rebuild", cwd_song.slug]) == 0
+    assert any("drums clean" in cmd for cmd in ran)
+    # The hand edit is reported with stale's own wording, never run.
+    assert not any("drums consolidate" in cmd for cmd in ran)
+    out = capsys.readouterr().out
+    assert "edited" in out.lower()
+
+
+def test_rebuild_force_backs_the_file_up_first(cwd_song, monkeypatch):
+    from rambass import review as review_module
+    from rambass.cli import main
+
+    _, edited = _rebuildable(cwd_song)
+    ran = []
+    monkeypatch.setattr(review_module, "subprocess_runner",
+                        lambda cwd: lambda cmd: (ran.append(cmd), 0)[1])
+    assert main(["review", "rebuild", cwd_song.slug,
+                 "--force", "midi/drums-consolidated.mid"]) == 0
+    backup = edited.with_suffix(".mid.bak")
+    assert backup.read_text(encoding="utf-8") == "drawn in reaper"
+    assert any("drums consolidate" in cmd for cmd in ran)
+
+
+def test_rebuild_force_refuses_an_artifact_that_is_not_held(cwd_song):
+    from rambass.cli import main
+
+    _rebuildable(cwd_song)
+    # drums-quantized is stale, not edited/unknown: --force is not how it is
+    # rebuilt, and accepting it would teach the habit of forcing everything.
+    assert main(["review", "rebuild", cwd_song.slug,
+                 "--force", "midi/drums-quantized.mid"]) == 2
+
+
+def test_rebuild_stops_and_fails_loudly_when_a_command_fails(cwd_song,
+                                                             monkeypatch):
+    from rambass import review as review_module
+    from rambass.cli import main
+
+    _rebuildable(cwd_song)
+    monkeypatch.setattr(review_module, "subprocess_runner",
+                        lambda cwd: lambda cmd: 1)
+    assert main(["review", "rebuild", cwd_song.slug]) == 1

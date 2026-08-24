@@ -103,6 +103,19 @@ class Step:
     #: Skip this step entirely for these ``drums.origin`` values.
     skip_origins: tuple[str, ...] = ()
 
+    def artifact_for(self, slug: str) -> str:
+        """The artifact path with ``{slug}`` resolved.
+
+        ``video/{slug}.ass`` exists because the video files are named after the
+        song while everything in ``midi/`` and ``render/`` has one conventional
+        name per song directory. Most artifacts contain no placeholder and come
+        back unchanged.
+        """
+        return self.artifact.format(slug=slug)
+
+    def inputs_for(self, slug: str) -> tuple[str, ...]:
+        return tuple(name.format(slug=slug) for name in self.inputs)
+
 
 #: The drum chain and what hangs off it, in order. Both :func:`stale_report` and
 #: the ``rambass stale`` command read this and nothing else, so adding a stage
@@ -159,6 +172,46 @@ PIPELINE: tuple[Step, ...] = (
         fields=("tempo", "bars", "drums/map", "drums/additions",
                 "drums/removals"),
         skip_origins=("a-cappella", "backing-track"),
+    ),
+    # The show chain past the drums. These skip only a-cappella songs: a
+    # backing-track song never enters the drum pipeline, but its click, patch
+    # changes and video are exactly as real as an extracted song's.
+    Step(
+        name="click",
+        artifact="render/click.wav",
+        command="rambass click {slug}",
+        modules=("click", "audio"),
+        fields=("tempo", "bars", "count_in", "click"),
+        skip_origins=("a-cappella",),
+    ),
+    Step(
+        name="gx100 midi",
+        artifact="midi/gx100.mid",
+        command="rambass gx100 midi {slug}",
+        modules=("gx100",),
+        # Not "video": the lyrics filename lives under that key, and a patch
+        # MIDI that goes stale when somebody renames the lyrics file is the
+        # cry-wolf failure the per-field hashes exist to prevent.
+        fields=("gx100", "tempo", "count_in"),
+        skip_origins=("a-cappella",),
+    ),
+    Step(
+        name="video ass",
+        artifact="video/{slug}.ass",
+        command="rambass video ass {slug}",
+        inputs=("lyrics.srt",),
+        modules=("lyrics", "video"),
+        fields=("video", "tempo", "count_in"),
+        skip_origins=("a-cappella",),
+    ),
+    Step(
+        name="video render",
+        artifact="video/{slug}.mp4",
+        command="rambass video render {slug}",
+        inputs=("video/{slug}.ass",),
+        modules=("video", "audio"),
+        fields=("video",),
+        skip_origins=("a-cappella",),
     ),
     # Practice, and last on purpose. CLAUDE.md: practice must never gate the gig,
     # so nothing in the drum chain above takes an input from `practice/` and this
@@ -306,9 +359,15 @@ def write_stamps(song, stamps: dict) -> None:
         encoding="utf-8")
 
 
-def step_for(artifact: str) -> Step | None:
+def step_for(artifact: str, slug: str | None = None) -> Step | None:
+    """The pipeline step producing *artifact*, or None.
+
+    Templated artifacts (``video/{slug}.ass``) only match when *slug* is given,
+    because without it there is nothing to resolve the placeholder against.
+    """
     for step in PIPELINE:
-        if step.artifact == artifact:
+        candidate = step.artifact_for(slug) if slug else step.artifact
+        if candidate == artifact:
             return step
     return None
 
@@ -321,9 +380,10 @@ def stamp(song, artifact, *, step: str, inputs=()) -> None:
     the one the checker uses, and the two cannot drift apart.
     """
     relative = _relative(song, artifact)
-    known = step_for(relative)
+    known = step_for(relative, slug=song.slug)
     modules = known.modules if known else ()
     fields = known.fields if known else ()
+    declared = known.inputs_for(song.slug) if known else ()
     stamps = read_stamps(song)
     stamps[relative] = {
         "step": step,
@@ -341,7 +401,7 @@ def stamp(song, artifact, *, step: str, inputs=()) -> None:
         "inputs": {
             name: fingerprint(path)
             for name, path in ((_relative(song, p), p) for p in inputs)
-            if known is None or name in known.inputs
+            if known is None or name in declared
         },
     }
     write_stamps(song, stamps)
@@ -390,9 +450,10 @@ def stale_report(song) -> list[Staleness]:
     for step in PIPELINE:
         if song.drums_origin in step.skip_origins:
             continue
-        path = Path(song.directory) / step.artifact
+        artifact = step.artifact_for(song.slug)
+        path = Path(song.directory) / artifact
         entry = Staleness(
-            artifact=step.artifact, step=step.name,
+            artifact=artifact, step=step.name,
             command=step.command.format(slug=song.slug), state="ok")
 
         if not path.is_file():
@@ -401,7 +462,7 @@ def stale_report(song) -> list[Staleness]:
             out.append(entry)
             continue
 
-        recorded = stamps.get(step.artifact)
+        recorded = stamps.get(artifact)
         if not recorded:
             entry.state = "unknown"
             entry.reasons.append(
@@ -448,14 +509,22 @@ def stale_report(song) -> list[Staleness]:
             if entry.reasons and entry.state != "edited":
                 entry.state = "stale"
 
-        upstream = sorted(name for name in step.inputs if name in tainted)
+        upstream = sorted(
+            name for name in step.inputs_for(song.slug) if name in tainted)
         if upstream:
-            entry.state = "stale"
+            # `edited` outranks the cascade. Both mean "rebuild me" to a naive
+            # reading, but they demand opposite handling: a stale file is safe
+            # to regenerate, an edited one holds hand work that regeneration
+            # destroys. Downgrading edited to stale here is how a one-key
+            # rebuild would silently flatten a hand edit whenever anything
+            # upstream of it moved.
+            if entry.state != "edited":
+                entry.state = "stale"
             entry.reasons.append(
                 f"{', '.join(upstream)} {'is' if len(upstream) == 1 else 'are'} "
                 f"stale, so this is too")
 
         if entry.state in ("stale", "edited"):
-            tainted.add(step.artifact)
+            tainted.add(artifact)
         out.append(entry)
     return out
