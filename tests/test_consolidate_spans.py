@@ -53,7 +53,7 @@ def test_a_span_can_start_and_end_mid_bar():
 
 
 def test_a_mid_bar_section_is_consolidated_across_its_whole_extent():
-    """Manlio's verse-2 runs 20.3 to 32.3. Every hit in it must be voted on --
+    """Manlio's verse-2 plus its lift spans 20.3 to 32.3. Every hit must be voted on --
     including the ones in the half of bar 20 and the half of bar 32 that belong
     to it. Rounding those away leaves them unconsolidated inside a consolidated
     section, which is the inconsistency Stage 6 exists to remove."""

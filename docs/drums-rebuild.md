@@ -337,7 +337,7 @@ Two rules the implementation settled, both from Paolo and both load-bearing:
   passed through untouched and reported, which is the right outcome for a break.
 
 Sections need not start on a bar line, and `consolidate` handles that itself.
-Manlio's verse-2 runs from bar 20 beat 3 to bar 32 beat 3; the repetitions still
+Manlio's verse-2 runs from bar 20 beat 3 to bar 28 beat 3; the repetitions still
 tile the bar grid, but each slot is judged against the repetitions it *could*
 have appeared in, so the half-bars at either end are voted on like everything
 else.

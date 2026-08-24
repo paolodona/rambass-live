@@ -1,6 +1,15 @@
 # The project console
 
-Scope for a tool, not yet built. Started from one workflow pain — verifying a
+**Where the repo is, as of 2026-08-24: Phases 0–2 are built.** `rambass
+review serve` starts the console (`console.py` over `review.py`, tested in
+`tests/test_console.py` / `tests/test_review.py`); `review rebuild / clips /
+note / promote / status` are commands. Still open: the EZD3 headless-render
+spike (Gate R2 — needs Paolo's machine and the real plugin), the Phase 5
+thin lyrics/gx100 views, and a set-wide batch rebuild. The rest of this
+document is the scope as designed; where it says "would", it now mostly
+"does".
+
+Scope for a tool, now largely built. Started from one workflow pain — verifying a
 transcribed drum part means opening Reaper, soloing the original, soloing the
 rebuilt MIDI, going back and forth by hand — and grew, deliberately, into
 something bigger: **a console for the whole build**, not a drums tool with a
@@ -32,18 +41,18 @@ candidate than the reference at bar 23 — and a shared bar.beat ruler runs
 underneath both, the same addressing `rambass drums missing` already prints
 (e.g. `23.2.1`), so a problem can be named precisely without opening Reaper.
 
-Grounding the mockup in real data surfaced an actual bug, now fixed: `grep`
-for "verse-2 runs" turned up **four** copies of where Manlio's verse-2 ends,
-split two and two — 32 in CLAUDE.md and in `tests/test_consolidate_spans.py`,
-28 in drums-rebuild.md and in a `test_voicing.py` docstring. Only the "32"
-side is load-bearing: `test_consolidate_spans.py` asserts real consolidate
-output against `SectionSpan("verse-2", 20, 32, ...)`, while both "28"s are
-prose/docstring only. So 32 is correct and the two "28"s were a doc/docstring
-drift — fixed directly in `docs/drums-rebuild.md` and `test_voicing.py`
-rather than left as a TODO. The mockup's own bar range (20.3&ndash;28.3) is
-illustrative — it exists to show the ruler and the stacked-waveform
-mechanism, not to render Manlio's exact arrangement — so it wasn't re-drawn
-for this.
+Grounding the work in real data surfaced a doc inconsistency, and the first
+attempt at fixing it picked the wrong side — worth recording because the
+lesson generalises. `grep` for "verse-2 runs" turned up four copies of where
+Manlio's verse-2 ends: 32.3 in CLAUDE.md and a `test_consolidate_spans.py`
+docstring, 28.3 in drums-rebuild.md and a `test_voicing.py` docstring.
+Arbitrating between *documents* favoured 32.3. But the **manifest is the
+ground truth** — `songs/tutti-in-fila/09-manlio/song.yaml` has `verse-2` at
+20.3 and `verse-2-lift` at 28.3 — so verse-2 proper ends at 28.3, and 32.3 is
+verse-2 *plus its lift*. All four places now say so precisely, and CLAUDE.md
+notes that the manifest wins when a doc disagrees. (The
+`test_consolidate_spans.py` fixture spanning 20–32 is unaffected: it is a
+synthetic shape, and its docstring now says "verse-2 plus its lift".)
 
 ## The dashboard
 

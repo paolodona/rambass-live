@@ -138,7 +138,7 @@ def test_nothing_outside_the_section_is_touched():
 
 
 def test_a_section_starting_mid_bar_starts_mid_bar():
-    """Manlio's verse-2 runs from bar 20 beat 3 to bar 32 beat 3, so its first
+    """Manlio's verse-2 runs from bar 20 beat 3 to bar 28 beat 3, so its first
     repetition is half a bar and beat 2 of bar 20 is NOT in it."""
     performance = _verse(4)
     out, _ = voice_backbeats(
