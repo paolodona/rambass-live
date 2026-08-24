@@ -920,6 +920,141 @@ def cmd_review_rebuild(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _review_paths(song) -> tuple[Path, Path]:
+    return song.path("qa", "review.yaml"), song.path("qa", "review.md")
+
+
+def _write_review(song, notes, version: str) -> None:
+    from .review import review_markdown, save_review
+
+    ledger, markdown = _review_paths(song)
+    save_review(ledger, notes, version=version)
+    markdown.write_text(
+        review_markdown(song.title, notes, count_in_bars=song.count_in_bars),
+        encoding="utf-8")
+
+
+def cmd_review_clips(args: argparse.Namespace) -> int:
+    """Cut the A/B clips: one candidate/reference pair per section.
+
+    The candidate is on the fixed grid (the Stage 9 bounce starts at musical
+    bar 1); the reference breathes, so its positions come from
+    practice/align.yaml — the same map the practice warp uses. Wavs land under
+    qa/clips/, which the global *.wav ignore already keeps out of git.
+    """
+    from .align import load_align
+    from .review import (
+        candidate_path, clip_name, clip_spans, cut_clip, reference_path,
+    )
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        candidate = candidate_path(song, args.candidate)
+        reference = reference_path(song)
+        amap = load_align(song.path("practice", "align.yaml"))
+        spans = clip_spans(song, amap)
+        target_dir = song.path("qa", "clips")
+        for span in spans:
+            cut_clip(candidate, target_dir / clip_name(span, "cand"),
+                     start=span.candidate_start, duration=span.duration)
+            cut_clip(reference, target_dir / clip_name(span, "ref"),
+                     start=span.reference_start,
+                     duration=span.reference_duration)
+        _say(f"{song.title}: {len(spans)} section pairs -> {target_dir}"
+             + ("  (reference timing is offset-only — fit "
+                "`rambass align --fit` for exact positions)"
+                if spans and spans[0].approximate else ""))
+    return 0
+
+
+def cmd_review_note(args: argparse.Namespace) -> int:
+    """Log one review note against a bar, without opening the console.
+
+    Keeps the ledger scriptable: what the browser posts and what this writes
+    are the same `qa/review.yaml`, so a note taken at a rehearsal on a phone
+    over SSH counts exactly as much as one clicked in.
+    """
+    from datetime import date
+
+    from .restore import _section_at
+    from .review import NOTE_KINDS, Note, load_review
+
+    project = _project()
+    song = load_song(project.find_song_dir(args.song))
+    bar, beat = parse_position(args.bar)
+    quoted = f"{bar}.{beat:g}"
+    if args.reaper_bar:
+        bar -= song.count_in_bars
+        if bar < 1:
+            raise ProjectError(
+                f"Reaper bar {quoted} is inside the {song.count_in_bars}-bar "
+                f"count-in, so it is before the music starts")
+    if args.kind not in NOTE_KINDS:
+        raise ProjectError(
+            f"--kind {args.kind!r}: expected one of {', '.join(NOTE_KINDS)}")
+
+    ledger, _ = _review_paths(song)
+    version, notes = load_review(ledger)
+    notes.append(Note(
+        bar=bar, beat=beat, section=_section_at(song.sections, bar, beat),
+        kind=args.kind, instrument=args.instrument, velocity=args.velocity,
+        comment=args.comment, created=date.today().isoformat()))
+    _write_review(song, notes, version or song.drum_midi_path().name)
+    _say(f"{song.title}: noted {args.kind} at bar {bar} beat {beat:g}"
+         + (f" (Reaper {quoted})" if args.reaper_bar else "")
+         + f" -> {ledger}")
+    return 0
+
+
+def cmd_review_promote(args: argparse.Namespace) -> int:
+    """Turn confident open notes into ``drums.additions`` / ``drums.removals``.
+
+    Machine proposes, `git diff` reviews, `drums restore` applies — the same
+    split `drums missing --propose` already uses. Timing and velocity
+    complaints stay in the ledger for a human.
+    """
+    from .review import load_review, promote_notes
+
+    project = _project()
+    for song in _songs(project, args.song, args.album, args.all):
+        ledger, _ = _review_paths(song)
+        version, notes = load_review(ledger)
+        if not notes:
+            _say(f"{song.slug}: no notes to promote")
+            continue
+        promoted, skipped = promote_notes(song, notes)
+        if promoted:
+            song.validate()
+            save_song(song)
+            _write_review(song, notes, version)
+            _say(f"{song.title}: promoted {promoted} into song.yaml "
+                 f"({skipped} left for your ears) — read the diff, then "
+                 f"`rambass drums restore {song.slug}`")
+        else:
+            _say(f"{song.title}: nothing confident enough to promote "
+                 f"({skipped} left for your ears)")
+    return 0
+
+
+def cmd_review_status(args: argparse.Namespace) -> int:
+    """Open-note counts per song — the review work still owed."""
+    from .review import load_review
+
+    project = _project()
+    for song in _songs(project, args.song, args.album,
+                       args.all or not (args.song or args.album)):
+        ledger, _ = _review_paths(song)
+        _, notes = load_review(ledger)
+        if not notes:
+            continue
+        counts = {"open": 0, "promoted": 0, "dismissed": 0}
+        for note in notes:
+            counts[note.status] = counts.get(note.status, 0) + 1
+        _say(f"{song.album}/{song.slug}: {counts['open']} open, "
+             f"{counts['promoted']} promoted, {counts['dismissed']} dismissed")
+    return 0
+
+
 def cmd_drums_restore(args: argparse.Namespace) -> int:
     """Stage 7: reapply the hand edits declared in ``song.yaml``.
 
@@ -2172,6 +2307,41 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true",
                    help="print the commands and run nothing")
     p.set_defaults(func=cmd_review_rebuild)
+
+    p = review_sub.add_parser(
+        "clips", help="cut per-section A/B clips (candidate vs original drums)")
+    _add_song_args(p)
+    p.add_argument("--candidate",
+                   help="the rendered-MIDI wav (default: qa/candidate.wav, "
+                        "then render/<slug>.wav)")
+    p.set_defaults(func=cmd_review_clips)
+
+    p = review_sub.add_parser(
+        "note", help="log one review note against a bar (qa/review.yaml)")
+    p.add_argument("song")
+    p.add_argument("bar", help="musical bar.beat (22.3); --reaper-bar converts")
+    p.add_argument("comment")
+    p.add_argument("--kind", default="other",
+                   help="missing-hit | extra-hit | wrong-instrument | timing "
+                        "| velocity | other")
+    p.add_argument("--instrument", default="",
+                   help="canonical name (crash, kick, ...) when the note is "
+                        "about one hit")
+    p.add_argument("--velocity", type=int, default=0)
+    p.add_argument("--reaper-bar", action="store_true",
+                   help="the bar is a ruler reading; subtract the count-in")
+    p.set_defaults(func=cmd_review_note)
+
+    p = review_sub.add_parser(
+        "promote",
+        help="turn confident open notes into drums.additions / removals")
+    _add_song_args(p)
+    p.set_defaults(func=cmd_review_promote)
+
+    p = review_sub.add_parser(
+        "status", help="open-note counts per song")
+    _add_song_args(p)
+    p.set_defaults(func=cmd_review_status)
 
     p = sub.add_parser(
         "click",

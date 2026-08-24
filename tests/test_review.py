@@ -281,3 +281,251 @@ def test_rebuild_stops_and_fails_loudly_when_a_command_fails(cwd_song,
     monkeypatch.setattr(review_module, "subprocess_runner",
                         lambda cwd: lambda cmd: 1)
     assert main(["review", "rebuild", cwd_song.slug]) == 1
+
+
+# ── clip spans: where a section is, on both clocks ───────────────────────────
+
+
+class _FakeMap:
+    """An alignment map by duck type: reference = grid seconds + 1, times 1.05.
+
+    A deliberate rate != 1.0, so a test that confused the two clocks would not
+    accidentally pass.
+    """
+
+    mode = "piecewise"
+
+    def source_at(self, grid_seconds, timeline):
+        return 1.0 + grid_seconds * 1.05
+
+
+class _OffsetMap(_FakeMap):
+    mode = "offset"
+
+    def source_at(self, grid_seconds, timeline):
+        return 1.0 + grid_seconds
+
+
+def test_a_mid_bar_section_starts_where_the_timeline_says(song):
+    from rambass.manifest import Section
+    from rambass.review import clip_spans
+
+    song.sections = [Section("verse-2", 9, beat=3.0), Section("chorus", 17)]
+    spans = {s.name: s for s in clip_spans(song, _FakeMap())}
+    timeline = song.timeline()
+    assert spans["verse-2"].candidate_start == pytest.approx(
+        timeline.bar_beat_to_seconds(9, 3.0))
+    assert spans["verse-2"].duration == pytest.approx(
+        timeline.bar_beat_to_seconds(17, 1.0) - timeline.bar_beat_to_seconds(9, 3.0))
+
+
+def test_the_candidate_clock_ignores_the_count_in(song):
+    """The Stage 9 bounce starts at musical bar 1 — no count-in in the file.
+    Using audio_time here would shift every candidate clip by the count-in
+    length, which is CLAUDE.md's two-clocks mistake arriving through a new
+    door. So: editing count_in.bars must not move a candidate clip."""
+    from rambass.review import clip_spans
+
+    before = clip_spans(song, _FakeMap())[0].candidate_start
+    song.count_in_bars = 7
+    after = clip_spans(song, _FakeMap())[0].candidate_start
+    assert before == after
+
+
+def test_the_reference_clock_comes_from_the_alignment_map(song):
+    from rambass.review import clip_spans
+
+    span = clip_spans(song, _FakeMap())[-1]
+    timeline = song.timeline()
+    grid = timeline.bar_beat_to_seconds(span.start_bar, span.start_beat)
+    assert span.reference_start == pytest.approx(1.0 + grid * 1.05)
+    assert span.reference_duration == pytest.approx(span.duration * 1.05)
+    assert not span.approximate
+
+
+def test_an_offset_only_map_is_flagged_approximate(song):
+    from rambass.review import clip_spans
+
+    assert all(s.approximate for s in clip_spans(song, _OffsetMap()))
+
+
+def test_no_alignment_at_all_names_the_command_that_fixes_it(song):
+    from rambass.project import ProjectError
+    from rambass.review import clip_spans
+
+    class NoMap:
+        mode = "none"
+
+    with pytest.raises(ProjectError, match="align"):
+        clip_spans(song, NoMap())
+
+
+def test_the_last_section_runs_to_the_end_of_the_part(song):
+    from rambass.review import clip_spans
+
+    last = clip_spans(song, _FakeMap())[-1]
+    timeline = song.timeline()
+    # `bars` is the band's part (CLAUDE.md): the last span ends at its end.
+    assert last.candidate_start + last.duration == pytest.approx(
+        timeline.bar_beat_to_seconds(song.bars + 1, 1.0))
+
+
+def test_a_song_with_no_sections_is_one_span(song):
+    from rambass.review import clip_spans
+
+    song.sections = []
+    spans = clip_spans(song, _FakeMap())
+    assert len(spans) == 1 and spans[0].start_bar == 1
+
+
+# ── the notes ledger ─────────────────────────────────────────────────────────
+
+
+def test_notes_round_trip_through_yaml(song, tmp_path):
+    from rambass.review import Note, load_review, save_review
+
+    path = tmp_path / "review.yaml"
+    note = Note(bar=43, beat=1.0, section="verse-2", kind="missing-hit",
+                instrument="crash", velocity=105,
+                comment="no crash going into the lift", created="2026-08-24")
+    save_review(path, [note], version="drums-quantized.mid")
+    version, notes = load_review(path)
+    assert version == "drums-quantized.mid"
+    assert notes == [note]
+
+
+def test_a_missing_review_file_is_an_empty_ledger(tmp_path):
+    from rambass.review import load_review
+
+    version, notes = load_review(tmp_path / "nope.yaml")
+    assert version == "" and notes == []
+
+
+def test_promote_turns_a_missing_hit_into_an_addition(song):
+    from rambass.review import Note, promote_notes
+
+    notes = [Note(bar=43, kind="missing-hit", instrument="crash",
+                  velocity=105, comment="into the lift")]
+    promoted, skipped = promote_notes(song, notes)
+    assert promoted == 1 and skipped == 0
+    assert notes[0].status == "promoted"
+    addition = song.drum_additions[-1]
+    assert (addition.bar, addition.instrument, addition.velocity) == (43, "crash", 105)
+
+
+def test_promote_turns_an_extra_hit_into_a_removal(song):
+    from rambass.review import Note, promote_notes
+
+    notes = [Note(bar=26, beat=3.0, kind="extra-hit", instrument="hihat_closed",
+                  comment="sounds doubled")]
+    promoted, _ = promote_notes(song, notes)
+    assert promoted == 1
+    removal = song.drum_removals[-1]
+    assert (removal.bar, removal.beat, removal.instrument) == (26, 3.0, "hihat_closed")
+
+
+def test_promote_leaves_the_unconfident_kinds_for_a_human(song):
+    """A timing complaint is not a MIDI edit, and a missing hit with no named
+    instrument is a listening job — same split as restore.propose_additions."""
+    from rambass.review import Note, promote_notes
+
+    notes = [
+        Note(bar=1, kind="timing", comment="rushes"),
+        Note(bar=2, kind="missing-hit", comment="something here"),  # no instrument
+        Note(bar=3, kind="missing-hit", instrument="crash", status="dismissed"),
+        Note(bar=4, kind="missing-hit", instrument="crash", status="promoted"),
+        Note(bar=5, kind="missing-hit", instrument="not-a-drum", velocity=90),
+    ]
+    promoted, skipped = promote_notes(song, notes)
+    assert promoted == 0 and skipped == 5
+    assert song.drum_additions == [] and song.drum_removals == []
+    assert notes[0].status == "open"
+
+
+def test_promote_does_not_double_an_existing_addition(song):
+    from rambass.manifest import Addition
+    from rambass.review import Note, promote_notes
+
+    song.drum_additions = [Addition(bar=43, beat=1.0, instrument="crash")]
+    notes = [Note(bar=43, kind="missing-hit", instrument="crash", velocity=90)]
+    promoted, skipped = promote_notes(song, notes)
+    assert promoted == 0 and skipped == 1
+    assert len(song.drum_additions) == 1
+
+
+def test_the_markdown_speaks_reaper_numbers(song):
+    """Same rule as restore.checklist: the stored data is musical, the document
+    read next to the ruler adds count_in.bars once, at the edge."""
+    from rambass.review import Note, review_markdown
+
+    text = review_markdown(
+        song.title, [Note(bar=43, kind="missing-hit", instrument="crash",
+                          comment="into the lift")],
+        count_in_bars=2)
+    assert "45.1" in text and "43" not in text.replace("45.1", "")
+
+
+# ── the notes CLI ────────────────────────────────────────────────────────────
+
+
+def test_review_note_writes_the_ledger(cwd_song):
+    from rambass.cli import main
+    from rambass.review import load_review
+
+    assert main(["review", "note", cwd_song.slug, "43",
+                 "no crash going into the lift",
+                 "--kind", "missing-hit", "--instrument", "crash",
+                 "--velocity", "105"]) == 0
+    _, notes = load_review(cwd_song.path("qa", "review.yaml"))
+    assert len(notes) == 1
+    assert notes[0].bar == 43 and notes[0].instrument == "crash"
+    assert notes[0].section == "chorus"          # derived from the section list
+    assert cwd_song.path("qa", "review.md").exists()
+
+
+def test_review_promote_moves_notes_into_the_manifest(cwd_song):
+    from rambass.cli import main
+    from rambass.manifest import load_song
+    from rambass.review import load_review
+
+    main(["review", "note", cwd_song.slug, "43", "into the lift",
+          "--kind", "missing-hit", "--instrument", "crash", "--velocity", "105"])
+    assert main(["review", "promote", cwd_song.slug]) == 0
+    reloaded = load_song(cwd_song.directory)
+    assert len(reloaded.drum_additions) == 1
+    _, notes = load_review(cwd_song.path("qa", "review.yaml"))
+    assert notes[0].status == "promoted"
+
+
+def test_review_status_counts_open_notes(cwd_song, capsys):
+    from rambass.cli import main
+
+    main(["review", "note", cwd_song.slug, "43", "x",
+          "--kind", "missing-hit", "--instrument", "crash"])
+    assert main(["review", "status"]) == 0
+    assert "1 open" in capsys.readouterr().out
+
+
+def test_review_note_reaper_bar_subtracts_the_count_in(cwd_song):
+    from rambass.cli import main
+    from rambass.review import load_review
+
+    assert main(["review", "note", cwd_song.slug, "45", "x",
+                 "--reaper-bar"]) == 0
+    _, notes = load_review(cwd_song.path("qa", "review.yaml"))
+    assert notes[0].bar == 45 - cwd_song.count_in_bars
+
+
+def test_clips_without_a_candidate_says_where_to_bounce_one(cwd_song, capsys):
+    from rambass.cli import main
+
+    assert main(["review", "clips", cwd_song.slug]) == 2
+    assert "qa/candidate.wav" in capsys.readouterr().err
+
+
+def test_clips_without_a_stem_names_the_stems_command(cwd_song, capsys):
+    from rambass.cli import main
+
+    _touch(cwd_song.path("qa", "candidate.wav"), "not-really-audio")
+    assert main(["review", "clips", cwd_song.slug]) == 2
+    assert "rambass stems" in capsys.readouterr().err
