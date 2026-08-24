@@ -281,9 +281,13 @@ async function renderSong(slugAndQuery) {
         button = `<button class="btn primary"
           onclick="location.hash='#/review/${encodeURIComponent(slug)}'">Open review tool &rarr;</button>`;
       else if (step.kind === "run" && step.state === "stale")
-        button = `<button class="btn amber" data-run="${esc(step.command)}">Rebuild</button>`;
+        button = `<button class="btn amber" data-run data-step="${esc(step.step)}"
+          data-command="${esc(step.command)}"
+          title="${esc(step.command)}">Rebuild</button>`;
       else if (step.kind === "run")
-        button = `<button class="btn" data-run="${esc(step.command)}">Run</button>`;
+        button = `<button class="btn" data-run data-step="${esc(step.step)}"
+          data-command="${esc(step.command)}"
+          title="${esc(step.command)}">Run</button>`;
       const detail = step.state === "stale"
         ? `<div class="warn">${esc(step.reasons.join("; ") || "stale")}</div>`
         : step.state === "edited"
@@ -312,21 +316,41 @@ async function renderSong(slugAndQuery) {
     </div>
     <div class="log" id="log"></div>`;
   const log = $("#log");
-  async function rebuild(payload) {
+  const buttons = () => app.querySelectorAll("#rebuild-all, [data-run]");
+  let running = false;
+  async function rebuild(payload, endpoint) {
+    /* A separation is three minutes and the server now allows one rebuild per
+       song (409 otherwise), so the page has to *look* busy for all of it: the
+       second press that started two demucs runs at once was the reasonable
+       response to a button that still looked unpressed. */
+    if (running) return;
+    running = true;
+    buttons().forEach((el) => { el.disabled = true; });
     log.style.display = "block";
     log.textContent = "rebuilding…";
     try {
-      const result = await api("/api/rebuild", Object.assign({song: slug}, payload));
+      const result = await api(endpoint || "/api/rebuild",
+                              Object.assign({song: slug}, payload));
       log.textContent = result.commands.length
         ? result.commands.map((c, i) =>
             (i < result.ran ? "ok    " : result.failed === c ? "FAIL  " : "held  ") + c).join("\n")
         : "nothing stale or missing — nothing to rebuild";
       if (!result.failed) setTimeout(() => renderSong(slug), 600);
     } catch (err) { log.textContent = "error: " + err.message; }
+    finally {
+      running = false;
+      buttons().forEach((el) => { el.disabled = false; });
+    }
   }
   $("#rebuild-all").addEventListener("click", () => rebuild({}));
   app.querySelectorAll("[data-run]").forEach((el) =>
-    el.addEventListener("click", () => rebuild({})));
+    /* Its own step, not the whole chain: Run on the click row means the click,
+       and used to mean a demucs separation. A row the staleness table does not
+       track (analyze, lyrics, video card, countin) has no step to filter on,
+       so it runs its own command -- posting {} for those is the same bug. */
+    el.addEventListener("click", () => (el.dataset.step
+      ? rebuild({step: el.dataset.step})
+      : rebuild({command: el.dataset.command}, "/api/run"))));
   window._rebuild = () => rebuild({});
 }
 

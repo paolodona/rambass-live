@@ -619,6 +619,42 @@ def rebuild_song(song, *, project_root, dry_run: bool = False,
     return result
 
 
+def runnable_commands(song, report) -> set[str]:
+    """Every command this song's own stage screens put a button on.
+
+    The whitelist for :func:`run_step_command`, and it is the screens
+    themselves rather than a second list -- so the browser can ask for exactly
+    what the console offered it and nothing else, and the two cannot drift.
+    """
+    return {step["command"]
+            for screen in song_screen(song, report)["screens"]
+            for step in screen["steps"]
+            if step["kind"] == "run" and step["command"]}
+
+
+def run_step_command(song, command: str, *, project_root, report) -> dict:
+    """Run one screen row's command, for the rows staleness does not track.
+
+    `rambass analyze --write`, `lyrics transcribe`, `lyrics check`,
+    `video card` and `countin` produce nothing in :data:`~rambass.provenance.
+    PIPELINE`, so there is no step for :func:`rebuild_song` to filter on --
+    and a button that posts an empty rebuild instead means *the whole chain*,
+    which is how clicking "Find the tempo" started a demucs separation.
+
+    There is nothing to gate here (no provenance, so no hand edit to protect);
+    the gate is the whitelist, and the report shape matches
+    :func:`rebuild_song` so one log renders both.
+    """
+    if command not in runnable_commands(song, report):
+        raise ProjectError(
+            f"{command!r} is not a step {song.slug} offers. The console can "
+            f"only run what it put a button on.")
+    code = subprocess_runner(project_root)(command)
+    return {"song": song.slug, "dry_run": False, "commands": [command],
+            "ran": 0 if code else 1, "failed": command if code else "",
+            "backup": "", "held": []}
+
+
 # ── what the console's screens are made of ───────────────────────────────────
 
 #: Which dashboard column each pipeline step reports into. The drum chain's
@@ -702,6 +738,11 @@ def song_screen(song, report) -> dict:
             steps.append({
                 "label": row.label, "command": row.command, "kind": row.kind,
                 "note": row.note, "artifact": artifact,
+                # The provenance step name, which is the key `rebuild_song`
+                # filters on. Without it a Run button can only say "rebuild",
+                # meaning the whole chain -- which is how clicking Run on the
+                # click track started a demucs separation.
+                "step": entry.step if entry else "",
                 "state": entry.state if entry else "",
                 "reasons": entry.reasons if entry else [],
             })

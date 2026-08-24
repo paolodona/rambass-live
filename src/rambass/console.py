@@ -14,8 +14,12 @@ rule) is that it stays within the stdlib.
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
+from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from .manifest import load_song
@@ -63,6 +67,14 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     server_version = "rambass-console"
     project: Project = None  # set by make_server
     setlist: str = ""
+
+    #: Songs with a rebuild in flight. The server is threaded, a separation is
+    #: three minutes, and the button gives nothing away while it runs -- so a
+    #: second press is what a person does next, and two demucs runs then write
+    #: the same `stems/.demucs` directory at once. Per song, because that is
+    #: where the collision is: two *different* songs rebuilding is only slow.
+    _rebuilding: set[str] = set()
+    _rebuilding_lock = threading.Lock()
 
     def log_message(self, *args) -> None:  # noqa: D102 - silence per request
         pass
@@ -228,6 +240,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         try:
             if path == "/api/rebuild":
                 self._rebuild(song, body)
+            elif path == "/api/run":
+                self._run(song, body)
             elif path == "/api/note":
                 self._note(song, body)
             elif path == "/api/promote":
@@ -241,14 +255,51 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         except BrokenPipeError:
             pass
 
-    def _rebuild(self, song, body: dict) -> None:
-        from .review import rebuild_song
+    def _claim(self, song) -> bool:
+        """Take this song's one build slot, or answer 409 and take nothing."""
+        with self._rebuilding_lock:
+            if song.slug in self._rebuilding:
+                self._error(409, f"{song.slug}: a rebuild is already running — "
+                                 f"wait for it to finish, or watch the terminal "
+                                 f"the console was started from")
+                return False
+            self._rebuilding.add(song.slug)
+        return True
 
-        self._json(rebuild_song(
-            song, project_root=self.project.root,
-            dry_run=bool(body.get("dry_run")),
-            force=body.get("force") or None,
-            step=body.get("step") or None))
+    def _release(self, song) -> None:
+        # On the way out of *every* path, including the raise that becomes a
+        # 400: a console that refuses every later rebuild after one error is
+        # worse than one that races.
+        with self._rebuilding_lock:
+            self._rebuilding.discard(song.slug)
+
+    def _rebuild(self, song, body: dict) -> None:
+        from . import review
+
+        if not self._claim(song):
+            return
+        try:
+            self._json(review.rebuild_song(
+                song, project_root=self.project.root,
+                dry_run=bool(body.get("dry_run")),
+                force=body.get("force") or None,
+                step=body.get("step") or None))
+        finally:
+            self._release(song)
+
+    def _run(self, song, body: dict) -> None:
+        """One screen row's own command, for the rows staleness cannot track."""
+        from . import review
+        from .provenance import stale_report
+
+        if not self._claim(song):
+            return
+        try:
+            self._json(review.run_step_command(
+                song, str(body.get("command", "")),
+                project_root=self.project.root, report=stale_report(song)))
+        finally:
+            self._release(song)
 
     def _note(self, song, body: dict) -> None:
         from datetime import date
@@ -292,9 +343,6 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         what already works: EZdrummer 3 reads plain .mid from a linked folder
         (drums-rebuild.md). Opening the folder is best-effort and local-only.
         """
-        import subprocess
-        import sys
-
         from .align import load_align
         from .drummap import load_drum_map
         from .midiio import read_drum_midi, write_drum_midi
@@ -320,15 +368,26 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         target.parent.mkdir(parents=True, exist_ok=True)
         write_drum_midi(target, section_performance(performance, span),
                         drum_map)
-        opener = {"win32": "explorer", "darwin": "open"}.get(
-            sys.platform, "xdg-open")
-        try:
-            subprocess.Popen([opener, str(target.parent)],
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
-        except OSError:
-            pass  # headless, or no opener: the path in the reply is enough
+        reveal_in_file_manager(target.parent)
         self._json({"path": str(target.relative_to(song.directory))})
+
+
+def reveal_in_file_manager(folder: Path) -> None:
+    """Show *folder* to the user. A seam on purpose.
+
+    Exporting a section is a "now drag it into Reaper" gesture, so opening the
+    folder is the point. Done inline in the handler it was also unstubbable, and
+    a full ``pytest`` run opened a File Explorer window on every throwaway
+    ``midi/sections`` directory the suite made. One module-level function is the
+    whole of the OS surface here, so ``tests/conftest.py`` patches it once.
+    """
+    opener = {"win32": "explorer", "darwin": "open"}.get(sys.platform, "xdg-open")
+    try:
+        subprocess.Popen([opener, str(folder)],
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+    except OSError:
+        pass  # headless, or no opener: the path in the reply is enough
 
 
 def make_server(project: Project, *, port: int = DEFAULT_PORT,

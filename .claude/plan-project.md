@@ -95,7 +95,7 @@ never seconds.
 - **Build**: no build step (editable install: `uv pip install -e '.[audio]'`). Use `uv pip`, not
   `pip`: `.venv` here is a `uv venv` and has no pip in it. `make` is not installed on this machine
   either, so run the underlying commands rather than the `Makefile` targets.
-- **Unit tests**: `pytest -q` — 779 tests, ~32s, all green at HEAD
+- **Unit tests**: `pytest -q` — 805 tests, ~35s, all green at HEAD
 - **Scoped tests**: `pytest -q tests/test_<area>.py -k <expr>` — pick the file from the module you
   touched (`test_align.py`, `test_drum_passes.py`, `test_sidestick.py`, `test_timeline.py`, …)
 - **Manifest validation**: `rambass check` — validates every `song.yaml`; instant

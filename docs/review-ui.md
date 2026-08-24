@@ -338,6 +338,26 @@ six drum-chain steps already use; no existing command's behaviour changes,
 and `rambass stale` picking up the wider table for free is the reason the
 table lives in one place.
 
+### One job per song at a time
+
+A separation is three minutes, and for all of it the button looks unpressed --
+so a second press is what a person does next, and the server is threaded, so
+both ran. Paolo watched two demucs runs of Manlio start together, writing the
+same `stems/.demucs/htdemucs_ft`. Three things stop it now:
+
+* a **per-song lock** in `console.py`: a second `/api/rebuild` or `/api/run`
+  for a song already building is a 409 naming the song, released on every way
+  out including the raise that becomes a 400. Per song, because that is where
+  the collision is -- two different songs rebuilding is only slow;
+* the page **disables its buttons** while a job is in flight and says progress
+  is in the terminal;
+* a per-step button **runs its own step**. It used to carry the command string
+  and post an empty payload, which means *the whole chain*: "Find the tempo"
+  started a demucs separation. A row the staleness table tracks posts
+  `{step}` to `/api/rebuild`; a row it does not (analyze, lyrics
+  transcribe/check, video card, countin) posts `{command}` to `/api/run`,
+  whitelisted against the commands that song's own screens offer.
+
 ### CLI surface
 
 ```
