@@ -1,5 +1,4 @@
 {
-  "defaultMode": "acceptEdits",
   "permissions": {
     "allow": [
       "Bash(pytest:*)",
@@ -16,5 +15,9 @@
       "Bash(git diff:*)",
       "Bash(git log:*)"
     ]
+  },
+  "defaultMode": "acceptEdits",
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
   }
 }
