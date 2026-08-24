@@ -44,7 +44,7 @@ character:
   role: ''
   note: one of the newest, so the least known to the audience
 status:
-  source: todo
+  source: done
   analyze: done
   stems: done
   drums_midi: n/a

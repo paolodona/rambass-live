@@ -44,7 +44,7 @@ character:
   role: ''
   note: the heaviest song in the set
 status:
-  source: todo
+  source: done
   analyze: done
   stems: done
   drums_midi: n/a

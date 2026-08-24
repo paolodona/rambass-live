@@ -44,7 +44,7 @@ character:
   role: linking
   note: album intro; walk-on music
 status:
-  source: todo
+  source: done
   analyze: done
   stems: done
   drums_midi: n/a

@@ -44,7 +44,7 @@ character:
   role: ''
   note: the odd one out; not a crowd favourite
 status:
-  source: todo
+  source: done
   analyze: todo
   stems: done
   drums_midi: todo
