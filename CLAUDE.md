@@ -57,6 +57,28 @@ render out of the pure-numpy tier). Checked on a second song of the album, as
 the rule below requires: Tutti in Fila stretches three times as hard (rates
 0.808-1.213, 7.02 semitones of swing if resampled) and lands 0.3 cents / p90
 2.3 cents off the source with backbeats at p90 23.0 ms against 19.1.
+
+A fifth is settled: **the warp path is smoothed, and a finer one is the wrong
+instinct.** Drawn straight through every anchor the path is continuous but its
+*rate* steps at every knot — 310 knots on Manlio, mean 2.7% and max 14.0% per
+beat — which is what Paolo heard as "jarring, speeds up and down in an
+unnatural way". Those steps are not tempo: the beat-to-beat rate series has a
+lag-1 autocorrelation of **+0.03**, i.e. white noise, where real drift is
+autocorrelated. It is tracking per-anchor noise, sd 18 ms. So subdividing to
+16ths makes it worse, and `--every-beats` is not the knob. `smooth_anchors`
+fits a penalised least-squares spline (`sum (s-at)² + lam*∫(s'')²`, `lam`
+default 1.0) so every anchor votes and none dictates; penalising the *second*
+derivative means a constant lag and a steady accelerando are free, because a
+drummer behind the beat is **translated, not slow**. It is also measurably more
+accurate: against simulated ground truth, interpolation is p90 27.7 ms out and
+the smoothed path 14.5 ms — the residual against the anchors is rejected noise,
+so do not tune `lam` by `residual_holdout_ms`. Two invariants: **bar 1 is
+pinned exactly** (it is the hand-measured anchor, `AlignMap.offset` depends on
+it, and unpinned it cut the downbeat off the front of the render), and **the
+groove is preserved** (a 60 ms late backbeat keeps 61 ms of that, where
+interpolation dragged it to 0.7 ms of the grid — flattening the band and then
+asking whether the new drums sit where it played is a question with no content
+left in it). `--lam 0` restores the old behaviour.
 See `docs/practice-tracks.md`.
 
 **Bar numbers spoken out loud are Reaper ruler readings; bar numbers in

@@ -71,6 +71,70 @@ Three things that were measured rather than assumed, so nobody re-litigates them
   Tutti in Fila has no drums until bar 9 beat 2, so the intro is one interpolated
   segment at rate 1.007, which is an offset, correctly.
 
+* **The warp path is smoothed, and interpolating every anchor was measurably
+  worse.** Paolo, listening: *"the warped track is jarring as it speeds up and
+  down in an unnatural way."* A path drawn straight through every anchor is
+  continuous in position but its **rate** — the slope — steps at every knot:
+  310 of them on Manlio, jumping a mean of 2.7% and a maximum of 14.0% from one
+  beat to the next; 556 on Tutti in Fila at 3.9% and 22.4%. A ±2.7% speed step
+  once a second is squarely in the audible-warble band, and the drift it is
+  chasing is under 300 ms across five minutes.
+
+  Those steps are not tempo. Manlio's beat-to-beat rate series has a **lag-1
+  autocorrelation of +0.03** — white noise. Real drift is autocorrelated,
+  because a band that slows down stays slow for a few bars. What the per-beat
+  rate tracks is per-anchor noise, sd **18 ms**: the beat detector's placement
+  plus the drummer's own micro-timing. So the old path modulated playback speed
+  by up to 14% in response to a signal carrying no tempo information, then
+  wrote that noise into the file.
+
+  Going *finer* is the trap — 16ths add more knots each carrying the same noise
+  over a shorter span, so the swings get worse. `align.smooth_anchors` fits a
+  **penalised least-squares (smoothing) spline** instead: minimise
+  `sum (s_i - at_i)² + lam * ∫(s'')²`. Every anchor votes; none dictates.
+  Penalising the *second* derivative is the point, because it is the rate's own
+  rate of change — so a constant lag and a steady accelerando both cost
+  nothing, while a once-per-beat zigzag is expensive.
+
+  That split is the one the material needs. A drummer sitting 100 ms behind the
+  beat is **translated, not slow**, and translation is free: it is carried by
+  the path's intercept at rate 1.000. Simulating exactly that — 16 bars at 100
+  ms behind, then a catch-up at a section change, with Manlio's 18 ms
+  per-anchor noise — interpolation gives 1.000 ± **0.023** inside the
+  constant-lag section where the correct rate is exactly 1.000, and buries the
+  genuine 10% event at the boundary under a 1.042 three beats earlier that
+  means nothing. At `lam` 1.0 the sections settle to ± **0.005** and the
+  boundary becomes the largest excursion in the song by more than 2×, spread
+  over about five beats as a glide instead of a one-beat lurch.
+
+  And it is **more** accurate, not less, which is why it is on by default.
+  Interpolation scores a perfect 0 ms against the detected beats because it
+  reproduces them exactly, noise included — and p90 **27.7 ms** against where
+  the band actually played. The smoothed path is p90 **14.5 ms**. So the gap
+  smoothing leaves against the anchors is rejected noise, not error, and
+  `residual_holdout_ms` is not the number to tune `lam` by. On Manlio's own
+  committed map the rate swing falls from 0.905–1.142 to 0.948–1.095 and the
+  worst step from 14.0% to under 5%.
+
+  Two things follow, both deliberate. **Bar 1 is pinned exactly**, so smoothing
+  preserves `AlignMap.offset`: it is the anchor most likely to be a measurement
+  rather than a detection, and a spline is least constrained at its ends, so it
+  is also the one smoothing moves most — unpinned it shifted a downbeat to
+  target −0.016 s and cut it off the front of the render. And **the groove
+  survives**: a backbeat sitting 60 ms late keeps 61 ms of that under smoothing
+  where interpolation dragged it to within 0.7 ms of the grid line. Warping the
+  band flat and then asking whether the new drums sit where the band played is
+  a question with no content left in it.
+
+  Anchor *density* is untouched by all this — per beat still beats per bar by
+  25× on the same fixture. `--lam 0` restores the old interpolation.
+
+  Known and not fixed here: Manlio's bar 1 → beat 2 gap is 1.142 s against a
+  nominal 1.000, a bad detection rather than a tempo event, and pinning bar 1
+  means smoothing damps it to 1.095 rather than removing it. Away from the head
+  the map settles to 0.948–1.041. Dropping that outlier is **robust fitting**,
+  a separate change.
+
 Only the **source** side is stored, per CLAUDE.md: the target side comes from
 `Timeline` at build time, so a BPM edit re-warps instead of silently stopping.
 hides a lot; the same part inside the real song, with the real vocal on top, does

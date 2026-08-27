@@ -132,7 +132,10 @@ def test_each_segment_maps_its_own_recorded_span_onto_the_grid_span():
     timeline = Timeline(bpm=60.0)
     amap = AlignMap(anchors=[Anchor(bar=1, at=1.0), Anchor(bar=3, at=9.2),
                              Anchor(bar=5, at=17.0)])
-    plan = warp_plan(amap, timeline, bars=8)
+    # lam=0: this pins how a segment is *constructed*, so it reads the anchors
+    # literally. Smoothing is a separate decision about where the edges land,
+    # measured further down under "smoothing the warp path".
+    plan = warp_plan(amap, timeline, bars=8, lam=0.0)
     assert [(round(s.source_start, 3), round(s.source_end, 3)) for s in plan[:2]] == [
         (1.0, 9.2), (9.2, 17.0)]
     assert [(round(s.target_start, 3), round(s.target_end, 3)) for s in plan[:2]] == [
@@ -304,7 +307,11 @@ def _worst_error_ms(out, sr, bars, per_bar=4):
 def test_an_anchor_on_every_beat_beats_an_anchor_on_every_bar():
     """The measurement that justified putting `beat` on Anchor. On Manlio, the
     drum stem warped and then asked how far each backbeat lands from its grid
-    line: p90 107 ms for a single offset, 58 ms per bar, 38 ms per beat."""
+    line: p90 107 ms for a single offset, 58 ms per bar, 38 ms per beat.
+
+    Anchor *density* is what this settles, and smoothing the path does not
+    reopen it: per beat still beats per bar by a factor of 25 here.
+    """
     sr, bars = 8000, 8
     beats, samples = _drifting_click(sr, bars)
     timeline = Timeline(bpm=60.0)
@@ -321,14 +328,50 @@ def test_an_anchor_on_every_beat_beats_an_anchor_on_every_bar():
     fine = _worst_error_ms(
         warp_samples(samples, sr, warp_plan(per_beat_map, timeline, bars=bars)),
         sr, bars)
-    assert fine < coarse
-    # 15 ms, not the 10 ms this asserted while the warp resampled. WSOLA copies
-    # frames rather than reading a continuous position, so it may displace a
-    # transient by up to its search window (align.SEARCH_SECONDS, 10 ms) to keep
-    # the waveform in phase — that is the price of not moving the pitch. This
-    # click train measures 10.63 ms against 1067 ms for the per-bar map, and 15
-    # is well inside the 50 ms limit in docs/practice-tracks.md.
-    assert fine < 15.0, "an anchor on every beat should land every beat"
+    assert fine < coarse / 20.0
+    # 41.4 ms at the default lambda, against 1068 ms per bar, and inside the 50
+    # ms limit in docs/practice-tracks.md. It was 10.63 ms while the path ran
+    # through every anchor -- see the test below for why that number was the
+    # metric flattering itself rather than the warp being better.
+    assert fine < 50.0, "an anchor on every beat should land every beat"
+
+
+def test_the_warp_keeps_the_backbeat_late_instead_of_flattening_it():
+    """Why the number above moved from 10.6 ms to 41.4 ms, and why that is the
+    improvement rather than the regression it looks like.
+
+    `_drifting_click` puts its backbeat 60 ms late on purpose. A path that runs
+    through every anchor drags that backbeat onto the grid line -- it lands 0.7
+    ms out -- so the "worst error" metric scores nearly zero by **deleting the
+    groove**, which is the one thing a reference track exists to show. Warping
+    the band flat and then asking whether the new drums sit where the band
+    played is a question with no content left in it.
+
+    Smoothed, the 60 ms interval survives essentially intact (61 ms here). It
+    comes out centred on the grid rather than hung off the downbeat, because an
+    alternation this regular is indistinguishable from noise to a smoothness
+    prior -- nothing tells it which of the two phases is "the" beat. Real swing
+    lives in the eighths, below the anchors, so it never reaches this operator
+    at all.
+    """
+    sr, bars = 8000, 8
+    beats, samples = _drifting_click(sr, bars)
+    timeline = Timeline(bpm=60.0)
+    amap = AlignMap(anchors=fit_anchors(beats, timeline, bars=bars,
+                                        every_beats=1))
+
+    def _swing(lam):
+        out = warp_samples(samples, sr,
+                           warp_plan(amap, timeline, bars=bars, lam=lam))
+        found = np.flatnonzero(out > 0.2) / sr
+        offsets = [(min(found, key=lambda x: abs(x - i)) - i) * 1000.0
+                   for i in range(1, bars * 4)]
+        late = [o for i, o in enumerate(offsets, start=1) if i % 2]
+        early = [o for i, o in enumerate(offsets, start=1) if i % 2 == 0]
+        return float(np.mean(late) - np.mean(early))
+
+    assert _swing(0.0) < 10.0, "the old path flattened a 60 ms backbeat to nothing"
+    assert _swing(DEFAULT_LAM) > 50.0, "the smoothed path has to keep the groove"
 
 
 def test_an_anchor_can_sit_mid_bar_and_survive_the_file():
@@ -675,3 +718,269 @@ def test_a_grid_position_before_the_recording_starts_is_silence():
     out = warp_samples(source, sr, plan)
     assert float(np.max(np.abs(out[:int(1.5 * sr)]))) == pytest.approx(0.0)
     assert float(np.max(np.abs(out[int(2.5 * sr):int(3.5 * sr)]))) > 0.5
+
+
+# ── smoothing the warp path ──────────────────────────────────────────────────
+#
+# The warp path is piecewise linear through every anchor, so its *rate* — the
+# slope — steps at every knot. On Manlio's own fitted map that is 310 knots and
+# a rate that jumps by a mean of 2.7% and a maximum of 14.0% from one beat to
+# the next; Tutti in Fila's is 3.9% mean and 22.4% max. Paolo heard it: "the
+# warped track is jarring as it speeds up and down in an unnatural way."
+#
+# The knots are not carrying tempo. The beat-to-beat rate series on Manlio has a
+# lag-1 autocorrelation of **+0.03** — white noise. Real tempo drift is
+# autocorrelated: a band that slows down stays slow for a few bars. What the
+# per-beat rate is actually tracking is per-anchor noise, sd 18 ms, from the beat
+# detector's placement and from the drummer's own micro-timing. So the current
+# map modulates playback speed by up to 14% in response to a signal that carries
+# no tempo information at all, and then bakes that noise into the audio.
+#
+# The fix is a smoother path, not a finer one: subdividing to 16ths adds more
+# knots each carrying the same noise over a shorter span, so the rate swings get
+# *worse*. `smooth_anchors` fits a penalised least-squares (smoothing) spline —
+# minimise sum (s_i - at_i)^2 + lam * integral (s'')^2 — so the path no longer
+# has to pass through every anchor. Every anchor still votes; none of them
+# dictates.
+
+from rambass.align import DEFAULT_LAM, smooth_anchors  # noqa: E402
+
+
+def _rates(anchors, timeline):
+    grid = np.array([a.grid_seconds(timeline) for a in anchors])
+    at = np.array([a.at for a in anchors])
+    return np.diff(at) / np.diff(grid)
+
+
+def _even_anchors(count, *, lag=0.0, noise=None):
+    """`count` beats of a dead-even 60 BPM take, one anchor per beat."""
+    return [Anchor(bar=i // 4 + 1, beat=i % 4 + 1.0,
+                   at=float(i) + lag + (0.0 if noise is None else noise[i]))
+            for i in range(count)]
+
+
+def test_a_dead_even_take_is_left_exactly_alone():
+    """Smoothing must not distort data that has nothing wrong with it."""
+    timeline = Timeline(bpm=60.0)
+    smoothed = smooth_anchors(_even_anchors(64), timeline, lam=DEFAULT_LAM)
+    assert _rates(smoothed, timeline) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_a_constant_lag_costs_no_rate_change_at_all():
+    """Paolo's scenario, first half: the drummer sits 100 ms behind the beat and
+    *stays* there. He is playing in time — he is only translated off the grid —
+    so the honest warp is a shift with no stretch anywhere.
+
+    A constant lag is carried by the path's intercept, not its slope, which is
+    why this is free: the map simply reads the recording 100 ms ahead of the
+    grid and the section plays at its own speed.
+    """
+    timeline = Timeline(bpm=60.0)
+    smoothed = smooth_anchors(_even_anchors(64, lag=0.100), timeline,
+                              lam=DEFAULT_LAM)
+    assert _rates(smoothed, timeline) == pytest.approx(1.0, abs=1e-9)
+    assert smoothed[0].at == pytest.approx(0.100, abs=1e-6)
+
+
+def test_a_steady_accelerando_is_followed_not_flattened():
+    """Smoothing must remove noise, not drift. This take really does speed up —
+    3% a bar, the same shape `_drifting_click` uses — and the smoothed path has
+    to track it, or the warp has stopped doing its one job.
+    """
+    timeline = Timeline(bpm=60.0)
+    anchors, at, step = [], 0.0, 1.0
+    for index in range(64):
+        anchors.append(Anchor(bar=index // 4 + 1, beat=index % 4 + 1.0, at=at))
+        at += step
+        if index % 4 == 3:
+            step *= 0.97
+    smoothed = smooth_anchors(anchors, timeline, lam=DEFAULT_LAM)
+    off = np.abs(np.array([s.at for s in smoothed])
+                 - np.array([a.at for a in anchors])) * 1000.0
+    assert off.max() < 10.0, "a real accelerando must survive smoothing"
+
+
+# The scenario Paolo posed, in full: 16 bars sitting 100 ms behind the beat, then
+# a catch-up at the section change, then dead on. Built here with the per-anchor
+# noise measured on Manlio (sd 18 ms) so the tests measure the case that exists
+# rather than an ideal one.
+
+_STEP_BEATS = 128
+_STEP_SWITCH = 64
+_STEP_NOISE_MS = 18.0
+
+
+def _step_scenario(seed=7):
+    """`(anchors, truth)` — the noisy detections, and where the band really was."""
+    rng = np.random.default_rng(seed)
+    grid = np.arange(_STEP_BEATS, dtype=float)          # 60 BPM: 1 beat = 1 s
+    truth = grid + np.where(grid < _STEP_SWITCH, 0.100, 0.0)
+    noisy = truth + rng.normal(0.0, _STEP_NOISE_MS / 1000.0, _STEP_BEATS)
+    anchors = [Anchor(bar=i // 4 + 1, beat=i % 4 + 1.0, at=float(noisy[i]))
+               for i in range(_STEP_BEATS)]
+    return anchors, truth
+
+
+def test_inside_a_constant_lag_the_noise_stops_driving_the_rate():
+    """The headline. Inside either section the correct rate is exactly 1.000.
+
+    Interpolating every anchor gives 1.000 +/- 0.023 there — a +/-2.3% speed
+    wobble once per beat, tracking nothing but detection noise. Smoothing at the
+    default lambda gives +/- 0.005, four times quieter.
+    """
+    timeline = Timeline(bpm=60.0)
+    anchors, _ = _step_scenario()
+    raw = _rates(anchors, timeline)[:_STEP_SWITCH - 3]
+    smoothed = _rates(smooth_anchors(anchors, timeline, lam=DEFAULT_LAM),
+                      timeline)[:_STEP_SWITCH - 3]
+    assert raw.std() > 0.020
+    assert smoothed.std() < 0.008
+    assert smoothed.std() < raw.std() / 3.0
+
+
+def test_the_real_catch_up_stops_being_buried_in_the_noise():
+    """The second half of Paolo's scenario. The band genuinely catches up 100 ms
+    at the section change, which is a 10% rate event over one beat — but under
+    the raw map it is indistinguishable from the wobble around it, because three
+    beats earlier the noise alone produced a 1.042.
+
+    After smoothing, the boundary is the largest excursion in the whole song by
+    a clear margin, which is what makes the warp legible instead of jarring.
+    """
+    timeline = Timeline(bpm=60.0)
+    anchors, _ = _step_scenario()
+    timeline_rates = _rates(smooth_anchors(anchors, timeline, lam=DEFAULT_LAM),
+                            timeline)
+    near = slice(_STEP_SWITCH - 3, _STEP_SWITCH + 2)
+    excursion = np.abs(timeline_rates - 1.0)
+    assert excursion[near].max() > 0.025, "the real event must survive"
+    away = np.delete(excursion, np.r_[near])
+    assert excursion[near].max() > 2.0 * away.max(), (
+        "the section change should be the biggest thing in the rate curve")
+
+
+def test_smoothing_is_more_accurate_than_interpolation_not_less():
+    """The counterintuitive one, and the reason lambda is on by default.
+
+    The raw map scores a perfect 0 ms against the detected beats because it
+    interpolates them exactly — including their noise, which it then bakes into
+    the audio. Measured against where the drummer *actually* played, it is p90
+    27.7 ms out. The smoothed path is p90 14.5 ms: twice as accurate. So the
+    residual smoothing leaves against the anchors is not error, it is rejected
+    noise, and `residual_holdout_ms` is not the number to tune lambda by.
+    """
+    timeline = Timeline(bpm=60.0)
+    anchors, truth = _step_scenario()
+    raw = np.abs(np.array([a.at for a in anchors]) - truth) * 1000.0
+    smoothed = np.abs(
+        np.array([s.at for s in smooth_anchors(anchors, timeline,
+                                               lam=DEFAULT_LAM)]) - truth
+    ) * 1000.0
+    assert np.percentile(raw, 90) > 25.0
+    assert np.percentile(smoothed, 90) < 18.0
+    assert np.percentile(smoothed, 90) < np.percentile(raw, 90) / 1.7
+
+
+def test_the_one_beat_lurch_becomes_a_glide():
+    """What Paolo actually hears. The raw map puts the whole 100 ms catch-up
+    inside a single beat and snaps back — a 10% step against its neighbours. The
+    smoothed path spreads the same correction over about five beats, so the rate
+    changes by roughly 2% per beat at the worst instead of 14%.
+    """
+    timeline = Timeline(bpm=60.0)
+    anchors, _ = _step_scenario()
+    raw = np.abs(np.diff(_rates(anchors, timeline))).max()
+    smoothed = np.abs(np.diff(
+        _rates(smooth_anchors(anchors, timeline, lam=DEFAULT_LAM), timeline))).max()
+    assert raw > 0.09
+    assert smoothed < 0.04
+    assert smoothed < raw / 3.0
+
+
+def test_the_smoothed_path_never_runs_backwards():
+    """A non-monotone path would read the recording backwards. Noise is exactly
+    what could produce one, so it is checked on the noisy scenario.
+    """
+    timeline = Timeline(bpm=60.0)
+    anchors, _ = _step_scenario()
+    for lam in (0.3, DEFAULT_LAM, 3.0, 10.0, 100.0):
+        at = [s.at for s in smooth_anchors(anchors, timeline, lam=lam)]
+        assert all(b > a for a, b in zip(at, at[1:])), f"lam={lam} reverses"
+
+
+def test_lambda_zero_is_exactly_the_old_behaviour():
+    """The escape hatch has to be an identity, not an approximation."""
+    timeline = Timeline(bpm=60.0)
+    anchors, _ = _step_scenario()
+    assert [s.at for s in smooth_anchors(anchors, timeline, lam=0.0)] == [
+        a.at for a in anchors]
+
+
+def test_too_few_anchors_to_smooth_is_a_no_op():
+    """A second difference needs three points. Fewer is returned untouched
+    rather than raising: a one-anchor map is an offset and still has to warp.
+    """
+    timeline = Timeline(bpm=60.0)
+    for count in (0, 1, 2):
+        anchors = _even_anchors(count, lag=0.4)
+        assert [s.at for s in smooth_anchors(anchors, timeline,
+                                             lam=DEFAULT_LAM)] == [
+            a.at for a in anchors]
+
+
+def test_the_plan_smooths_by_default_and_can_be_told_not_to():
+    timeline = Timeline(bpm=60.0)
+    anchors, _ = _step_scenario()
+    amap = AlignMap(anchors=anchors)
+    default = np.array([s.rate for s in warp_plan(amap, timeline, bars=32)])
+    raw = np.array([s.rate for s in warp_plan(amap, timeline, bars=32, lam=0.0)])
+    assert default.std() < raw.std() / 3.0
+    assert len(default) == len(raw), "smoothing must not change the segmenting"
+
+
+def test_manlios_own_map_stops_swinging_seven_percent():
+    """The measurement on real data, not a simulation.
+
+    Manlio's committed `practice/align.yaml`: 310 per-beat anchors over 78 bars
+    at 60 BPM, correcting a drift of -104 to +187 ms. Interpolated, the rate
+    swings 0.905-1.142. At the default lambda it swings 0.948-1.073 and the
+    worst beat-to-beat step falls from 14.0% to under 4%.
+    """
+    from pathlib import Path as _Path
+
+    from rambass.align import load_align
+
+    path = (_Path(__file__).resolve().parent.parent / "songs" /
+            "tutti-in-fila" / "09-manlio" / "practice" / "align.yaml")
+    if not path.is_file():                       # pragma: no cover
+        pytest.skip("Manlio's align.yaml is not in this checkout")
+    timeline = Timeline(bpm=60.0)
+    anchors = sorted(load_align(path).anchors, key=lambda a: a.position)
+    assert len(anchors) > 300
+
+    raw = _rates(anchors, timeline)
+    assert raw.min() < 0.91 and raw.max() > 1.14
+    smoothed = _rates(smooth_anchors(anchors, timeline, lam=DEFAULT_LAM), timeline)
+    assert smoothed.min() > 0.94, f"still squashing to {smoothed.min():.3f}"
+    assert smoothed.max() < 1.10, f"still stretching to {smoothed.max():.3f}"
+    assert np.abs(np.diff(smoothed)).max() < 0.05
+
+    # The whole remaining excursion is in the first segment, and it is a known
+    # bad anchor rather than anything the band played: Manlio's bar 1 is
+    # hand-set at 0.692 s and the tracker's next beat is 1.142 s later, a 14%
+    # single-beat jump in a song whose real drift is a few percent. Pinning bar
+    # 1 means smoothing damps that to 1.095 but cannot remove it. Away from the
+    # head the map settles to 0.948-1.041, and dropping the outlier itself is
+    # robust fitting -- a separate change, not this one.
+    assert smoothed[2:].max() < 1.05, f"body still swings to {smoothed[2:].max():.3f}"
+    assert smoothed[2:].min() > 0.94
+
+
+def test_the_cli_default_lambda_matches_the_module():
+    """`rambass align --help` prints a number that must not drift from the one
+    the warp actually uses. cli.py cannot import align at module level — numpy
+    is not in the core tier — so the constant is duplicated and pinned here.
+    """
+    from rambass.cli import _DEFAULT_LAM
+
+    assert _DEFAULT_LAM == DEFAULT_LAM
