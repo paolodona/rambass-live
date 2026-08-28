@@ -153,6 +153,75 @@ Two decisions, both Paolo's, both cheap to get wrong later:
   there (`AlignMap.source_at`, 310 per-beat anchors on Manlio) — but it stops
   being one line.
 
+**The wheel zooms the stack, and zoom is a view and nothing else.** Paolo:
+*"add the ability to zoom in and out so that I can see part of the section more
+clearly (the waveforms stretch like they do in reaper by rotating the mouse
+wheel up and down)"*. The window is `zoom` (how many times the section is wider
+than the canvas) and `left` (the section fraction at the left edge), and it is
+converted in exactly two places: `viewX` on the way out, which every drawer
+multiplies by the canvas width, and `sectionAt` on the way back, which every
+pointer handler passes its canvas fraction through. That is the whole risk in
+the feature — a drawer still multiplying by the full width puts its lines where
+the waveform is not, and a click handler that skips `sectionAt` files a note at
+the wrong bar, silently, into `song.yaml` via promote.
+
+Five things there are decisions:
+
+* **Fitted is as far out as it goes.** The section is the unit of review, so a
+  window wider than one would be blank canvas with a ruler over it.
+* **It zooms about the pointer**, like Reaper's, because a gesture whose anchor
+  moves has to be hunted.
+* **The peaks are re-measured over the visible window**, always `BUCKETS` of
+  them (`peaksOf(buffer, from, to)`). What is cached is the *decoded buffer* —
+  decoding 12 seconds of audio is the expensive half, and a repaint must never
+  pay for it — so the detail arrives with the width instead of the same 600
+  buckets being stretched, which is the one thing "like Reaper" is not.
+* **The window pages along to keep the playhead on screen while it is
+  playing**, and only while playing: a zoomed window that sits still shows a
+  quarter of the section while the ear hears all of it, and one that chases the
+  pointer during a scrub is unusable. It pages rather than scrolling per frame,
+  because a window sliding under a fixed playhead is a four-canvas redraw every
+  frame in a stack whose whole point is being drawn once.
+* **A new section starts fitted.** `n`/`p` means "now listen to this one".
+
+What it deliberately does **not** touch: what plays, what is audible, and what
+loops. The loop is still the whole section at any zoom — Reaper's loop is a time
+selection, not a view, and making the view define it would silently change what
+a review pass hears. `0` (or clicking the readout) fits the section again.
+
+**The lanes are scaled to fill their height, and the quiet hits are lifted.**
+Paolo: *"the waveforms in the canvas lane do not occupy the whole height, is it
+possible to maximise the waveform inside the canvas so that I can visually see
+even the fainter hits (eg low close hihats)"* — and, explicitly, *"this is only
+visual, no change to velocity or midi or wavs"*. It is two problems in one
+sentence and they need different answers:
+
+* **The lane wasted its height** because the scale was absolute: a clip peaking
+  at 0.4 used 40% of the canvas. A gain fixes that.
+* **A closed hat was invisible** because the scale was *linear*. At 24 dB under
+  the kick it is 6% of the lane whatever the gain, so no amount of normalising
+  reveals it. Only a dB scale does: `waveFraction` maps the top of the window to
+  full height, −6 dB to 87%, −24 dB to half and −48 dB to the zero line.
+
+Three decisions there, all cheap to get wrong later:
+
+* **One gain for both lanes**, measured over what is on screen (`sharedPeak`).
+  The lanes are stacked so that "the snare is quieter in the candidate than in
+  the reference at this bar" is a visible fact; a per-lane gain would draw both
+  at the same height and delete exactly that. The dB curve compresses the
+  difference but keeps its direction — the quieter take is still shorter.
+* **Two floors, and they do different jobs.** `WAVE_FLOOR` (0.05) caps the gain
+  at 20×, so a silent bar is not amplified into a waveform. That alone is not
+  enough: scaled against the cap, a −60 dBFS noise floor is −34 dB, which the dB
+  curve draws at 29% of the lane — a band of hash through every quiet bar,
+  reading as signal. So `WAVE_GATE` (0.0025, −52 dBFS) puts anything under it on
+  the zero line. It is far below any hit that matters here — a rim click, the
+  quietest thing on Manlio, sits 25–30 dB under the snare — and far above a
+  stem's noise floor.
+* **It is a display preference, not a property of a section**, so unlike the
+  zoom window it survives `n`/`p`. `raw` is kept for when the height of a hit is
+  the thing being judged.
+
 **Clicking the stack places the playhead.** Paolo: *"we need the ability to
 click on the wav/grid and move the playhead so we can zone in on a given hit or
 portion"*. Either waveform, the ruler and every instrument row all take a click
@@ -240,13 +309,20 @@ Two smaller consequences worth not re-deriving:
   (`review.STAGE_OF_STEP` — a stale warp must never ring a show column), so
   there is nothing for a button to run and the hint is the fix.
 
-**The bed plays at 0.6**, tuned down by ear in three passes (0.8, then 0.7,
-then 0.6 — each tenth off the full mix rather than off the number before it). The bed is a full band mix
-and the candidate is a bare kit, so at equal gain the part being judged is the
-quieter of the two. It is a gain on the *bed*, never a cut on the drums:
-attenuating those would change what a velocity sounds like, which is one of the
-things a review pass is listening for. One constant, `BAND_VOLUME` at the top of
-the page's script — lower it to push the band further back.
+**The bed plays at 0.5**, tuned down by ear in four passes (0.8, 0.7, 0.6, 0.5 —
+each tenth off the full mix rather than off the number before it). The bed is a
+full band mix and the candidate is a bare kit, so at equal gain the part being
+judged is the quieter of the two. It is a gain on the *bed*, never a cut on the
+drums: attenuating those would change what a velocity sounds like, which is one
+of the things a review pass is listening for. One constant, `BAND_VOLUME` at the
+top of the page's script — lower it to push the band further back.
+
+It is **re-asserted in `applyMute` on every call**, not set once in the
+constructor, and that is what makes it honoured rather than honoured-once: a
+`src` change on a section step, or an element the browser re-creates, cannot
+leave a full band mix sitting at unity under a bare kit. `show()` assigns four
+new `src` values and then calls `applyMute`, in that order, and the node
+transport probe checks that a gain reset by hand comes straight back.
 
 The lanes are **104 CSS px** tall — 208 device pixels at DPR 2, twice what they
 were. Paolo: *"so I can better see the waveforms, even the fainter hits"*. The
@@ -524,6 +600,31 @@ being the whole application.
   named sections from `song.yaml` — with every section scrubbable bar by bar
   underneath.
 
+**Layout: two columns.** The stack on the left, everything that *acts* on what
+it shows on the right. Paolo: *"in a section with many notes, the buttons to
+regenerate sit very far down in the page, also it is difficult to locate a note
+related to a particular point in the section to promote it / demote it"*, and
+*"move to the bottom of the sidebar a section with the following settings
+(removed from under the grid) ... so that settings do not clutter the working
+area"*.
+
+Both halves of that are one defect: the panel under the stack grew with the
+ledger, so the more there was to do the further away the controls that do it
+were. The sidebar is `position:sticky` and the **note list is the only thing in
+it allowed to scroll** — so the summary, the form, the five buttons and the
+settings keep a fixed distance from the ear whatever the ledger is doing. Under
+1150px the columns stack and the sidebar stops being sticky, because a sticky
+box taller than the viewport traps its own content and the buttons would be out
+of reach again. The review screen is also the one view that gets `main.wide`: it
+gives up a sidebar's width, and a waveform is what it is for.
+
+What is left under the stack is what is about the take being judged — rewind,
+play, which side is audible, where the ear is. Band, zoom, wave scale, snap and
+loop are **settings**, and they sit at the bottom of the sidebar. Two of them
+(`snap`, `loop`) were keyboard-only readouts and are buttons now: next to three
+real buttons, a readout that looks like its neighbours and does nothing when
+clicked is a broken button.
+
 **Layout, top to bottom:**
 
 1. **Position header** — section name, bar range, a dropdown and a
@@ -538,12 +639,43 @@ being the whole application.
    closed/open, ride, ride bell, every cymbal — rendered straight from the
    MIDI (`midiio.read_drum_midi` + `drummap.CANONICAL`). This is the
    toms-and-cymbals visibility Reaper's default drum view does not give.
-4. **Notes panel.** A text box plus a `kind` chooser (missing-hit /
-   extra-hit / swap-hit / wrong-instrument / timing / velocity / other), pinned
-   to the bar the playhead is on. A **swap** reveals a second instrument
-   select — the drum that is playing, and the drum it should be. Existing notes for the visible range show inline
-   on the grid at their bar; click to edit, checkbox to dismiss.
-5. **"Send to EZdrummer" button**, per section. Not real drag-and-drop out
+4. **The notes lane**, a row of the same stack directly under the ruler:
+   one dot per *noted position* in the section, on the same window and the same
+   `viewX` as everything else, so a dot sits over the transient it is about.
+   Paolo: *"add a row in the instruments grid that shows a "dot" in the timeline
+   where there is a note ... the dots could have different colours to
+   distinguish promoted and not promoted"*. Before this a note had no position
+   on screen at all — the ledger was a list under the stack, so "which of these
+   eleven is the one I am hearing" was answered by reading bar numbers.
+
+   Amber is open, green is promoted, hollow grey is dismissed. One dot per
+   position rather than per note, with the count beside it when there is more
+   than one: two dots at one x is one dot drawn twice. Where notes of different
+   status share a position the dot reads **open** — the colours answer "what is
+   left to do here", and the promoted half is already in `song.yaml` and needs
+   nobody. Click a dot, or step the dots with `[` / `]`, and the playhead lands
+   on the note's own bar and beat — never the snapped pixel, because a note
+   filed at `1/12` cannot be reached by a playhead snapping to the song's
+   `1/3`.
+5. **Notes panel**, in the sidebar. A text box plus a `kind` chooser
+   (missing-hit / extra-hit / swap-hit / wrong-instrument / timing / velocity /
+   other), pinned to the bar the playhead is on. A **swap** reveals a second
+   instrument select — the drum that is playing, and the drum it should be.
+   Under it, **the notes at the focus and nothing else**: *"details of all notes
+   at the playhead (so only notes in at the playhead are shown, not the whole
+   list)"*. A summary line above says how many are on the section and how many
+   on the song, open and promoted; `show all` widens the list to the whole
+   section, which is also what a section shows before anything has been pointed
+   at.
+
+   **The focus is not the playhead.** It is set by a *deliberate* placement — a
+   click or drag on the stack, a `[`/`]` step, a `,`/`.` nudge, or filing a note
+   — and never by the frame loop. `updatePlayhead` runs sixty times a second
+   while a section loops, so a sidebar that followed it would rewrite its own
+   list continuously and move its own controls under the pointer clicking them.
+   A drag re-renders only when the focus actually changes position, for the same
+   reason: a drag is a hundred `pointermove` events.
+6. **"Send to EZdrummer" button**, per section. Not real drag-and-drop out
    of a browser — not a mechanism worth building when there's a trivial,
    robust alternative: it writes that section's slice of the MIDI to
    `midi/sections/<name>.mid` and opens the containing folder. EZdrummer 3
@@ -551,7 +683,7 @@ being the whole application.
    (drums-rebuild.md's "faster alternative" section), so this is one file
    write and one `explorer`/`open` call, and the drag happens in the OS,
    which already works reliably.
-6. **A status strip** — how many pipeline artifacts for this song are stale,
+7. **A status strip** — how many pipeline artifacts for this song are stale,
    missing, or hand-edited, and the Rebuild control. Closes the loop from
    "promoted a note into `drums.additions`" back to "clips are current
    again" without leaving this screen.
@@ -563,11 +695,15 @@ being the whole application.
 |---|---|
 | `space` | start/stop the transport |
 | `shift`+`space` | play the section again **from the top** — the thing a review pass does over and over. Plays whether or not it was already playing, and leaves the side and the band layer as they were |
-| `s` | switch which sample is audible — candidate ↔ reference — without restarting playback |
+| `s` | switch which sample is audible — candidate ↔ reference — without restarting playback. Clicking a lane's own bold **name** does the same thing *pinned* to that side: it is `selectSide`, not a second toggle, so clicking the name of the side already playing leaves it playing, and the band layer comes through untouched |
 | `b` | lay the rest of the band under whichever side is audible — warped bed under the candidate, album mix under the reference. A mute, so it never stops the audio |
+| `wheel` | zoom the stack in and out about the pointer, the way Reaper does — waveforms, ruler, grid, dots and hits stretch together, and the peaks are re-measured over the visible window. `alt`+`wheel` (or `shift`+`wheel`) slides the window left and right while zoomed in, which is Reaper's own horizontal scroll — Paolo: *"can we add alt+mouse wheel to slide back/forth (right/left) while zoomed, like in reaper"*. Both modifiers do the one thing; a pan is a pan and nothing here needs two of them. A **view** only: it never changes what plays, what is audible or what loops, and while playing the window pages along to keep the playhead on screen |
+| `0` | fit the whole section again — `-` / `=` zoom without a wheel, and a new section always starts fitted |
 | `n` / `p` | next / previous section |
 | `,` / `.` | previous / next **bar** within the current section |
+| `[` / `]` | previous / next **note** — the dots on the notes lane. The playhead lands on the note's own bar and beat and the sidebar comes up on it; clicking a dot is the same act. Never wraps: a step that came back round to the first note would read as "there are no more", which is a different fact |
 | `shift`+`D` | mark this section done, or reopen it — the pips under the header are every section, green for the ones already listened to |
+| `w` | how the lanes use their height: `boost` (dB scale, the default — a hit 24 dB under the loudest thing on screen is drawn at half height), `fit` (normalised, linear) or `raw` (absolute, what it always did). A **drawing** scale: no velocity, no MIDI, no audio is touched |
 | `g` | divide the snap grid: the song's subdivision, then halves and quarters of it. `alt`+click is still no snap at all |
 | `shift`+`R` | promote every confident note, rebuild what that makes stale, re-render the candidate, and come back to this section |
 | `l` | toggle loop on/off |
@@ -602,12 +738,34 @@ Right-click does **not** move the playhead: `scrubFrom` is left-button only now.
 Seeking the audio out from under the ear while a section loops is exactly what
 you do not want from the gesture that files a note about what you just heard.
 
-**The transport's readouts are fixed-width.** The row is centre-justified, so a
-readout that grows a character pushes half of it left and the other half right —
-and the playhead readout is rewritten on every animation frame while playing, so
-that jitter is continuous. `#at` is 9ch (`100.1.895` is the widest a Reaper
-bar.beat gets), and the band switch, the loop state and the which-side readout
-are sized for their longest label.
+**Every readout that changes is fixed-width, wherever it lives.** In the
+transport the reason is the row: it is centre-justified, so a readout that grows
+a character pushes half of it left and the other half right — and the playhead
+readout is rewritten on every animation frame while playing, so that jitter is
+continuous. `#at` is 9ch (`100.1.895` is the widest a Reaper bar.beat gets) and
+the which-side readout is sized for its longest label. In the settings block the
+reason is the same one row down: a label on the left and a control pushed right
+by `margin-left:auto`, so a control that grows a character moves its own left
+edge under the pointer that is still clicking it.
+
+**A rewind that is not a restart.** Paolo: *"can we add a "back to beginning of
+section" to the left of [play] to move the playhead back to the start"*. It is
+`seek(0)` and nothing else — `shift`+`space` is the other one, "again from the
+top", and it *plays*. This leaves the transport exactly as it was, which is what
+a section that is already looping wants.
+
+**A clip that lands has to repaint the stack, not its own lane.** Paolo: *"wave
+boost shows incorrectly on first load (truncated waveforms). When I cycle fit,
+raw and boost again, then it shows correctly"*. `waveRef` — the loudest thing
+visible on *either* lane, which is the gain both are drawn with — is measured in
+`repaint()`. A clip decodes asynchronously, and `ensurePeaks` used to paint its
+own lane when it landed: so the peaks were drawn against the 0 from before
+anything had decoded, which `waveFraction` floors at `WAVE_FLOOR` = 0.05, i.e. a
+gain of 20x that clamps every peak over 0.05 to the full height of the lane.
+That is the saturation, and cycling the scale "fixed" it because `cycleWave`
+calls `repaint()`. It is wrong the other way round too: the gain is *shared*, so
+the second clip to land moves the number the first lane was already drawn with —
+painting one lane could never be right here even with the gain measured first.
 
 **A removal cannot delete a hit `drums.additions` declares — so promote does
 not write one.** Paolo, on Manlio: *"I have a promoted note 11.4.667 swap-hit
@@ -734,6 +892,31 @@ before anything touches the MIDI, rebuild alone is for a change that came from
 somewhere else (a section edit, a re-transcription), and re-render alone is for
 a candidate stale against a MIDI nobody needs to rebuild. So the three stay, and
 `shift`+`R` runs the sequence that a review pass runs every time.
+
+**Freshness cascades, because a candidate can be current with a MIDI that is
+itself behind.** Paolo, on Manlio: *"I have added "hihat_open" at 58.4.5 and I
+can see it in the instrument grid, however, when I play the candidate in the
+review tool, that hit is not played. There are no warnings about stale
+content"*. `candidate_state` asked one question — is the wav newer than the MIDI
+it was rendered from — and a pair of files that are *both* behind `song.yaml`
+answers it yes. Promote a note, re-render without rebuilding, and every mtime is
+in the right order while neither file has the addition in it: the grid draws the
+part from before the promotion, the audio plays it, and the screen says the loop
+is closed.
+
+So `midi_behind_manifest` asks `provenance.stale_report` the same question it
+answers for `rambass stale`, for the one artifact this screen is about. Only
+`stale` counts — **including a cascade**, which is the point of asking
+provenance rather than comparing two more mtimes. Not `edited`: a hand-drawn
+MIDI is intentional and a candidate rendered from it is exactly right, so
+offering a rebuild there would offer to discard the edit (the same split
+`rebuild_selection` keeps). Not `missing` or `unknown`, for the reason
+`stale_report` does not cascade those either.
+
+And the warning names the right button. `candidate.action` is `render` when only
+the audio is behind and `rebuild` when the part is: offering "re-render" against
+a stale MIDI would produce the same audio from the same stale part and look like
+a fix.
 
 Order matters in both directions, and `promote_rebuild_render` enforces it: the
 promotion is **saved to disk first**, because the rebuild runs `drums restore`

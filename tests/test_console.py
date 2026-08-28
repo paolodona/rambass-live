@@ -402,6 +402,24 @@ def test_the_page_says_what_is_rebuilding_where_it_can_be_seen():
     assert 'classList.add("busy")' in page, "nothing marks the clicked row"
 
 
+def test_the_running_bar_does_not_look_like_the_page_behind_it():
+    """Paolo: *"update background color of div id=\"running\" so that its a bit
+    more visible (dark orange for example?)"*. It was `--raised`, the same
+    colour as every card on the screen and two shades off the background, so a
+    bar that means "a three-minute separation is going and every button is held"
+    read as part of the furniture. It gets its own warm token, and the failure
+    state keeps its own so red and orange never mean the same thing."""
+    page = _page()
+    css = page[page.index("  #running {"):]
+    css = css[:css.index("  .step .what")]
+
+    assert "background:var(--running)" in css, "the bar is back on a panel colour"
+    assert "--running:" in page and "--running-bad:" in page
+    # The command name has to stay legible against it: the periwinkle accent on
+    # dark orange is the one combination this change could have broken.
+    assert "var(--accent)" not in css, "accent text left on the warm background"
+    assert "background:var(--running-bad)" in css, "a failure looks like a run"
+
 def test_a_note_posted_from_the_browser_lands_in_the_ledger(served, song):
     base, _ = served
     from rambass.review import load_review
@@ -1437,8 +1455,12 @@ def test_the_review_payload_says_whether_the_candidate_is_current(reviewable):
     base, song = reviewable
     state = _get(base, f"/api/review/{song.slug}")["candidate"]
 
-    assert set(state) == {"exists", "fresh", "why", "command"}
+    # `action` says which of the two things is behind -- the audio, or the MIDI
+    # it was rendered from -- because the button that fixes them is not the same
+    # one. See review.midi_behind_manifest.
+    assert set(state) == {"exists", "fresh", "why", "command", "action"}
     assert state["command"] == f"rambass review render {song.slug}"
+    assert state["action"] == "render"
 
 
 def test_the_screen_says_how_a_note_becomes_a_rebuilt_part():
@@ -2034,6 +2056,13 @@ out.switched = state();
 view.toggleBand();
 out.bandOff = state();
 view.toggleBand();
+/* Whatever else has happened to the elements, the bed's gain is re-asserted:
+   `applyMute` sets it on every call, which is the difference between a setting
+   that is honoured and one that was honoured once. */
+[view.cand, view.ref, view.candBand, view.refBand].forEach(
+  (element) => { element.volume = 1; });
+view.applyMute();
+out.reasserted = state();
 [view.cand, view.ref, view.candBand, view.refBand].forEach(
   (element) => { element.currentTime = 7.5; });
 view.pause();
@@ -2103,6 +2132,450 @@ def test_the_page_binds_shift_space_to_the_section_start():
     assert "shiftKey" in space, "shift+space is not distinguished from space"
     assert "restart" in space
     assert "shift" in page.lower() and "from the top" in page
+
+
+SIDEPICK_PROBE = """
+/* Same four fake elements as the transport probe: what is under test here is
+   that naming a side is a pin, not a toggle, and that it leaves the band
+   layer exactly as the reviewer left it. */
+globalThis.requestAnimationFrame = () => 0;
+globalThis.cancelAnimationFrame = () => {};
+const el = () => ({classList: {toggle: () => {}, add: () => {}, remove: () => {}},
+                   style: {}, textContent: "", innerHTML: "", clientWidth: 300,
+                   addEventListener: () => {}});
+globalThis.document = {querySelector: () => el(), addEventListener: () => {}};
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2, title: "Manlio",
+  grid: {}, notes: [], instruments: ["crash"], sections: [
+    {name: "chorus-1", start_bar: 33, start_beat: 1, end_bar: 41, end_beat: 1,
+     cand_url: "c", ref_url: "r", cand_band_url: "cb", ref_band_url: "rb"}],
+  sources: {cand: {available: true}, ref: {available: true},
+            "cand-band": {available: true}, "ref-band": {available: true}}};
+const view = new ReviewView("manlio", data);
+const fake = () => ({muted: false, volume: 1, currentTime: 0, duration: 12,
+                     plays: 0, pauses: 0,
+                     play() { this.plays++; return Promise.resolve(); },
+                     pause() { this.pauses++; },
+                     addEventListener() {}});
+view.cand = fake(); view.ref = fake();
+view.candBand = fake(); view.refBand = fake();
+const state = () => ({
+  active: view.active, band: view.band,
+  cand: view.cand.muted, ref: view.ref.muted,
+  candBand: view.candBand.muted, refBand: view.refBand.muted,
+  playing: view.playing,
+  plays: [view.cand.plays, view.ref.plays, view.candBand.plays,
+          view.refBand.plays],
+  pauses: [view.cand.pauses, view.ref.pauses, view.candBand.pauses,
+           view.refBand.pauses],
+  at: [view.cand.currentTime, view.candBand.currentTime,
+       view.ref.currentTime, view.refBand.currentTime]});
+const out = {};
+view.applyMute();
+view.play();
+view.toggleBand();
+[view.cand, view.ref, view.candBand, view.refBand].forEach(
+  (element) => { element.currentTime = 4.2; });
+out.onCand = state();
+view.selectSide("ref");
+out.pickedRef = state();
+view.selectSide("ref");
+out.pickedRefAgain = state();
+view.selectSide("cand");
+out.pickedCand = state();
+view.selectSide("nonsense");
+out.pickedNonsense = state();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_naming_a_side_pins_playback_to_it_rather_than_toggling(tmp_path):
+    """Paolo: *"the bold candidate or reference should be clickable ... pinning
+    it to the targeted audio for what I have clicked"*. So it is `selectSide`,
+    not another `switchSide`: clicking the label of the side already audible
+    has to leave it audible, where a toggle would swap it out from under the
+    ear -- the one thing a click on a *name* must never do."""
+    out = _run_geometry_probe(tmp_path, SIDEPICK_PROBE)
+
+    assert out["onCand"]["active"] == "cand"
+    assert out["pickedRef"]["active"] == "ref"
+    assert out["pickedRef"]["ref"] is False and out["pickedRef"]["cand"] is True
+    # Clicked again: still the reference. A toggle would be back on candidate.
+    assert out["pickedRefAgain"]["active"] == "ref"
+    assert out["pickedRefAgain"]["ref"] is False
+    assert out["pickedCand"]["active"] == "cand"
+    # A side that is neither of the two is ignored, rather than muting both.
+    assert out["pickedNonsense"]["active"] == "cand"
+    assert out["pickedNonsense"]["cand"] is False
+
+
+def test_picking_a_side_keeps_the_band_layer_and_never_restarts(tmp_path):
+    """*"preserving band on/off setting"* -- and the standing rule for every
+    switch on this screen: it is a mute on elements that are all already
+    playing, so the position and the layer come through untouched and the bed
+    follows whichever side is now audible."""
+    out = _run_geometry_probe(tmp_path, SIDEPICK_PROBE)
+
+    for step in ("pickedRef", "pickedRefAgain", "pickedCand"):
+        assert out[step]["band"] is True, "the pick lost the band layer"
+        assert out[step]["playing"] is True
+        assert out[step]["pauses"] == [0, 0, 0, 0], "the pick stopped the audio"
+        assert out[step]["plays"] == [1, 1, 1, 1], "the pick restarted the audio"
+        assert out[step]["at"] == [4.2, 4.2, 4.2, 4.2], "the pick moved the playhead"
+    # The bed under whichever side is audible, and only that one.
+    assert out["pickedRef"]["refBand"] is False
+    assert out["pickedRef"]["candBand"] is True
+    assert out["pickedCand"]["candBand"] is False
+    assert out["pickedCand"]["refBand"] is True
+
+
+def test_the_lane_labels_are_clickable_and_say_so():
+    """No browser here, so the wiring is pinned on the page's own text: each
+    lane's bold name carries the side it pins to, and one delegated click
+    handler on the stack turns it into `selectSide`."""
+    page = _page()
+
+    assert 'data-side="cand"' in page and 'data-side="ref"' in page
+    assert "selectSide" in page
+    # Delegated on the stack, because the lanes are inside it and a click on a
+    # label must not go through `scrubFrom` (which wants a canvas) at all.
+    click = page[page.index('stack.addEventListener("click"'):]
+    click = click[:click.index("\n")]
+    assert "pickSide" in click
+    pick = page[page.index("  pickSide(event)"):]
+    pick = pick[:pick.index("\n  }")]
+    assert "b[data-side]" in pick and "selectSide" in pick
+    # And `s` stays a toggle expressed in terms of the same pin.
+    switch = page[page.index("  switchSide()"):]
+    switch = switch[:switch.index("\n  }")]
+    assert "selectSide" in switch
+
+
+# ── zoom: the same stack, a window of it ────────────────────────────────────
+#
+# Paolo: *"add the ability to zoom in and out so that I can see part of the
+# section more clearly (the waveforms stretch like they do in reaper by
+# rotating the mouse wheel)"*. Zoom is a *view* window in section fractions,
+# and every drawer and every pointer handler goes through the same two
+# conversions -- `viewX` out, `sectionAt` back. That is the whole risk: a
+# drawer that keeps multiplying by the full width puts its lines somewhere the
+# waveform is not, which is a silent misalignment of exactly the kind this
+# screen exists to catch.
+
+ZOOM_PROBE = """
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2,
+  title: "Manlio", grid: {}, notes: [], sources: {}, sections: [
+    {name: "verse-2", start_bar: 20, start_beat: 3, end_bar: 28, end_beat: 3,
+     cand_url: "c1", ref_url: "r1"}]};
+const view = new ReviewView("manlio", data);
+view.index = 0;
+const r = (x) => Math.round(x * 1e6) / 1e6;
+const win = () => ({zoom: r(view.zoom), left: r(view.left), span: r(view.span())});
+const out = {};
+
+out.fitted = win();
+// Fitted is as far out as it goes: the section is the unit of review, and a
+// window wider than it would be empty space pretending to be music.
+out.zoomOutRefused = view.zoomBy(0.5, 0.5);
+out.stillFitted = win();
+
+view.zoomBy(4, 0.5);
+out.aboutMiddle = win();
+out.anchorHeld = r(view.sectionAt(0.5));
+out.roundTrip = r(view.sectionAt(view.viewX(0.42)));
+// x of the window's own edges, which is what every drawer multiplies by.
+out.edges = [r(view.viewX(view.left)), r(view.viewX(view.left + view.span()))];
+
+view.fit();
+view.zoomBy(4, 0);
+out.atLeftEdge = win();
+view.panBy(-5);
+out.pannedOffTheFront = win();
+view.panBy(50);
+out.pannedOffTheEnd = win();
+out.zoomedOutFromTheEnd = (view.zoomBy(0.25, 1), win());
+
+view.fit();
+for (let i = 0; i < 60; i++) view.zoomBy(1.35, 0.5);
+out.ceiling = r(view.zoom);
+
+view.fit();
+out.followFitted = view.followTo(0.9);
+view.zoomBy(4, 0);
+out.followInside = view.followTo(0.1);
+out.followPast = view.followTo(0.30);
+out.afterFollow = win();
+out.followBack = view.followTo(0);
+out.afterLoopRestart = win();
+
+view.fit();
+out.perBeatFit = r(view.perBeatPixels(1000));
+view.zoomBy(4, 0.5);
+out.perBeatZoomed = r(view.perBeatPixels(1000));
+
+/* The waveform itself, not just the grid: at zoom 4 the peaks have to be
+   re-measured over the visible quarter, or the lanes stay 600 buckets of the
+   whole section stretched -- four times wider and no more detail, which is
+   the one thing "stretch like Reaper" is not. */
+const samples = new Float32Array(4000);
+for (let i = 3000; i < 3016; i++) samples[i] = 1;
+const buffer = {getChannelData: () => samples};
+out.peakWhole = r(Math.max(...peaksOf(buffer)));
+out.peakFirstHalf = r(Math.max(...peaksOf(buffer, 0, 0.5)));
+out.peakSecondHalf = r(Math.max(...peaksOf(buffer, 0.5, 1)));
+out.peakBuckets = peaksOf(buffer, 0.5, 1).length;
+
+const entry = {buffer: buffer, peaks: null, failed: false};
+view.fit();
+const first = view.windowPeaks(entry);
+out.peaksCached = view.windowPeaks(entry) === first;
+view.zoomBy(4, 0.5);
+out.peaksRemeasured = view.windowPeaks(entry) !== first;
+console.log(JSON.stringify(out));
+"""
+
+
+def test_the_stack_zooms_about_the_pointer(tmp_path):
+    """Reaper zooms toward the cursor, and so does this: the musical position
+    under the pointer is the one thing that must not move, or the gesture
+    hunts. `viewX` and `sectionAt` are inverses, which is what lets a click on
+    a zoomed lane still mean the bar it is drawn over."""
+    out = _run_geometry_probe(tmp_path, ZOOM_PROBE)
+
+    assert out["fitted"] == {"zoom": 1, "left": 0, "span": 1}
+    assert out["zoomOutRefused"] is False, "the view zoomed out past the section"
+    assert out["stillFitted"] == {"zoom": 1, "left": 0, "span": 1}
+    # 4x about the middle: a quarter of the section, centred where it was.
+    assert out["aboutMiddle"] == {"zoom": 4, "left": 0.375, "span": 0.25}
+    assert out["anchorHeld"] == 0.5, "the position under the pointer moved"
+    assert out["roundTrip"] == 0.42, "viewX and sectionAt are not inverses"
+    assert out["edges"] == [0, 1]
+    assert out["ceiling"] == 64, "zoom has no ceiling"
+
+
+def test_a_zoomed_window_never_leaves_the_section(tmp_path):
+    """A window off the front or the end of the section is blank canvas with a
+    ruler over it -- and the peaks, the grid and the playhead would all be
+    drawn for audio that is not there."""
+    out = _run_geometry_probe(tmp_path, ZOOM_PROBE)
+
+    assert out["atLeftEdge"] == {"zoom": 4, "left": 0, "span": 0.25}
+    assert out["pannedOffTheFront"] == {"zoom": 4, "left": 0, "span": 0.25}
+    assert out["pannedOffTheEnd"] == {"zoom": 4, "left": 0.75, "span": 0.25}
+    # Zooming out from a window parked at the end lands back on the whole
+    # section rather than on a window running past its end.
+    assert out["zoomedOutFromTheEnd"] == {"zoom": 1, "left": 0, "span": 1}
+
+
+def test_the_zoomed_view_follows_the_playhead(tmp_path):
+    """A zoomed window that stays put while the section loops shows a quarter
+    of the music and the ear hears all of it -- so the eye is looking at the
+    wrong bar for most of every pass. It pages when the playhead leaves, and
+    the loop's jump back to the top pages back with it."""
+    out = _run_geometry_probe(tmp_path, ZOOM_PROBE)
+
+    assert out["followFitted"] is False, "a fitted view has nothing to follow"
+    assert out["followInside"] is False, "the view moved for a playhead in view"
+    assert out["followPast"] is True
+    assert out["afterFollow"]["left"] == 0.2625, "the playhead is not in view"
+    assert out["followBack"] is True
+    assert out["afterLoopRestart"]["left"] == 0
+
+
+def test_zoom_stretches_the_grid_and_re_measures_the_waveform(tmp_path):
+    """Both halves of "like Reaper": the beat grid gets more room per beat, so
+    the dropped subdivision lines come back; and the peaks are measured again
+    over the visible window, so a zoomed lane shows detail rather than the
+    same 600 buckets four times wider."""
+    out = _run_geometry_probe(tmp_path, ZOOM_PROBE)
+
+    # verse-2 is 32 beats: 31.25px a beat fitted, 125 at 4x.
+    assert out["perBeatFit"] == 31.25
+    assert out["perBeatZoomed"] == 125
+
+    assert out["peakWhole"] == 1
+    assert out["peakFirstHalf"] == 0, "a window read samples outside itself"
+    assert out["peakSecondHalf"] == 1, "the window missed its own transient"
+    assert out["peakBuckets"] == 600, "a window is not a full set of buckets"
+    assert out["peaksCached"] is True, "the peaks are re-measured every repaint"
+    assert out["peaksRemeasured"] is True, "a zoom did not re-measure the peaks"
+
+
+def test_a_click_on_a_zoomed_lane_lands_where_the_pointer_is():
+    """The pointer handlers are the other half of the conversion. A click that
+    kept treating canvas-x as section-x would file a note at the wrong bar --
+    silently, and into `song.yaml` via promote."""
+    page = _page()
+
+    for handler in ("scrubFrom(event, start)", "openMenu(event)"):
+        body = page[page.index("  " + handler):]
+        body = body[:body.index("\n  }")]
+        assert "sectionAt" in body, f"{handler} ignores the zoom window"
+
+
+def test_the_page_zooms_on_the_wheel_and_says_so():
+    """No browser here, so the wiring is pinned on the page's own text."""
+    page = _page()
+
+    wheel = page[page.index('addEventListener("wheel"'):]
+    wheel = wheel[:wheel.index("\n")]
+    assert "passive: false" in wheel or "passive:false" in wheel, (
+        "a passive wheel listener cannot stop the page scrolling")
+    body = page[page.index("  onWheel(event)"):]
+    body = body[:body.index("\n  }")]
+    assert "preventDefault" in body, "the wheel still scrolls the page"
+    assert "shiftKey" in body, "no shift+wheel pan"
+    assert "zoomBy" in body and "panBy" in body
+
+    assert 'id="zoom"' in page, "nothing on screen says how far in it is"
+    assert 'event.key === "0"' in page, "no key to fit the section again"
+    # A new section starts fitted: stepping with n/p is "listen to this one
+    # whole", and inheriting a 16x window from the last one hides it.
+    show = page[page.index("  show() {"):]
+    show = show[:show.index("\n  }")]
+    assert "this.fit()" in show, "a new section inherits the old zoom"
+
+
+# ── the lanes' vertical scale: seeing a ghost note ──────────────────────────
+#
+# Paolo: *"the waveforms in the canvas lane do not occupy the whole height, is
+# it possible to maximise the waveform inside the canvas so that I can visually
+# see even the fainter hits (eg low close hihats)"*, and *"this is only visual,
+# no change to velocity or midi or wavs"*.
+#
+# Two separate problems in that one sentence. The lane wastes its height
+# because the scale is absolute (a clip peaking at 0.4 uses 40% of it), and a
+# closed hat is invisible because the scale is *linear* -- at 30 dB under the
+# kick it is 3% of the height whatever the gain. So: a shared gain fills the
+# canvas, and a dB scale lifts the quiet hits. Nothing here reads or writes a
+# velocity, a note or a sample.
+
+WAVE_PROBE = """
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2,
+  title: "Manlio", grid: {}, notes: [], sources: {}, sections: [
+    {name: "verse-2", start_bar: 20, start_beat: 3, end_bar: 28, end_beat: 3,
+     cand_url: "c1", ref_url: "r1"}]};
+const view = new ReviewView("manlio", data);
+view.index = 0;
+const r = (x) => Math.round(x * 1000) / 1000;
+const out = {};
+
+out.defaultScale = view.waveScale;
+
+/* One gain for both lanes, from the loudest thing visible on either. The
+   stacked lanes exist so that "this snare is quieter in the candidate than in
+   the reference" is a visible fact (docs/review-ui.md); a per-lane gain would
+   draw the two at the same height and delete exactly that. */
+view.peakCache = {
+  c1: {peaks: Float32Array.from([0.10, 0.40, 0.02]), buffer: null, failed: false},
+  r1: {peaks: Float32Array.from([0.20, 0.80, 0.05]), buffer: null, failed: false}};
+out.sharedPeak = r(view.sharedPeak());
+
+const at = (peak, reference) => r(view.waveFraction(peak, reference));
+view.waveScale = "raw";
+out.raw = [at(0.4, 0.8), at(0.8, 0.8), at(1.4, 0.8)];
+view.waveScale = "fit";
+out.fit = [at(0.8, 0.8), at(0.4, 0.8), at(0.08, 0.8)];
+view.waveScale = "boost";
+out.boostTop = at(0.8, 0.8);
+// 24 dB under the loudest thing on screen is half the lane's height, where a
+// linear scale gives it 6% -- which is the closed hat Paolo cannot see.
+out.boostMinus24 = at(0.0630957, 1);
+out.boostMinus6 = at(0.501187, 1);
+out.boostFloor = at(0.001, 1);
+// Ordering survives the dB scale even though the ratio does not: the quieter
+// take is still drawn shorter at the same bar.
+out.boostOrdered = at(0.4, 0.8) < at(0.8, 0.8);
+
+/* A silent gap must not be amplified into a full-height lane: gain is capped,
+   so a window whose loudest sample is -60 dB stays flat. */
+view.waveScale = "fit";
+out.silentWindow = at(0.001, 0.001);
+view.waveScale = "boost";
+out.silentBoost = at(0.001, 0.001);
+/* The gate is absolute, so it cannot swallow a real ghost note: a hit 40 dB
+   under a full-scale kick is still an order of magnitude above it. */
+out.justAboveGate = at(0.009, 0.9) > 0;
+out.justBelowGate = at(0.002, 0.9);
+
+view.waveScale = "boost";
+out.cycle = [];
+for (let i = 0; i < 4; i++) { view.cycleWave(); out.cycle.push(view.waveScale); }
+console.log(JSON.stringify(out));
+"""
+
+
+def test_the_lane_fills_its_height_from_one_shared_gain(tmp_path):
+    """"Maximise the waveform inside the canvas": the loudest thing visible
+    reaches the top, so a clip that peaks at 0.4 stops using 40% of the lane.
+    The gain is shared between the two lanes on purpose -- a per-lane gain
+    would draw a quiet candidate at the same height as a loud reference and
+    delete the level comparison the stack was built for."""
+    out = _run_geometry_probe(tmp_path, WAVE_PROBE)
+
+    assert out["sharedPeak"] == 0.8, "the gain is not taken from both lanes"
+    # Absolute, as it always was: 0.4 draws at 0.4 of the lane.
+    assert out["raw"] == [0.4, 0.8, 1.0], "raw is no longer absolute"
+    # Normalised: the loudest fills it, everything else keeps its ratio.
+    assert out["fit"] == [1.0, 0.5, 0.1]
+
+
+def test_a_quiet_hit_is_visible_on_the_lane(tmp_path):
+    """The other half: a closed hat 24 dB under the kick is 6% of the height
+    on any linear scale, gain or no gain. On the dB scale it is half."""
+    out = _run_geometry_probe(tmp_path, WAVE_PROBE)
+
+    assert out["defaultScale"] == "boost", "the lanes still open on a linear scale"
+    assert out["boostTop"] == 1.0
+    assert out["boostMinus24"] == 0.5
+    assert out["boostMinus6"] == 0.875
+    assert out["boostFloor"] == 0.0, "below the floor is not clamped to zero"
+    assert out["boostOrdered"] is True, "the quieter take is not drawn shorter"
+
+
+def test_a_silent_window_is_not_amplified_into_a_waveform(tmp_path):
+    """Manlio's bars 78-79 are digital silence and every section has gaps in
+    it. An uncapped gain turns the noise floor there into a full-height lane,
+    which is a waveform for audio that is not playing."""
+    out = _run_geometry_probe(tmp_path, WAVE_PROBE)
+
+    assert out["silentWindow"] == 0.02
+    assert out["silentBoost"] == 0.0
+    # And the gate that does it is absolute, well under any real hit: a ghost
+    # note 40 dB below a full-scale kick still draws.
+    assert out["justAboveGate"] is True
+    assert out["justBelowGate"] == 0.0
+
+
+def test_the_lane_scale_cycles_and_says_which_one_it_is(tmp_path):
+    out = _run_geometry_probe(tmp_path, WAVE_PROBE)
+
+    assert out["cycle"] == ["fit", "raw", "boost", "fit"]
+
+
+def test_the_page_draws_the_lanes_through_the_shared_scale():
+    """No browser here, so the wiring is pinned on the page's own text."""
+    page = _page()
+
+    lane = page[page.index("  paintLane(side) {"):]
+    lane = lane[:lane.index("\n  }")]
+    assert "waveFraction" in lane, "the lane still draws the raw peak"
+    assert "peak * (height - 8)" not in lane, "the absolute scale is back"
+    # The gain is computed once for the stack, not per lane.
+    repaint = page[page.index("  repaint() {"):]
+    repaint = repaint[:repaint.index("\n  }")]
+    assert "sharedPeak" in repaint, "each lane works out its own gain"
+
+    assert 'id="wave"' in page, "nothing on screen says which scale is on"
+    assert 'event.key === "w"' in page, "no key for the lane scale"
+    # A display preference, unlike zoom: it survives stepping to a new section,
+    # because "show me the ghost notes" is how somebody is working, not a
+    # property of the section they happen to be on.
+    show = page[page.index("  show() {"):]
+    show = show[:show.index("\n  }")]
+    assert "waveScale" not in show, "a new section resets the lane scale"
 
 
 # ── swap-hit: the note that says "right place, wrong drum" ───────────────────
@@ -2179,7 +2652,13 @@ globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
 const el = () => ({classList: {toggle: () => {}, add: () => {}, remove: () => {}},
                    style: {}, textContent: "", innerHTML: "", clientWidth: 300,
-                   addEventListener: () => {}, value: ""});
+                   addEventListener: () => {}, value: "",
+                   /* `cycleSnap` re-renders the sidebar -- the window
+                      `focusNotes` reads is half a step of this grid --
+                      and that binds a handler per row, so the stub
+                      answers like a node with no children rather than
+                      like a node with no API. */
+                   querySelectorAll: () => []});
 globalThis.document = {querySelector: () => el(), addEventListener: () => {}};
 /* Manlio's verse-2: starts at bar 20 beat 3, subdivision 3 (a shuffle), two
    bars of count-in -- so musical bar 21 is Reaper's 23. */
@@ -2288,18 +2767,27 @@ def test_a_right_click_does_not_move_the_playhead(tmp_path):
     assert "event.button" in scrub
 
 
-def test_the_transport_readouts_do_not_move_the_row_as_they_change():
+def test_the_readouts_do_not_move_their_row_as_they_change():
     """Paolo: *"the [playhead readout] is by nature of variable width ... this
     makes the whole transport section shift left and right slightly and looks
-    jittery"*. The row is centre-justified, so a readout that grows a character
-    pushes half of it left and half right -- and that one is rewritten on every
-    animation frame while playing. Fixed widths, not a re-layout."""
+    jittery"*. The transport row is centre-justified, so a readout that grows a
+    character pushes half of it left and half right -- and that one is rewritten
+    on every animation frame while playing. Fixed widths, not a re-layout.
+
+    The same holds one row down in the settings block, where the five that moved
+    out of the transport now live: a label on the left and a control pushed
+    right by `margin-left:auto`, so a control that grows a character moves its
+    own left edge under the pointer that is still clicking it."""
     page = _page()
     rules = page[page.index(".transport {"):page.index("/* the sections editor */")]
 
-    for readout in ("#at", "#loopstate", "#which", "#band"):
+    for readout in ("#at", "#which"):
         assert f".transport {readout} {{" in rules, f"{readout} can still resize"
         rule = rules[rules.index(f".transport {readout} {{"):]
+        assert "width:" in rule[:rule.index("}")], f"{readout} has no fixed width"
+    for readout in ("#loopstate", "#band", "#zoom", "#wave", "#snap"):
+        assert f".settings {readout} {{" in rules, f"{readout} can still resize"
+        rule = rules[rules.index(f".settings {readout} {{"):]
         assert "width:" in rule[:rule.index("}")], f"{readout} has no fixed width"
 
 
@@ -2494,7 +2982,13 @@ globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
 const el = () => ({classList: {toggle: () => {}, add: () => {}, remove: () => {}},
                    style: {}, textContent: "", innerHTML: "", clientWidth: 300,
-                   addEventListener: () => {}, value: ""});
+                   addEventListener: () => {}, value: "",
+                   /* `cycleSnap` re-renders the sidebar -- the window
+                      `focusNotes` reads is half a step of this grid --
+                      and that binds a handler per row, so the stub
+                      answers like a node with no children rather than
+                      like a node with no API. */
+                   querySelectorAll: () => []});
 globalThis.document = {querySelector: () => el(), addEventListener: () => {}};
 /* Manlio: 4/4, shuffle triplets, verse-2 from bar 20 beat 3 (32 beats long).
    Bar 21 beat 4.5 is 5.5 beats into the section -- exactly between the two
@@ -2508,8 +3002,10 @@ const data = {
 const view = new ReviewView("manlio", data);
 view.marks = view.beatMarks(data.sections[0]);
 /* The arithmetic is what is under test; the repaint is canvas work, pinned
-   where the canvases are. */
+   where the canvases are. The notes lane is the same -- `cycleSnap` redraws it
+   because dividing the grid changes which notes count as "at this position". */
 view.repaint = () => {};
+view.paintNotesLane = () => {};
 view.cand = {duration: 32, currentTime: 5.5, muted: false};
 const out = {};
 out.base = view.snapSubdivision();
@@ -2570,9 +3066,14 @@ def test_the_band_sits_under_the_drums_rather_than_over_them(tmp_path):
     like, which is one of the things a review pass is listening for."""
     out = _run_geometry_probe(tmp_path, TRANSPORT_PROBE)
 
-    assert out["bandOn"]["volumes"] == [1, 1, 0.6, 0.6]
+    assert out["bandOn"]["volumes"] == [1, 1, 0.5, 0.5]
     # And it survives the switch, so both sides sit the same way under the kit.
-    assert out["switched"]["volumes"] == [1, 1, 0.6, 0.6]
+    assert out["switched"]["volumes"] == [1, 1, 0.5, 0.5]
+    # Honoured rather than honoured once: `applyMute` sets the gain on every
+    # call, so nothing -- a src change, an element the browser re-creates --
+    # can leave a full band mix at unity under a bare kit.
+    assert out["reasserted"]["volumes"] == [1, 1, 0.5, 0.5], (
+        "the band gain is set once and never re-asserted")
 
 
 def test_the_same_note_posted_twice_from_the_browser_is_one_chip(reviewable):
@@ -2719,3 +3220,630 @@ def test_a_refresh_lands_on_the_section_the_address_names():
     render = render[:render.index("view.mount();")]
 
     assert "sectionIndex(" in render
+
+
+# ── the notes lane and the sidebar ──────────────────────────────────────────
+#
+# Paolo: *"in a section with many notes, the buttons to regenerate sit very far
+# down in the page, also it is difficult to locate a note related to a
+# particular point in the section to promote it / demote it / change it ... add
+# a row in the instruments grid that shows a "dot" in the timeline where there
+# is a note. the "add new note" element, and details of all notes at the
+# playhead ... so the whole notes + buttons section is neatly moved to a right
+# sidebar that updates automatically when I select the "dots" in the timeline or
+# want to add a note at the playhead"*.
+#
+# Two separate defects in that one sentence. A note had no position on screen at
+# all -- the ledger was a list under the stack, so "which of these eleven is the
+# one I am hearing" was answered by reading bar numbers -- and everything that
+# acts on a note sat below that list, so the controls moved further away the
+# more there was to do. The lane gives a note a place, and the sidebar keeps the
+# form and the buttons at a fixed distance from the ear whatever the ledger is
+# doing.
+
+NOTES_LANE_PROBE = """
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2, title: "Manlio",
+  sources: {}, grid: {}, instruments: ["crash"],
+  sections: [
+    {name: "verse-2", start_bar: 20, start_beat: 3, end_bar: 28, end_beat: 3,
+     cand_url: "c", ref_url: "r"},
+    {name: "verse-2-lift", start_bar: 28, start_beat: 3, end_bar: 32,
+     end_beat: 3, cand_url: "c2", ref_url: "r2"},
+  ],
+  /* Two notes at one position with different statuses, a triplet position, a
+     dismissed one, and one in the NEXT section -- so the lane cannot draw a
+     dot for a note that is not in the span it is drawn over. */
+  notes: [
+    {bar: 21, beat: 1, kind: "missing-hit", instrument: "crash",
+     status: "promoted", key: "a"},
+    {bar: 21, beat: 1, kind: "timing", instrument: "", status: "open",
+     key: "b"},
+    {bar: 24, beat: 4.667, kind: "extra-hit", instrument: "hihat_closed",
+     status: "promoted", key: "c"},
+    {bar: 26, beat: 2, kind: "other", instrument: "", status: "dismissed",
+     key: "d"},
+    {bar: 30, beat: 1, kind: "missing-hit", instrument: "crash",
+     status: "open", key: "e"},
+  ]};
+const view = new ReviewView("manlio", data);
+view.index = 0;
+view.marks = view.beatMarks(view.section);
+const out = {};
+const marks = view.noteMarks(view.section);
+out.marks = marks.map((mark) => ({
+  at: view.reaperAt(mark.bar, mark.beat), status: mark.status,
+  count: mark.count, frac: Number(mark.frac.toFixed(6))}));
+out.counts = view.noteCounts();
+/* Clicking a dot: near it in VIEW space, within the tolerance the lane draws
+   its dots at, and the answer is the mark's own exact position -- never the
+   snapped pixel, which on a 1/3 grid cannot reach beat 4.667's neighbours. */
+out.nearOnIt = (view.markNear(marks[0].frac + 0.002, 0.01) || {}).count;
+out.nearTriplet = view.reaperAt(
+  view.markNear(marks[1].frac, 0.01).bar,
+  view.markNear(marks[1].frac, 0.01).beat);
+out.nearMiss = view.markNear(0.9, 0.001);
+/* No focus yet: the sidebar has nothing to be about, and says so rather than
+   claiming the section's whole ledger sits at one position. */
+out.blankFocus = view.focusNotes().map((note) => note.key);
+out.blankLabel = view.focusLabel();
+view.focusAt(21, 1);
+out.focusLabel = view.focusLabel();
+out.focused = view.focusNotes().map((note) => note.key);
+view.focusAt(24, 4.667);
+out.focusedTriplet = view.focusNotes().map((note) => note.key);
+view.focusAt(24, 1);
+out.focusedElsewhere = view.focusNotes().map((note) => note.key);
+/* Stepping from dot to dot, which is the other half of "locate the note at
+   this point": forward from the top, and clamped at either end. */
+view.focus = null;
+out.stepFirst = (view.nextMark(1, 0) || {}).count;
+out.stepFrom21 = view.reaperAt(view.nextMark(1, marks[0].frac).bar,
+                               view.nextMark(1, marks[0].frac).beat);
+out.stepBack = view.reaperAt(view.nextMark(-1, marks[1].frac).bar,
+                             view.nextMark(-1, marks[1].frac).beat);
+out.stepPastEnd = view.nextMark(1, 1);
+view.index = 1;
+view.marks = view.beatMarks(view.section);
+out.liftMarks = view.noteMarks(view.section).map(
+  (mark) => view.reaperAt(mark.bar, mark.beat));
+out.liftCounts = view.noteCounts();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_the_notes_lane_puts_one_dot_at_every_noted_position(tmp_path):
+    """One dot per *position*, not per note: two notes about the same hit are
+    one thing to go and look at, and two dots at one x are one dot drawn twice.
+    The lane is in the section's own beats like every other row in the stack,
+    so a note in the next section cannot appear on this one."""
+    out = _run_geometry_probe(tmp_path, NOTES_LANE_PROBE)
+
+    assert [mark["at"] for mark in out["marks"]] == ["23.1", "26.4.667", "28.2"]
+    assert [mark["count"] for mark in out["marks"]] == [2, 1, 1]
+    # bar 21 beat 1 is the first bar line of verse-2 (20.3 - 28.3): 2 beats in
+    # of 32, so a sixteenth of the way across and nowhere near the left edge.
+    assert out["marks"][0]["frac"] == pytest.approx(2 / 32, abs=1e-6)
+    # The note in verse-2-lift is on verse-2-lift, and only there.
+    assert out["liftMarks"] == ["32.1"]
+
+
+def test_a_dot_shows_the_decision_that_is_still_outstanding(tmp_path):
+    """The colours answer "what is left to do here". So where a promoted note
+    and an open one share a position the dot reads **open**: the promoted half
+    is already in song.yaml and needs nobody, and drawing it green would hide
+    the one thing on that beat still waiting for a decision."""
+    out = _run_geometry_probe(tmp_path, NOTES_LANE_PROBE)
+
+    assert [mark["status"] for mark in out["marks"]] == [
+        "open", "promoted", "dismissed"]
+
+
+def test_the_sidebar_counts_the_section_and_the_song(tmp_path):
+    """Paolo: *"maybe this sidebar can have a short summary of how many notes,
+    and how many not promoted"*. Both scopes, because "is this section done" and
+    "is this song done" are different questions and the answer to the second is
+    what a promote pass is about."""
+    out = _run_geometry_probe(tmp_path, NOTES_LANE_PROBE)
+
+    counts = out["counts"]
+    assert counts["here"] == 4 and counts["song"] == 5
+    # Not promoted is open plus dismissed; open is what is still undecided.
+    assert counts["hereOpen"] == 1 and counts["herePromoted"] == 2
+    assert counts["hereDismissed"] == 1
+    assert counts["songOpen"] == 2
+    # And it follows the section under the ear, not the whole ledger.
+    assert out["liftCounts"]["here"] == 1
+    assert out["liftCounts"]["song"] == 5
+
+
+def test_clicking_a_dot_lands_on_the_notes_own_position(tmp_path):
+    """A dot is a click target of a few pixels, so the hit test is in **view**
+    fractions -- the space the dot is actually drawn in, which is what makes it
+    still work at zoom 16. And what it returns is the note's own bar and beat,
+    never the snapped pixel: a note filed at 1/12 cannot be reached by a
+    playhead snapping to the song's 1/3."""
+    out = _run_geometry_probe(tmp_path, NOTES_LANE_PROBE)
+
+    assert out["nearOnIt"] == 2, "a click beside the dot did not find it"
+    assert out["nearTriplet"] == "26.4.667", (
+        "the dot did not answer with its own position")
+    assert out["nearMiss"] is None, "a click nowhere near a dot found one"
+
+
+def test_the_sidebar_shows_the_notes_at_the_focus_and_nothing_else(tmp_path):
+    """The whole point: *"details of all notes at the playhead (so only notes in
+    at the playhead are shown, not the whole list)"*. Both notes at the shared
+    position, and nothing from a beat away."""
+    out = _run_geometry_probe(tmp_path, NOTES_LANE_PROBE)
+
+    assert out["focusLabel"] == "23.1"
+    assert sorted(out["focused"]) == ["a", "b"]
+    assert out["focusedTriplet"] == ["c"]
+    assert out["focusedElsewhere"] == []
+    # Before anything has been pointed at, the focus is empty rather than
+    # standing at bar 1 claiming the section's whole ledger is there.
+    assert out["blankFocus"] == [] and out["blankLabel"] == "—"
+
+
+def test_the_dots_can_be_stepped_through(tmp_path):
+    """`[` / `]`. The lane says where the notes are; stepping is how you get the
+    playhead onto one without aiming at a 10px dot, which is the other half of
+    *"difficult to locate a note related to a particular point"*."""
+    out = _run_geometry_probe(tmp_path, NOTES_LANE_PROBE)
+
+    assert out["stepFirst"] == 2, "stepping from the top found no dot"
+    assert out["stepFrom21"] == "26.4.667"
+    assert out["stepBack"] == "23.1"
+    assert out["stepPastEnd"] is None, "stepping past the last dot wrapped"
+
+
+def test_the_notes_lane_is_in_the_stack_above_the_instrument_rows():
+    """It is a row of the same stack, on the same gutter and the same window --
+    a dot that does not sit under the transient it is about is worse than no
+    dot. Its own class, not `.gridrow`: those carry a `data-row` index into the
+    MIDI grid, and the right-click menu and the instrument pick both key off
+    that."""
+    page = _page()
+
+    assert 'id="noteslane"' in page, "there is no notes lane"
+    assert ".notelane .who" in page, "the lane is not on the shared gutter"
+    stack = page[page.index('<div id="stack">'):
+                 page.index('<div class="playhead"')]
+    assert stack.index('id="noteslane"') > stack.index('<canvas id="ruler">'), (
+        "the notes lane is not under the ruler")
+    assert stack.index('id="noteslane"') < stack.index('<div id="grid">'), (
+        "the notes lane is below the instrument rows")
+    assert "paintNotesLane" in page, "nothing draws the dots"
+    # Drawn from the same view window and the same repaint as everything else.
+    repaint = page[page.index("  repaint() {"):]
+    repaint = repaint[:repaint.index("\n  }")]
+    assert "paintNotesLane" in repaint, "the dots do not follow a zoom or a pan"
+
+
+def test_a_dot_is_coloured_by_what_is_left_to_decide():
+    """Paolo: *"the dots could have different colours to distinguish promoted
+    and not promoted"*. The page's own status colours, so a green dot and a
+    green badge mean the same thing."""
+    page = _page()
+
+    assert "NOTE_DOT" in page, "the dot colours are not one table"
+    dots = page[page.index("const NOTE_DOT"):]
+    dots = dots[:dots.index("\n")]
+    for status in ("open", "promoted", "dismissed"):
+        assert status in dots, f"{status} has no dot colour"
+
+
+def test_the_notes_panel_and_the_buttons_are_in_a_sticky_sidebar():
+    """The complaint this is about: *"in a section with many notes, the buttons
+    to regenerate sit very far down in the page"*. So the ledger is the only
+    thing allowed to grow -- it scrolls inside itself -- and the form, the
+    summary and every button keep a fixed distance from the stack."""
+    page = _page()
+
+    assert 'class="sidebar"' in page, "no sidebar"
+    assert ".sidebar {" in page, "the sidebar has no rule"
+    css = page[page.index("  .sidebar {"):page.index("  .sidebar {") + 700]
+    assert "position:sticky" in css, (
+        "the sidebar scrolls away with the page, which is the bug")
+    # Every control that acts on the ledger or the build is in it.
+    side = page[page.index('<aside class="sidebar">'):page.index("</aside>")]
+    for control in ('id="save-note"', 'id="promote-render"', 'id="promote"',
+                    'id="rebuild"', 'id="rerender"', 'id="export"',
+                    'id="chips"', 'id="note-at"', 'id="instrument"'):
+        assert control in side, f"{control} is not in the sidebar"
+    # And the list is what scrolls, not the page.
+    assert "overflow-y:auto" in page, "the note list cannot scroll inside itself"
+
+
+def test_the_sidebar_only_follows_a_deliberate_placement():
+    """The focus is set by a click, a step or a filing -- never by the playhead
+    itself. `updatePlayhead` runs on every animation frame while playing, so a
+    sidebar that followed it would rewrite its own list sixty times a second
+    and be unreadable for the whole of every pass -- and every control in it
+    would move under the pointer."""
+    page = _page()
+
+    playhead = page[page.index("  updatePlayhead() {"):]
+    playhead = playhead[:playhead.index("\n  }")]
+    code = re.sub(r"/\*.*?\*/", "", playhead, flags=re.S)
+    assert "focusAt(" not in code and "renderNotes(" not in code, (
+        "the sidebar is redrawn from the frame loop")
+    # It does follow the two gestures that mean "look here".
+    scrub = page[page.index("  scrubFrom(event, start) {"):]
+    scrub = scrub[:scrub.index("\n  }")]
+    assert "pointAt(" in scrub, "clicking the stack does not point the sidebar"
+    # And a drag is a hundred pointermove events, so it redraws on a change
+    # only: rebuilding the list per event would flicker the very panel the
+    # drag is aiming at.
+    point = page[page.index("  pointAt(bar, beat) {"):]
+    point = point[:point.index("\n  }")]
+    assert "!== before" in point, "a drag rebuilds the note list per event"
+
+
+def test_stepping_the_dots_is_on_the_keyboard_and_in_the_help():
+    page = _page()
+
+    assert 'event.key === "["' in page and 'event.key === "]"' in page, (
+        "the dots cannot be stepped from the keyboard")
+    assert "stepNote" in page, "no handler for stepping between notes"
+    help_card = page[page.index('<div id="help">'):page.index("</table>")]
+    assert "kbd\">[<" in help_card, (
+        "the help list does not mention the note-stepping keys")
+
+
+def test_filing_a_note_points_the_sidebar_at_it():
+    """A note you just filed is the one you want to see -- and if the filing
+    was a de-dupe, the note it merged into is the one to look at. Either way
+    the sidebar has to be about that position."""
+    page = _page()
+
+    save = page[page.index("  async saveNote() {"):]
+    save = save[:save.index("\n  }")]
+    assert "focusAt(" in save, "filing a note does not point the sidebar at it"
+
+    menu = page[page.index("  async fileFromMenu(kind) {"):]
+    menu = menu[:menu.index("\n  }")]
+    assert "focusAt(" in menu, (
+        "filing from the grid menu does not point the sidebar at it")
+
+
+# ── the settings, out of the working area ───────────────────────────────────
+#
+# Paolo: *"move to the bottom of the sidebar a section with the following
+# settings (removed from under the grid): Band on/off, zoom indicator, wave:
+# fit/raw/boost, snap options, loop on/off (so that settings do not clutter the
+# working area)"*. What is left under the stack is what is about the take being
+# judged: play, rewind, which side is audible, and where the ear is.
+
+
+def test_the_settings_moved_out_from_under_the_stack():
+    page = _page()
+    transport = page[page.index('<div class="transport">'):]
+    transport = transport[:transport.index("</div>")]
+    settings = page[page.index('<div class="settings">'):]
+    settings = settings[:settings.index("\n        </div>")]
+
+    for control in ('id="band"', 'id="zoom"', 'id="wave"', 'id="snap"',
+                    'id="loopstate"'):
+        assert control not in transport, f"{control} still clutters the stack"
+        assert control in settings, f"{control} is not in the settings block"
+    # And the settings block is the last thing in the sidebar.
+    side = page[page.index('<aside class="sidebar">'):page.index("</aside>")]
+    assert side.index('<div class="settings">') > side.index('class="sideacts"'), (
+        "the settings sit above the buttons they are meant to be below")
+    # What stays is the transport itself.
+    for kept in ('id="play"', 'id="tostart"', 'id="which"', 'id="at"'):
+        assert kept in transport, f"{kept} left the transport"
+
+
+def test_the_two_keyboard_only_readouts_are_buttons_now():
+    """`snap` and `loop` were spans with a keyboard shortcut. Sat next to three
+    real buttons in the settings block, a readout that looks like its
+    neighbours and does nothing when clicked is a broken button."""
+    page = _page()
+
+    assert '$("#snap").addEventListener("click"' in page, (
+        "the snap readout is not clickable")
+    assert '$("#loopstate").addEventListener("click"' in page, (
+        "the loop readout is not clickable")
+    # One door for the loop, so the key and the button cannot diverge.
+    assert "toggleLoop()" in page and "showLoop()" in page
+    keys = page[page.index('event.key === "l"'):]
+    assert "toggleLoop" in keys[:keys.index("\n")], (
+        "the l key still writes the readout itself")
+
+
+def test_dividing_the_snap_redraws_what_the_sidebar_is_showing():
+    """`focusNotes` reads half a step of the grid in force, so `g` changes which
+    notes count as "at this position" -- and that has to be visible."""
+    page = _page()
+    snap = page[page.index("  cycleSnap() {"):]
+    snap = snap[:snap.index("\n  }")]
+
+    assert "renderNotes()" in snap, (
+        "dividing the grid narrows the list silently")
+
+
+# ── alt+wheel slides the window, and a rewind that is not a restart ─────────
+
+
+def test_alt_wheel_pans_the_zoomed_window():
+    """Paolo: *"can we add alt+mouse wheel to slide back/forth (right/left)
+    while zoomed, like in reaper"*. Reaper's horizontal scroll is alt+wheel;
+    shift+wheel already did it here, and both now do the one thing."""
+    page = _page()
+    wheel = page[page.index("  onWheel(event) {"):]
+    wheel = wheel[:wheel.index("\n  }")]
+
+    assert "altKey" in wheel, "alt+wheel does not pan"
+    assert "panBy" in wheel and "zoomBy" in wheel
+    # Plain wheel is still the zoom -- the modifier is what makes it a pan.
+    assert "event.altKey || event.shiftKey" in wheel or (
+        "event.shiftKey || event.altKey" in wheel), (
+        "the pan is not a modifier on the same gesture")
+    help_card = page[page.index('<div id="help">'):page.index("</table>")]
+    assert "alt</span>+<span class=\"kbd\">wheel" in help_card, (
+        "the help list does not mention alt+wheel")
+
+
+def test_the_transport_can_rewind_without_starting_anything():
+    """Paolo: *"can we add a "back to beginning of section" to the left of this
+    button ... to move the playhead back to the start"*. `shift`+`space` is the
+    other one -- "again, from the top" -- and it *plays*; this leaves the
+    transport exactly as it was, which is what a looping section wants."""
+    page = _page()
+
+    assert 'id="tostart"' in page, "no rewind control"
+    transport = page[page.index('<div class="transport">'):]
+    transport = transport[:transport.index("</div>")]
+    assert transport.index('id="tostart"') < transport.index('id="play"'), (
+        "the rewind is not to the left of play")
+    handler = page[page.index('$("#tostart").addEventListener'):]
+    handler = handler[:handler.index("\n")]
+    assert "seek(0)" in handler, "the rewind does not move the playhead"
+    assert "play()" not in handler, (
+        "the rewind starts playback, which is what shift+space is for")
+
+
+DOT_DRAW_PROBE = """
+/* A canvas that records the circles, so the one claim the lane makes can be
+   checked: a dot sits at the same x as the bar line it is about, on every row
+   of the stack, at any zoom. */
+function dotRecorder(cssWidth) {
+  const arcs = [], rects = [];
+  const context = {
+    canvas: null, fillStyle: "", strokeStyle: "", font: "", lineWidth: 0,
+    clearRect() {}, measureText: (text) => ({width: text.length * 11}),
+    fillText() {},
+    fillRect(x, y, w, h) { rects.push({x: x, w: w, style: context.fillStyle}); },
+    beginPath() { this._at = null; },
+    arc(x, y, r) { this._at = {x: x, r: r}; },
+    fill() { arcs.push({x: this._at.x, r: this._at.r,
+                        style: context.fillStyle, filled: true}); },
+    stroke() { arcs.push({x: this._at.x, r: this._at.r,
+                          style: context.strokeStyle, filled: false}); },
+  };
+  const canvas = {clientWidth: cssWidth, clientHeight: 24, width: 0, height: 0,
+                  getContext: () => context};
+  context.canvas = canvas;
+  return {canvas: canvas, arcs: arcs, rects: rects};
+}
+
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2, title: "Manlio",
+  sources: {}, instruments: [],
+  sections: [{name: "verse-2", start_bar: 20, start_beat: 3, end_bar: 28,
+              end_beat: 3, cand_url: "c", ref_url: "r"}],
+  /* A kick on bar 21 beat 1, which is the section's first bar line, and a note
+     about that same hit. */
+  grid: {"verse-2": [{instrument: "kick",
+                      ticks: [{bar: 21, beat: 1, velocity: 100}]}]},
+  notes: [
+    {bar: 21, beat: 1, kind: "missing-hit", instrument: "kick",
+     status: "open", key: "a"},
+    {bar: 24, beat: 1, kind: "extra-hit", instrument: "snare",
+     status: "promoted", key: "b"},
+    {bar: 26, beat: 1, kind: "other", instrument: "", status: "dismissed",
+     key: "c"},
+  ]};
+const view = new ReviewView("manlio", data);
+view.marks = view.beatMarks(view.section);
+const out = {};
+
+const row = dotRecorder(1100);
+globalThis.document.querySelector = () => ({querySelector: () => row.canvas});
+view.paintGridRow(data.grid["verse-2"][0], 0, view.section);
+out.hitX = row.rects.filter((r) => r.style === "#c7cbd3" && r.w === 4)[0].x;
+
+const lane = dotRecorder(1100);
+globalThis.document.querySelector = () => lane.canvas;
+view.paintNotesLane();
+out.dots = lane.arcs.map((arc) => ({x: arc.x, style: arc.style,
+                                    filled: arc.filled}));
+
+/* Focused, and zoomed in eight times about the same dot: the ring appears and
+   every dot is still on its own bar line. */
+view.focusAt(21, 1);
+const focused = dotRecorder(1100);
+globalThis.document.querySelector = () => focused.canvas;
+view.paintNotesLane();
+out.focusedRings = focused.arcs.filter((arc) => !arc.filled
+  && arc.style === "#e7e9ec").length;
+
+view.zoom = 8;
+view.setLeft(view.fracFor(view.section, 21, 1) - 0.5 / 8);
+const zoomed = dotRecorder(1100);
+globalThis.document.querySelector = () => zoomed.canvas;
+view.paintNotesLane();
+const zoomedRow = dotRecorder(1100);
+globalThis.document.querySelector = () => ({querySelector: () => zoomedRow.canvas});
+view.paintGridRow(data.grid["verse-2"][0], 0, view.section);
+out.zoomedHitX = zoomedRow.rects
+  .filter((r) => r.style === "#c7cbd3" && r.w === 4)[0].x;
+out.zoomedDotX = zoomed.arcs.filter((arc) => arc.filled)[0].x;
+/* Off the window entirely: bar 26 is outside a 1/8th window round bar 21, so
+   it must not be drawn at all rather than clamped to the edge. */
+out.zoomedDots = zoomed.arcs.filter((arc) => arc.filled).length;
+console.log(JSON.stringify(out));
+"""
+
+
+def test_a_dot_sits_on_the_hit_it_is_about(tmp_path):
+    """The claim the lane makes. A note filed at bar 21 beat 1 has to be drawn
+    at the same x as that hit in the instrument grid below it -- the dot is
+    centred on the position, the hit's 4px tick is drawn 2px before it -- and
+    that has to survive a zoom, where a clamped dot would invent a note at the
+    edge of the window."""
+    out = _run_geometry_probe(tmp_path, DOT_DRAW_PROBE)
+
+    assert out["dots"][0]["x"] == pytest.approx(out["hitX"] + 2, abs=0.01), (
+        "the dot is not over the hit it is about")
+    # Fitted, all three are on the lane; the dismissed one is hollow.
+    assert [dot["style"] for dot in out["dots"]] == [
+        "#eaa23e", "#3fcf8e", "#6b7280"]
+    assert [dot["filled"] for dot in out["dots"]] == [True, True, False]
+    # The focused dot wears a ring, which is how the timeline says where the
+    # sidebar is pointing.
+    assert out["focusedRings"] == 1
+
+    assert out["zoomedDotX"] == pytest.approx(out["zoomedHitX"] + 2, abs=0.01), (
+        "the dot leaves its hit behind once the window narrows")
+    assert out["zoomedDots"] == 1, (
+        "a dot outside the window is drawn anyway, which invents a note")
+
+
+# ── the shared gain has to be re-measured when a clip lands ─────────────────
+#
+# Paolo: *"wave boost shows incorrectly on first load (truncated waveforms).
+# When I cycle fit, raw and boost again, then it shows correctly (no longer
+# truncated/saturated)"*.
+#
+# `waveRef` -- the loudest thing visible on either lane, which is the gain both
+# are drawn with -- is measured in `repaint()`. A clip decodes asynchronously
+# and `ensurePeaks` painted *its own lane* when it landed, so the gain was still
+# the 0 from before anything had decoded: `waveFraction` floors the reference at
+# `WAVE_FLOOR`, so every peak over 0.05 came out at full height. That is the
+# saturation, and it stayed until something called `repaint()` -- which is
+# exactly what cycling the scale does.
+#
+# It is also wrong the other way round for the *second* clip to land: the gain
+# is shared, so when the reference decodes the candidate lane has to be redrawn
+# with the new number too, and painting one lane can never do that.
+
+PEAKS_LANDING_PROBE = """
+function recorder(cssWidth, cssHeight) {
+  const rects = [];
+  const context = {
+    canvas: null, fillStyle: "", strokeStyle: "", font: "", lineWidth: 0,
+    clearRect() {}, measureText: (t) => ({width: t.length * 11}), fillText() {},
+    beginPath() {}, arc() {}, fill() {}, stroke() {},
+    fillRect(x, y, w, h) { rects.push({x: x, y: y, w: w, h: h}); },
+  };
+  const canvas = {clientWidth: cssWidth, clientHeight: cssHeight,
+                  width: 0, height: 0, getContext: () => context};
+  context.canvas = canvas;
+  return {canvas: canvas, rects: rects};
+}
+
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2, title: "Manlio",
+  grid: {}, notes: [], sources: {}, instruments: [], sections: [
+    {name: "verse-2", start_bar: 20, start_beat: 3, end_bar: 28, end_beat: 3,
+     cand_url: "c1", ref_url: "r1"}]};
+const view = new ReviewView("manlio", data);
+view.index = 0;
+view.marks = view.beatMarks(view.section);
+const lane = recorder(1100, 104);
+globalThis.document.querySelector = () => lane.canvas;
+/* Not under test here, and both want a DOM the recorder does not pretend to
+   be. The gain is the whole question. */
+view.updatePlayhead = () => {};
+view.paintNotesLane = () => {};
+view.drawRuler = () => {};
+const r = (x) => Math.round(x * 1000) / 1000;
+const out = {};
+
+/* Nothing decoded: the lanes draw no peaks at all (`paintLane` returns early),
+   so this is only the state the gain starts in. */
+view.repaint();
+out.blind = view.waveRef;
+/* ...and it is the state that saturates: with no gain measured, the reference
+   is floored at WAVE_FLOOR = 0.05, so a peak of 0.4 is drawn 8x over the top
+   and clamped to the full height of the lane. */
+out.blindFraction = r(view.waveFraction(0.4, view.waveRef));
+
+/* The candidate lands. Painting its lane draws the peaks and measures
+   nothing -- which is the bug: this is what `ensurePeaks` used to do. */
+view.peakCache.c1 = {peaks: Float32Array.from([0.10, 0.40]), buffer: null,
+                     failed: false};
+view.paintLane("cand");
+out.afterPaintLane = view.waveRef;
+view.repaint();
+out.afterRepaint = r(view.waveRef);
+out.candFraction = r(view.waveFraction(0.4, view.waveRef));
+
+/* The reference lands after it, louder. The gain is SHARED, so this has to
+   move the candidate lane as well -- one repaint, not one lane. */
+view.peakCache.r1 = {peaks: Float32Array.from([0.20, 0.80]), buffer: null,
+                     failed: false};
+view.repaint();
+out.afterBoth = r(view.waveRef);
+out.candAgainstBoth = r(view.waveFraction(0.4, view.waveRef));
+console.log(JSON.stringify(out));
+"""
+
+
+def test_a_clip_landing_re_measures_the_shared_gain(tmp_path):
+    """The mechanism of the saturation, pinned. Painting one lane never touches
+    `waveRef`, so a clip that lands into a gain of 0 is drawn against
+    `WAVE_FLOOR` -- 20x, which clamps everything over 0.05 to the top of the
+    lane. Only `repaint()` measures, which is why cycling the scale fixed it."""
+    out = _run_geometry_probe(tmp_path, PEAKS_LANDING_PROBE)
+
+    assert out["blind"] == 0, "the gain starts somewhere other than unmeasured"
+    assert out["blindFraction"] == 1.0, (
+        "the saturation this is about does not reproduce")
+    assert out["afterPaintLane"] == 0, (
+        "paintLane measures the gain now, which would hide the real defect")
+    assert out["afterRepaint"] == 0.4, "a repaint does not measure the gain"
+    assert out["candFraction"] == 1.0  # it IS the loudest thing on screen
+    # And the second clip moves the number the first lane was drawn with, which
+    # is why the landing has to repaint the whole stack.
+    assert out["afterBoth"] == 0.8, "the gain is not shared between the lanes"
+    # 0.4 against a gain of 0.8 is -6 dB, which the boost scale draws at 87.5%
+    # of the lane -- not at the top, which is the whole visible difference.
+    assert out["candAgainstBoth"] == 0.875, (
+        "the candidate is not re-drawn against the louder reference")
+
+
+def test_a_landing_clip_repaints_the_stack_not_its_own_lane():
+    """The fix, where it has to be: `ensurePeaks` cannot paint one lane, because
+    the gain it would be drawn with is measured for the stack in `repaint()`."""
+    page = _page()
+    ensure = page[page.index("  async ensurePeaks(url, side) {"):]
+    ensure = ensure[:ensure.index("\n  }")]
+    code = re.sub(r"/\*.*?\*/", "", ensure, flags=re.S)
+
+    assert "this.repaint()" in code, "a landing clip does not repaint the stack"
+    assert "paintLane(" not in code, (
+        "a landing clip paints its own lane against a gain measured before it")
+    # Still only when the section it belongs to is the one on screen: n/p while
+    # a clip decodes must not paint the previous section over the new one.
+    assert "this.section" in code
+
+
+def test_the_band_gain_is_re_applied_after_every_src_change():
+    """Where "honoured" would break in the browser rather than in node:
+    `show()` assigns four new `src` values on every section change, and the
+    gain has to be re-asserted after them. Set once in the constructor it
+    would be a setting that used to be true."""
+    page = _page()
+    show = page[page.index("  show() {"):]
+    show = show[:show.index("\n  }")]
+
+    assert show.index("applyMute()") > show.index("this.cand.src"), (
+        "the band gain is not re-applied after the srcs are assigned")
+    mute = page[page.index("  applyMute() {"):]
+    mute = mute[:mute.index("\n  }")]
+    assert "BAND_VOLUME" in mute, "the gain is not set from the one constant"

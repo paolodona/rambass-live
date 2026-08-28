@@ -2096,3 +2096,103 @@ def test_promote_tidies_the_pair_it_has_just_made_true(cwd_song):
     assert [(a.bar, a.beat, a.instrument, a.velocity)
             for a in saved.drum_additions] == [(9, 2.667, "tom_high", 90)]
     assert not saved.drum_removals
+
+
+# ── a candidate can be current with a MIDI that is itself behind ────────────
+#
+# Paolo, on Manlio: *"I have added "hihat_open" at 58.4.5 and I can see it in
+# the instrument grid, however, when I play the candidate in the review tool,
+# that hit is not played. There are no warnings about stale content"*.
+#
+# `candidate_state` asked one question -- is the wav newer than the MIDI it was
+# rendered from -- and that question can be answered *yes* by a pair of files
+# that are both behind `song.yaml`. Promote a note, re-render without
+# rebuilding, and the candidate is newer than a `drums-restored.mid` that never
+# got the addition: the screen says the audio is current, the grid draws the
+# part from before the promotion, and the loop reads as closed while nothing in
+# it has moved. `rambass stale` knew (the restore step watches
+# `drums/additions`); the review screen was the one place that did not ask.
+#
+# Freshness has to cascade the same way `provenance.stale_report` makes
+# staleness cascade, and for the same reason: fix one file, see green below it,
+# ship the old part.
+
+
+def _stamped_restore(song):
+    """A `drums-restored.mid` with provenance, and a candidate rendered after
+    it: the state a finished promote-rebuild-render loop leaves behind."""
+    import os
+
+    from rambass.provenance import stamp
+
+    consolidated = song.drum_midi_path("consolidated")
+    consolidated.parent.mkdir(parents=True, exist_ok=True)
+    consolidated.write_bytes(b"MThd-consolidated")
+    midi = song.drum_midi_path("restored")
+    midi.write_bytes(b"MThd-restored")
+    stamp(song, midi, step="drums restore", inputs=[consolidated])
+    candidate = song.path("qa", "candidate.wav")
+    candidate.parent.mkdir(parents=True, exist_ok=True)
+    candidate.write_bytes(b"RIFF")
+    os.utime(candidate, (os.path.getmtime(midi) + 10,) * 2)
+    return midi, candidate
+
+
+def test_a_candidate_rendered_from_a_stale_midi_is_not_fresh(song):
+    """The hole: both files newer than each other in the right order, and both
+    of them older than the addition in `song.yaml`."""
+    from rambass.review import candidate_state
+
+    _stamped_restore(song)
+    assert candidate_state(song)["fresh"] is True
+
+    # An addition promoted into song.yaml, and no rebuild. `drums restore`
+    # watches `drums/additions`, so the MIDI is stale -- and the candidate is
+    # still the newer of the two files.
+    from rambass.manifest import Addition, save_song
+
+    song.drum_additions.append(
+        Addition(bar=56, beat=4.5, instrument="hihat_open"))
+    save_song(song, song.directory)
+
+    state = candidate_state(song)
+    assert state["fresh"] is False, (
+        "a candidate rendered from a stale MIDI still reads as current")
+    assert "drums-restored.mid" in state["why"]
+    assert "drums/additions" in state["why"], (
+        "the warning does not say what moved")
+    # And it points at the rebuild, not at a re-render: rendering again would
+    # produce the same audio from the same stale part.
+    assert state["action"] == "rebuild"
+    assert state["command"] == f"rambass drums restore {song.slug}"
+
+
+def test_the_mtime_case_still_asks_for_a_re_render(song):
+    """The other order, unchanged: the MIDI was rebuilt after the render, so
+    the part is current and only the audio is behind."""
+    import os
+
+    from rambass.review import candidate_state
+
+    midi, candidate = _stamped_restore(song)
+    os.utime(midi, (os.path.getmtime(candidate) + 10,) * 2)
+
+    state = candidate_state(song)
+    assert state["fresh"] is False
+    assert state["action"] == "render"
+    assert state["command"] == f"rambass review render {song.slug}"
+
+
+def test_an_edited_midi_is_not_reported_as_a_stale_candidate(song):
+    """A hand-edited MIDI is *intentional*, and a candidate rendered from it is
+    exactly right. `provenance` keeps `edited` apart from `stale` for that
+    reason and so does this: telling somebody to rebuild would discard the
+    edit, which is the opposite of what they want."""
+    from rambass.review import candidate_state
+
+    midi, candidate = _stamped_restore(song)
+    midi.write_bytes(b"MThd-restored-and-drawn-on-by-hand")
+    import os
+    os.utime(candidate, (os.path.getmtime(midi) + 10,) * 2)
+
+    assert candidate_state(song)["fresh"] is True

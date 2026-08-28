@@ -12,6 +12,14 @@
     --text:#e7e9ec; --text-dim:#9aa1ad; --text-faint:#868d99;
     --green:#3fcf8e; --amber:#eaa23e; --red:#e2685f; --grey:#6b7280;
     --accent:#8e97f2; --accent-soft:rgba(142,151,242,.14);
+    /* The one band of colour on the page that is not a status dot: the fixed
+       bar that means "something is running and every button is held". It was
+       `--raised`, which is the colour of every card here, so the bar that has
+       to be noticed was the least noticeable thing on the screen. Warm, dark
+       enough for `--running-ink` to read on, and nothing else uses it. */
+    --running:#7c3f0d; --running-ink:#ffe3bd;
+    --running-hint:rgba(255,227,189,.62);
+    --running-bad:#5f211c; --running-bad-ink:#ffcdc7;
     --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
     --mono:ui-monospace,Menlo,Consolas,monospace;
     /* One gutter for every row of the review stack -- waveform lanes, ruler
@@ -83,13 +91,18 @@
                              font-family:var(--mono); font-size:12px; }
   /* ...and again where it cannot be scrolled away from. */
   #running { position:fixed; left:0; right:0; bottom:0; display:none;
-             z-index:40; padding:11px 18px; background:var(--raised);
-             border-top:1px solid var(--accent);
-             font-family:var(--mono); font-size:12.5px; color:var(--text); }
-  #running .what { color:var(--accent); }
-  #running .hint { color:var(--text-faint); }
-  #running.bad { border-top-color:var(--red); cursor:pointer; }
-  #running.bad .what { color:var(--red); }
+             z-index:40; padding:11px 18px; background:var(--running);
+             border-top:1px solid var(--amber);
+             font-family:var(--mono); font-size:12.5px;
+             color:var(--running-ink); }
+  /* Not the periwinkle accent any more: on the warm bar it was the one pair
+     of colours here with no contrast to spare, and the command name is the
+     word on this bar that has to be read. */
+  #running .what { color:#fff; font-weight:500; }
+  #running .hint { color:var(--running-hint); }
+  #running.bad { background:var(--running-bad); border-top-color:var(--red);
+                 color:var(--running-bad-ink); cursor:pointer; }
+  #running.bad .what { color:#ffe9e6; }
   .step .what { flex:1; }
   .step .label { font-size:14px; }
   .step .note { font-size:12px; color:var(--text-faint); margin-top:2px; }
@@ -116,18 +129,26 @@
      *all* canvases, transparent where it is not wanted: `box-sizing:border-box`
      is global, so a canvas with a border has a clientWidth 2px smaller than one
      without, and 2px is a visible misalignment at this scale. */
-  .lane, .ruler, .gridrow { display:flex; align-items:center;
+  .lane, .ruler, .gridrow, .notelane { display:flex; align-items:center;
                             gap:var(--gutter-gap); }
-  .lane .who, .ruler .who, .gridrow .who { width:var(--gutter); flex:none; }
+  .lane .who, .ruler .who, .gridrow .who, .notelane .who {
+      width:var(--gutter); flex:none; }
   /* Every one of them is clickable, and they all mean the same thing:
      put the playhead here. `touch-action:none` so a drag on a laptop
      trackpad scrubs instead of scrolling the page under the pointer. */
-  .lane canvas, .ruler canvas, .gridrow canvas {
+  .lane canvas, .ruler canvas, .gridrow canvas, .notelane canvas {
       flex:1; min-width:0; border:1px solid transparent; border-radius:6px;
       cursor:pointer; touch-action:none; }
   .lane { margin-bottom:6px; }
   .lane .who { font-size:12px; color:var(--text-dim); }
   .lane .who b { color:var(--text); font-weight:500; }
+  /* The name of a lane is how you pin playback to it -- so it looks like a
+     control, and the audible one is named in the accent the lane's own border
+     already uses. Underlined on hover only: two permanently underlined words
+     at the head of the stack read as links out of the page. */
+  .lane .who b[data-side] { cursor:pointer; }
+  .lane .who b[data-side]:hover { text-decoration:underline; }
+  .lane.active .who b[data-side] { color:var(--accent); }
   /* 104 CSS px, so 208 device px at DPR 2 -- twice what it was. Paolo:
      *"make the lane canvases twice as tall so I can better see the waveforms,
      even the fainter hits"*. The peak drawing is linear in amplitude
@@ -151,6 +172,18 @@
      saying so. */
   .gridrow.picked .who { color:var(--accent); }
   .gridrow.picked canvas { border-color:var(--accent); }
+  /* The notes lane: where the ledger is, on the timeline it is about. Its own
+     class rather than a `.gridrow`, because those carry a `data-row` index into
+     the MIDI grid and both the instrument pick and the right-click menu key off
+     it -- but the same geometry, so a dot sits under the transient it is about.
+     Directly under the ruler: a dot is read against a bar number. */
+  .notelane { margin:8px 0 10px; }
+  .notelane .who { font-size:12.5px; color:var(--text-dim);
+                   overflow:hidden; text-overflow:ellipsis;
+                   white-space:nowrap; }
+  .notelane .who b { color:var(--text); font-weight:500; }
+  .notelane canvas { height:24px; background:var(--raised);
+                     border-color:var(--border-soft); }
   /* One line for the whole stack, which is only possible because both lanes
      map musical position linearly (the reference take breathes, and that is
      accepted here -- see docs/review-ui.md). Moved by transform: a frame loop
@@ -163,18 +196,28 @@
               will-change:transform; }
   .transport { display:flex; align-items:center; justify-content:center;
                gap:14px; margin-top:14px; font-size:12px; color:var(--text-faint); }
-  /* Every readout in the transport is a FIXED width, because the row is
-     centre-justified: a readout that grows a character pushes half the row
-     left and the other half right. Paolo: *"this makes the whole transport
-     section shift left and right slightly and looks jittery"* -- and the
-     playhead readout changes on every animation frame while playing, so the
-     jitter is continuous. 9ch holds `100.1.895`, the widest a Reaper bar.beat
-     gets here; the band switch is sized for its longest label. */
+  /* Every readout that changes is a FIXED width, wherever it lives. In the
+     transport the reason is the row: it is centre-justified, so a readout that
+     grows a character pushes half of it left and the other half right. Paolo:
+     *"this makes the whole transport section shift left and right slightly and
+     looks jittery"* -- and the playhead readout is rewritten on every animation
+     frame while playing, so that jitter is continuous. 9ch holds `100.1.895`,
+     the widest a Reaper bar.beat gets here.
+
+     In the settings block the reason is the same one row down: a label on the
+     left and a control pushed right by `margin-left:auto`, so a control that
+     grows moves its own left edge under the pointer that is still clicking it.
+     The widths are each sized for that setting's longest label. */
   .transport #at { display:inline-block; width:9ch; text-align:left; }
-  .transport #loopstate { display:inline-block; width:9ch; }
   .transport #which { display:inline-block; width:20ch; }
-  .transport #band { width:15ch; text-align:center; }
-  .transport #snap { display:inline-block; width:11ch; }
+  .settings #loopstate { width:9ch; text-align:center; }
+  .settings #band { width:15ch; text-align:center; }
+  .settings #snap { width:11ch; text-align:center; }
+  /* 11ch holds `zoom: 1.0×` and `zoom: 64×` alike, so a wheel gesture cannot
+     shuffle the row sideways while the pointer is still on the stack. */
+  .settings #zoom { width:11ch; text-align:center; }
+  /* 12ch holds `wave: boost`, the longest of the three. */
+  .settings #wave { width:12ch; text-align:center; }
   /* Which sections have been listened to. One pip per section, in order, so
      "what can I skip when I come back" is answered without stepping through
      them -- and a pip is also how you jump to one. */
@@ -215,50 +258,115 @@
       border:1px solid var(--border); border-radius:7px; padding:8px 10px;
       color:var(--text); font-family:var(--mono); font-size:12.5px;
       outline:none; }
-  .notesbox { border:1px solid var(--border); border-radius:12px;
-              background:var(--panel); padding:16px 22px; margin-top:16px; }
-  .notesbox input[type=text] { flex:1; background:var(--raised);
-      border:1px solid var(--border); border-radius:7px; padding:10px 12px;
+  /* ── the review screen's two columns ──────────────────────────────────
+     The stack on the left; everything that acts on what it shows on the right.
+     Paolo: *"in a section with many notes, the buttons to regenerate sit very
+     far down in the page ... so the whole notes + buttons section is neatly
+     moved to a right sidebar"*. The ledger is the only thing on this screen
+     that grows without bound, so it is the only thing allowed to scroll: the
+     sidebar is sticky and the note list scrolls inside it, which is what keeps
+     the form, the summary and every button the same distance from the ear
+     whatever the ledger is doing. */
+  .reviewcols { display:flex; align-items:flex-start; gap:20px; }
+  .reviewmain { flex:1; min-width:0; }
+  .sidebar { width:372px; flex:none; position:sticky; top:14px;
+             max-height:calc(100vh - 28px); display:flex;
+             flex-direction:column; gap:11px; margin-top:16px;
+             border:1px solid var(--border); border-radius:12px;
+             background:var(--panel); padding:14px 16px; overflow:hidden; }
+  /* The stack gives up a sidebar's width, and a waveform is what this screen
+     is for -- so the review screen alone is allowed to use a wide monitor. */
+  main.wide { max-width:2000px; }
+  /* Under about 1150px there is no room for two columns, so they stack and the
+     sidebar stops being sticky: a sticky box taller than the viewport traps
+     its own content, and the buttons would be unreachable again. */
+  @media (max-width:1150px) {
+    .reviewcols { flex-direction:column; }
+    .sidebar { width:100%; position:static; max-height:none; }
+  }
+  .sidebar input[type=text] { flex:1; min-width:0; background:var(--raised);
+      border:1px solid var(--border); border-radius:7px; padding:9px 11px;
       color:var(--text); font-family:var(--sans); font-size:13px; outline:none; }
-  .notesbox select { background:var(--raised); border:1px solid var(--border);
-      border-radius:7px; padding:8px 10px; color:var(--text);
-      font-family:var(--mono); font-size:12px; outline:none; }
-  .notesbox .filing { display:flex; align-items:center; gap:10px;
-      margin-top:10px; font-size:12px; color:var(--text-faint); }
-  .pill { padding:7px 11px; border-radius:6px; background:var(--raised);
+  .sidebar select { background:var(--raised); border:1px solid var(--border);
+      border-radius:7px; padding:7px 9px; color:var(--text);
+      font-family:var(--mono); font-size:12px; outline:none;
+      max-width:100%; min-width:0; }
+  /* What is on this section and what is on the song, in one line each. Paolo:
+     *"a short summary of how many notes, and how many not promoted"*. Both
+     scopes, because "is this section done" and "is this song done" are
+     different questions and the second is what a promote pass is about. */
+  .notesum { display:flex; align-items:baseline; gap:9px; font-size:12px;
+             font-family:var(--mono); color:var(--text-faint); }
+  .notesum b { color:var(--text); font-weight:500; }
+  .notesum .n-open { color:var(--amber); }
+  .notesum .n-promoted { color:var(--green); }
+  .notesum .scope { margin-left:auto; }
+  .noteform { display:flex; flex-direction:column; gap:8px; }
+  .noteform .line { display:flex; align-items:center; gap:8px;
+                    flex-wrap:wrap; font-size:12px; color:var(--text-faint); }
+  .kinds { display:flex; flex-wrap:wrap; gap:5px; }
+  .pill { padding:6px 9px; border-radius:6px; background:var(--raised);
           border:1px solid var(--border); color:var(--text-dim);
           font-size:11.5px; cursor:pointer; }
   .pill.on { background:var(--accent); color:#151726; border-color:var(--accent); }
+  /* The one thing in the sidebar allowed to grow, and it grows inwards. */
+  #chips { flex:1; min-height:74px; overflow-y:auto; }
   /* A list, read top to bottom. These were inline pills, which pile up
      horizontally and wrap mid-sentence -- unreadable once a section has more
      than about three of them, and with nowhere to put a per-note control. */
-  .notelist { margin-top:12px; border:1px solid var(--border-soft);
+  .notelist { border:1px solid var(--border-soft);
               border-radius:8px; overflow:hidden; }
-  .note { display:flex; align-items:baseline; gap:12px; padding:9px 12px;
-          font-size:12.5px; color:var(--text-dim);
+  .note { padding:8px 10px; font-size:12.5px; color:var(--text-dim);
           border-bottom:1px solid var(--border-soft); }
   .note:last-child { border-bottom:none; }
   .note:nth-child(even) { background:rgba(255,255,255,.015); }
-  .note .at { font-family:var(--mono); color:var(--text); width:64px;
-              flex:none; text-align:right; }
-  .note .kind { font-family:var(--mono); font-size:11px; width:96px;
-                flex:none; color:var(--text-faint); }
-  .note .inst { width:104px; flex:none; color:var(--text); }
+  /* Two lines, not six columns. The panel used to be page-wide; a 372px
+     sidebar cannot carry `at | kind | instrument | comment | badge | controls`
+     side by side without every one of them being three characters wide. Line
+     one is what the note IS, line two is what somebody said about it. */
+  .note .top, .note .bot { display:flex; align-items:baseline; gap:8px; }
+  .note .bot { margin-top:3px; }
+  /* Clickable, because in the whole-section list the position is how you get
+     to the note: it puts the playhead on it, the same as clicking its dot. */
+  .note .at { font-family:var(--mono); color:var(--text); flex:none;
+              cursor:pointer; }
+  .note .at:hover { text-decoration:underline; }
+  .note .kind { font-family:var(--mono); font-size:11px; flex:none;
+                color:var(--text-faint); }
+  .note .inst { flex:none; color:var(--text); font-size:12px; }
   .note .inst.none { color:var(--text-faint); font-style:italic; }
-  .note .said { flex:1; color:var(--text-dim); min-width:0; }
+  .note .said { flex:1; color:var(--text-dim); min-width:0;
+                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .note .badge { font-family:var(--mono); font-size:10.5px; padding:2px 7px;
                  border-radius:5px; flex:none; }
   .note .badge.promoted { background:rgba(63,207,142,.16); color:var(--green); }
   .note .badge.dismissed { background:var(--raised); color:var(--text-faint); }
   .note.dismissed .said, .note.dismissed .inst { text-decoration:line-through;
                                                  color:var(--text-faint); }
-  .note .acts { flex:none; display:flex; gap:6px; }
-  .note .act { font-family:var(--mono); font-size:11px; padding:3px 8px;
+  /* Which row of a whole-section list is the one the dots are pointing at. */
+  .note.here { background:var(--accent-soft);
+               box-shadow:inset 2px 0 0 var(--accent); }
+  .note .acts { flex:none; display:flex; gap:5px; margin-left:auto; }
+  .note .act { font-family:var(--mono); font-size:11px; padding:3px 7px;
                border:1px solid var(--border); border-radius:5px;
                background:var(--raised); color:var(--text-dim);
                cursor:pointer; }
   .note .act:hover { color:var(--text); border-color:var(--text-faint); }
   .note .act.drop:hover { color:var(--red); border-color:var(--red); }
+  .sideacts { display:flex; flex-wrap:wrap; gap:7px; }
+  .sideacts .btn { padding:7px 10px; font-size:11.5px; }
+  .sideacts .btn.primary { flex:1 0 100%; }
+  /* Everything that is a preference rather than a judgement, at the bottom and
+     out of the way. Paolo: *"move to the bottom of the sidebar a section with
+     the following settings (removed from under the grid) ... so that settings
+     do not clutter the working area"*. The transport keeps only what is about
+     the take being judged: play, which side is audible, and where the ear is. */
+  .settings { border-top:1px solid var(--border-soft); padding-top:10px;
+              display:flex; flex-direction:column; gap:6px; }
+  .settings .setrow { display:flex; align-items:center; gap:8px;
+                      font-size:12px; color:var(--text-faint); }
+  .settings .setrow .btn { margin-left:auto; padding:5px 9px;
+                           font-size:11.5px; }
   .hintstrip { position:fixed; right:28px; bottom:22px; display:flex;
                align-items:center; gap:8px; padding:9px 13px;
                background:var(--raised); border:1px solid var(--border);
@@ -297,12 +405,31 @@
   <table>
     <tr><td><span class="kbd">space</span></td><td>start / stop</td></tr>
     <tr><td><span class="kbd">shift</span>+<span class="kbd">space</span></td><td>play the section again from the top</td></tr>
-    <tr><td><span class="kbd">s</span></td><td>switch which sample is audible (candidate &harr; reference)</td></tr>
+    <tr><td><span class="kbd">s</span></td><td>switch which sample is audible (candidate &harr; reference)
+      &mdash; or click a lane's own <b>name</b> to pin it to that side. Never
+      stops the audio, and the band layer stays as it is</td></tr>
     <tr><td><span class="kbd">b</span></td><td>lay the rest of the band under it &mdash; the warped
       bed under the candidate, the album mix under the reference, following
       whichever one is audible. Never stops the audio</td></tr>
+    <tr><td><span class="kbd">wheel</span></td><td>zoom the stack in and out about the
+      pointer, the way Reaper does &mdash; the waveforms, the ruler, the grid and
+      the hits stretch together.
+      <span class="kbd">alt</span>+<span class="kbd">wheel</span> (or
+      <span class="kbd">shift</span>+<span class="kbd">wheel</span>) slides the
+      window left and right while zoomed in, as Reaper's horizontal scroll does.
+      A <b>view</b> only: it never changes what plays, what loops or what a
+      note records, and while it is playing the window pages along to keep the
+      playhead on screen</td></tr>
+    <tr><td><span class="kbd">0</span></td><td>fit the whole section again
+      (<span class="kbd">-</span> / <span class="kbd">=</span> zoom without a wheel).
+      A new section always starts fitted</td></tr>
     <tr><td><span class="kbd">n</span> / <span class="kbd">p</span></td><td>next / previous section</td></tr>
     <tr><td><span class="kbd">,</span> / <span class="kbd">.</span></td><td>previous / next bar inside the section</td></tr>
+    <tr><td><span class="kbd">[</span> / <span class="kbd">]</span></td><td>previous / next
+      <b>note</b> &mdash; the dots on the notes lane, which is every note filed in
+      this section at the bar it is about. The playhead lands on it and the
+      sidebar comes up on it; clicking a dot does the same thing. Amber is open,
+      green is promoted, hollow grey is dismissed</td></tr>
     <tr><td><span class="kbd">click</span></td><td>put the playhead there &mdash; on either
       waveform, the ruler or any instrument row; drag to scrub. Snaps to the
       song's grid; hold <span class="kbd">alt</span> to place it exactly.
@@ -442,6 +569,10 @@ function sectionHash(slug, name) {
 
 function route() {
   stopReview();
+  /* The review screen is the one view allowed to use a wide monitor -- it gives
+     up a sidebar's width and a waveform is what it is for. Cleared here, at the
+     one door every view comes through, so no render function has to remember. */
+  app.classList.remove("wide");
   const hash = location.hash || "#/";
   const song = hash.match(/^#\/song\/(.+)$/);
   const review = hash.match(/^#\/review\/([^/]+)(?:\/([^/]+))?$/);
@@ -856,6 +987,7 @@ async function renderSections(slug) {
 /* ── the drums review tool ───────────────────────────────────────────── */
 async function renderReview(slug, at) {
   stopReview();
+  app.classList.add("wide");
   app.innerHTML = `<div class="crumb" onclick="history.back()">&larr; back</div>`;
   let data;
   try { data = await api(`/api/review/${encodeURIComponent(slug)}`); }
@@ -878,6 +1010,15 @@ async function renderReview(slug, at) {
 const LANE_GRID  = {bar:"#454c5b", beat:"#343b47", sub:"#292e37"};
 const RULER_GRID = {bar:"#3b414e", beat:"#2e343e", sub:"#262b33", top:10};
 const ROW_GRID   = {bar:"#3f4653", beat:"#2f353f", sub:"#272c34"};
+/* A note's dot, in the page's own status colours -- so a green dot and a green
+   badge mean the same thing. `--amber`, `--green`, `--grey` as literals because
+   a canvas cannot read a CSS variable. */
+const NOTE_DOT = {open:"#eaa23e", promoted:"#3fcf8e", dismissed:"#6b7280"};
+/* Which status a dot takes when more than one note shares a position: the one
+   still waiting for a decision. A promoted note's edit is in song.yaml and
+   needs nobody, so drawing the pair green would hide the open half -- and
+   "what is left to do here" is the only question these colours answer. */
+const NOTE_DOT_ORDER = ["open", "promoted", "dismissed"];
 /* Device pixels per CSS pixel. Fixed, not `devicePixelRatio`: the canvases are
    drawn once per repaint and 2x is sharp enough on the machine this runs on,
    while a fractional ratio puts a 1px grid line between two pixels. */
@@ -893,18 +1034,63 @@ const BUCKETS = 600;
    would change what a velocity sounds like, which is one of the things a review
    pass is listening for. Lower this number to push the band further back.
    0.8 first, then *"reduce the band audio by another 10%"*, then *"reduce the
-   band volume by a further 10%"* -- each tenth is off the full mix, not off the
-   number before it, so 40% down in total. */
-const BAND_VOLUME = 0.6;
+   band volume by a further 10%"*, then *"bring the volume of the band down by
+   another 10%"* -- each tenth is off the full mix, not off the number before
+   it, so half down in total.
 
-function peaksOf(buffer) {
+   It is re-asserted in `applyMute` on every call rather than set once in the
+   constructor, which is what makes it honoured: a `src` change, a re-created
+   element or a browser that resets the property cannot leave a bed at unity
+   under a bare kit. */
+const BAND_VOLUME = 0.5;
+/* How far in the stack goes, and how fast the wheel takes it there: ~2.3
+   notches an octave, and 64x puts about half a beat of Manlio across the
+   screen -- finer than the 10ms the warp itself is honest to. */
+const MAX_ZOOM = 64;
+const ZOOM_STEP = 1.35;
+/* The quietest window that still gets full gain, and how far down the dB scale
+   reaches. Paolo: *"the waveforms ... do not occupy the whole height ... so
+   that I can visually see even the fainter hits (eg low close hihats)"*.
+
+   The floor is what stops a silent gap -- Manlio's bars 78-79 are digital
+   silence, and every section has holes in it -- from being amplified into a
+   full-height waveform for audio that is not playing: 0.05 caps the gain at
+   20x, so -60 dB of noise floor still draws flat. 48 dB is the range a rim
+   click needs: it sits 25-30 dB under the same drummer's snare (CLAUDE.md),
+   and a scale that bottoms out at 30 would put it on the zero line. */
+const WAVE_FLOOR = 0.05;
+const WAVE_DB_RANGE = 48;
+/* Absolute amplitude under which a bucket is drawn on the zero line, whatever
+   the gain. This is the second half of the silence problem and the reference
+   floor does not solve it: a -60 dBFS noise floor scaled against the 0.05 cap
+   is -34 dB, which the dB curve draws at 29% of the lane -- a visible band of
+   hash through every quiet bar, reading as signal. -52 dBFS is far below any
+   hit that matters here (a rim click, the quietest thing on Manlio, sits 25-30
+   dB under the snare, so around -35 dBFS) and far above a stem's noise floor. */
+const WAVE_GATE = 0.0025;
+
+/* Peaks for a *window* of the clip, `from`..`to` as fractions of it, always
+   `BUCKETS` of them. That is what makes a zoom look like Reaper's rather than
+   like a stretched image: at 8x the same 600 buckets are re-measured over an
+   eighth of the audio, so the detail arrives with the width. Decoding is the
+   expensive half and stays cached (see `windowPeaks`); this is a strided max
+   over a few thousand samples. */
+function peaksOf(buffer, from = 0, to = 1) {
   const samples = buffer.getChannelData(0);
-  const per = Math.max(1, Math.floor(samples.length / BUCKETS));
+  const lo = Math.max(0, Math.min(samples.length, Math.floor(from * samples.length)));
+  const hi = Math.max(lo, Math.min(samples.length, Math.ceil(to * samples.length)));
+  const span = Math.max(1, hi - lo);
   const out = new Float32Array(BUCKETS);
   for (let i = 0; i < BUCKETS; i++) {
-    const from = i * per, to = Math.min(samples.length, from + per);
+    const start = lo + Math.floor(i * span / BUCKETS);
+    const end = Math.min(hi, Math.max(start + 1,
+                                      lo + Math.floor((i + 1) * span / BUCKETS)));
+    /* Every 4th sample at ordinary zoom, which is what this always did; every
+       one of them once a bucket is down to a handful, or a deep zoom reads
+       past its own bucket and reports silence. */
+    const stride = end - start >= 8 ? 4 : 1;
     let peak = 0;
-    for (let j = from; j < to; j += 4) peak = Math.max(peak, Math.abs(samples[j]));
+    for (let j = start; j < end; j += stride) peak = Math.max(peak, Math.abs(samples[j]));
     out[i] = peak;
   }
   return out;
@@ -915,6 +1101,18 @@ class ReviewView {
     this.slug = slug; this.data = data;
     this.index = 0; this.loop = true; this.active = "cand"; this.playing = false;
     this.noteKind = "missing-hit";
+    /* Which position the sidebar is about, `{bar, beat}` or null for "nothing
+       pointed at yet". It is set by a *deliberate* placement -- a click on the
+       stack, a step between dots, a filing -- and never by the playhead, which
+       moves sixty times a second while a section loops. A sidebar that followed
+       that would rewrite its own list every frame and move its own controls
+       under the pointer that is clicking them. */
+    this.focus = null;
+    /* Whether the list under the form is the notes at the focus or the whole
+       section. `at` is the answer to Paolo's *"only notes in at the playhead
+       are shown, not the whole list"*; `all` is the old list, one click away,
+       and is what a section with no focus yet shows. */
+    this.noteScope = "at";
     /* How finely the playhead snaps: the song's own grid divided by this.
        Paolo: *"I need to add a hit between 4.4.333 and 4.4.667 (this song is
        in triplets) and I cannot snap at the correct point"*. The song's
@@ -946,8 +1144,153 @@ class ReviewView {
     this.marks = [];
     this.frame = 0;
     this.scrubbing = false;
+    /* The view window, in fractions of the section: `zoom` times wider than
+       what fits, starting at `left`. Paolo: *"add the ability to zoom in and
+       out so that I can see part of the section more clearly (the waveforms
+       stretch like they do in reaper by rotating the mouse wheel)"*.
+
+       It is a *view*, and only a view: nothing here changes what plays, what
+       loops, or what a note records. Every drawer converts out through
+       `viewX` and every pointer handler converts back through `sectionAt`,
+       which is the one thing that keeps a click on a zoomed lane meaning the
+       bar it is drawn over. */
+    this.zoom = 1; this.left = 0;
+    /* How the lanes use their height. `boost` is the default because the
+       question it answers is the one Paolo asked -- a closed hat 24 dB under
+       the kick is 6% of the lane on any linear scale, gain or no gain. `fit`
+       is normalised and linear, `raw` is the absolute scale this always had,
+       for when the height of a hit is the thing being judged.
+
+       Purely how the peaks are DRAWN: no velocity, no MIDI, no audio. It is a
+       display preference rather than a property of a section, so unlike the
+       zoom window it survives stepping from one section to the next. */
+    this.waveScale = "boost";
+    this.waveRef = 0;
   }
   get section() { return this.data.sections[this.index]; }
+
+  /* ── the view window ──────────────────────────────────
+     Fitted is as far out as it goes: the section is the unit of review here,
+     and a window wider than one would be blank canvas with a ruler over it. */
+  span() { return 1 / this.zoom; }
+  viewX(fraction) { return (fraction - this.left) * this.zoom; }
+  sectionAt(x) { return this.left + x / this.zoom; }
+  /* Pixels a beat gets at this zoom -- which is how the grid and the ruler
+     decide what they have room to draw, so the dropped subdivision lines and
+     bar labels come back as the window narrows. */
+  perBeatPixels(width) {
+    return width * this.zoom / this.sectionBeats(this.section);
+  }
+  setLeft(left) {
+    this.left = Math.min(1 - this.span(), Math.max(0, left));
+  }
+  fit() { this.zoom = 1; this.left = 0; this.showZoom(); }
+  /* Zoom about a point, given as a fraction of the canvas: Reaper zooms
+     toward the cursor, and the position under the pointer is the one thing
+     that must not move or the gesture hunts. Returns whether anything moved,
+     so a wheel at the ceiling does not force a repaint. */
+  zoomBy(factor, anchor) {
+    const at = Math.min(1, Math.max(0, anchor));
+    const held = this.sectionAt(at);
+    const zoom = Math.min(MAX_ZOOM, Math.max(1, this.zoom * factor));
+    if (zoom === this.zoom) return false;
+    this.zoom = zoom;
+    this.setLeft(held - at * this.span());
+    this.showZoom();
+    return true;
+  }
+  /* In windows-full, so a pan is the same gesture whatever the zoom. */
+  panBy(windows) {
+    const before = this.left;
+    this.setLeft(this.left + windows * this.span());
+    return this.left !== before;
+  }
+  /* Keep the playhead on screen while it is running. A zoomed window that
+     stays put shows a quarter of the section while the ear hears all of it,
+     so the eye is on the wrong bar for most of every pass. Pages rather than
+     scrolling per frame: a window that slides under a fixed playhead is a
+     redraw of four canvases every frame, for a stack whose whole point is
+     that it is drawn once. */
+  followTo(fraction) {
+    const span = this.span();
+    if (span >= 1) return false;
+    if (fraction >= this.left + span * 0.05
+        && fraction <= this.left + span * 0.95) return false;
+    const before = this.left;
+    this.setLeft(fraction - span * 0.15);
+    return this.left !== before;
+  }
+  /* ── how tall a peak is drawn ──────────────────────────
+     The loudest thing visible on EITHER lane, which is the gain both of them
+     are drawn with. Shared on purpose: the two lanes are stacked so that "the
+     snare is quieter in the candidate than in the reference at this bar" is a
+     visible fact (docs/review-ui.md), and a per-lane gain would draw the two
+     at the same height and delete exactly that. */
+  sharedPeak() {
+    const section = this.section;
+    if (!section) return 0;
+    let top = 0;
+    for (const side of ["cand", "ref"]) {
+      const entry = this.peakCache[section[`${side}_url`]];
+      const peaks = entry && !entry.failed && this.windowPeaks(entry);
+      if (peaks) for (let i = 0; i < peaks.length; i++)
+        top = Math.max(top, peaks[i]);
+    }
+    return top;
+  }
+  /* A peak, 0..1, as a fraction of the lane's height. Pure -- this is the
+     whole of the change Paolo asked for, and it is a *drawing* decision: it
+     never touches a velocity, a note or a sample. */
+  waveFraction(peak, reference) {
+    const level = Math.max(0, peak || 0);
+    if (this.waveScale === "raw") return Math.min(1, level);
+    const scaled = Math.min(1, level / Math.max(WAVE_FLOOR, reference || 0));
+    if (this.waveScale === "fit" || scaled <= 0) return scaled;
+    if (level < WAVE_GATE) return 0;   // noise floor, not a hit
+    /* dB, so the quiet hits are lifted without the loud ones clipping: -6 dB
+       is 87% of the lane, -24 dB is half, and everything under -48 dB is on
+       the zero line. Linear, that -24 dB hat is 6% -- there, and invisible. */
+    return Math.max(0, Math.min(
+      1, 1 + (20 * Math.log10(scaled)) / WAVE_DB_RANGE));
+  }
+  cycleWave() {
+    const order = {boost: "fit", fit: "raw", raw: "boost"};
+    this.waveScale = order[this.waveScale] || "boost";
+    this.showWave();
+    this.repaint();
+  }
+  showWave() {
+    const readout = $("#wave");
+    if (readout) readout.textContent = `wave: ${this.waveScale}`;
+  }
+  showZoom() {
+    const readout = $("#zoom");
+    if (readout) readout.textContent =
+      `zoom: ${this.zoom < 9.95 ? this.zoom.toFixed(1) : Math.round(this.zoom)}×`;
+  }
+  /* Wheel to zoom; alt+wheel or shift+wheel to slide the window left and right
+     -- Reaper's own gestures on a track view, where alt+wheel is the horizontal
+     scroll. Paolo: *"can we add alt+mouse wheel to slide back/forth
+     (right/left) while zoomed, like in reaper"*. Both modifiers do the one
+     thing, because a pan is a pan and nothing here needs two of them.
+     `preventDefault` because the alternative is the page scrolling out from
+     under the stack while the pointer zooms it. */
+  onWheel(event) {
+    event.preventDefault();
+    const canvas = (event.target.closest && event.target.closest("canvas"))
+                   || $("#lane-cand canvas");
+    let at = 0.5;
+    if (canvas && canvas.getBoundingClientRect) {
+      const box = canvas.getBoundingClientRect();
+      const inset = (box.width - canvas.clientWidth) / 2;
+      at = (event.clientX - box.left - inset) / (canvas.clientWidth || 1);
+    }
+    const notches = event.deltaY > 0 ? 1 : -1;
+    const moved = (event.altKey || event.shiftKey)
+      ? this.panBy(notches * 0.15)
+      : this.zoomBy(notches > 0 ? 1 / ZOOM_STEP : ZOOM_STEP, at);
+    if (moved) this.repaint();
+  }
 
   mount() {
     const pills = ["missing-hit","extra-hit","swap-hit","timing","other"].map((kind) =>
@@ -962,6 +1305,7 @@ class ReviewView {
     app.innerHTML = `
       <div class="crumb" onclick="location.hash='#/song/${encodeURIComponent(this.slug)}'">
         &larr; ${esc(this.data.title)} / Drums</div>
+      <div class="reviewcols"><div class="reviewmain">
       <div style="display:flex;align-items:center;justify-content:center;gap:20px">
         <button class="btn" id="prev">&larr;</button>
         <div style="text-align:center;min-width:260px">
@@ -970,56 +1314,41 @@ class ReviewView {
           <button class="btn" id="done" style="margin-top:7px">mark done</button></div>
         <button class="btn" id="next">&rarr;</button></div>
       <div id="progress"></div>
-      <div style="display:flex;justify-content:center;gap:26px;font-family:var(--mono);font-size:11px;color:var(--text-faint);margin-top:6px">
-        <span><span class="kbd">p</span> previous section</span>
-        <span><span class="kbd">n</span> next section</span></div>
       ${this.data.approximate ? `<div class="legend" style="border-color:rgba(234,162,62,.4)">
         reference timing is offset-only — <span style="font-family:var(--mono)">rambass align ${esc(this.slug)} --fit</span> makes it exact</div>` : ""}
       <div id="candidate-warning"></div>
       <div class="abwrap">
         <div id="stack">
           <div class="lane" id="lane-cand"><div class="who">
-            <b>Candidate</b> · rendered MIDI</div><canvas></canvas></div>
+            <b data-side="cand" title="listen to the candidate (same as s, but
+                pinned to this side)">Candidate</b> · rendered MIDI</div><canvas></canvas></div>
           <div class="lane" id="lane-ref"><div class="who">
-            <b>Reference</b> · original drums
+            <b data-side="ref" title="listen to the reference (same as s, but
+                pinned to this side)">Reference</b> · original drums
             <button class="btn" id="make-ref" style="display:none;margin-left:8px">
               Separate drum stem</button></div><canvas></canvas></div>
           <div class="ruler"><div class="who">bar.beat · Reaper</div>
             <canvas id="ruler"></canvas></div>
+          <div class="notelane" id="noteslane"><div class="who"
+            title="every note filed in this section, at the bar it is about.
+                   Click a dot to bring it up on the right; [ and ] step
+                   between them"><b>Notes</b> · <span id="lane-count"></span></div>
+            <canvas id="notes-canvas"></canvas></div>
           <div id="grid"></div>
           <div class="playhead" id="playhead"></div></div>
         <div class="transport">
+          <button class="btn" id="tostart"
+            title="back to the start of the section — the playhead only; it does not start or stop anything">&#9198;</button>
           <button class="btn primary" id="play">&#9654;</button>
           <span class="kbd">space</span> play / pause
           <span class="muted">·</span> <span class="kbd">s</span>
           <span id="which">candidate is audible</span>
-          <span class="muted">·</span> <span class="kbd">b</span>
-          <button class="btn" id="band">band: off</button>
-          <span class="muted">·</span> <span class="kbd">g</span>
-          <span id="snap">snap: 1/3</span>
-          <span class="muted">·</span> <span class="kbd">l</span>
-          <span id="loopstate">loop: on</span>
           <span class="muted">·</span> <span>click a lane to move here:</span>
           <span id="at" style="font-family:var(--mono);color:var(--text)"></span>
           </div></div>
-      <div class="notesbox">
-        <div style="display:flex;align-items:center;gap:10px">
-          <input type="text" id="comment" placeholder="what's wrong at this bar…">
-          ${pills}</div>
-        <div class="filing">
-          <span>filing at</span>
-          <b id="note-at" style="color:var(--text);font-family:var(--mono)"></b>
-          <span>on</span>
-          <select id="instrument">${instruments}</select>
-          <span id="swap-arrow" style="display:none">&rarr;</span>
-          <select id="swap-to" style="display:none">${instruments}</select>
-          <span class="muted">click an instrument row to pick it, or the ruler
-            to move the bar</span>
-          <button class="btn primary" id="save-note"
-                  style="margin-left:auto">Note</button></div>
-        <div id="chips"></div></div>
+      <div class="log" id="log"></div>
       <div class="muted" id="note-flow" style="font-size:12px;margin-top:18px;
-           line-height:1.65">
+           line-height:1.65;max-width:78ch">
         A note on its own changes nothing — it goes in
         <span style="font-family:var(--mono)">qa/review.yaml</span> to be
         decided later. <b style="color:var(--text-dim)">Promote</b> turns the
@@ -1034,25 +1363,71 @@ class ReviewView {
         and the candidate has to be
         <b style="color:var(--text-dim)">re-rendered</b> before you can hear the
         change here.</div>
-      <div style="margin-top:12px;display:flex;gap:10px">
-        <button class="btn primary" id="promote-render"
-          title="promote every confident note, rebuild what that made stale, re-render the candidate, and come back to this section">
-          Promote &rarr; rebuild &rarr; re-render &middot; shift+R</button>
-        <button class="btn" id="promote">Promote confident notes &rarr; song.yaml</button>
-        <button class="btn" id="export">Send section to EZdrummer</button>
-        <button class="btn" id="rebuild">Rebuild · r</button>
-        <button class="btn" id="rerender">Re-render candidate</button></div>
-      <div class="log" id="log"></div>
+      </div><aside class="sidebar">
+        <div id="note-summary"></div>
+        <div class="noteform">
+          <div class="line"><span>new note at</span>
+            <b id="note-at" style="color:var(--text);font-family:var(--mono)"></b>
+            <span class="muted" style="margin-left:auto">click the stack to
+              move it</span></div>
+          <div class="kinds">${pills}</div>
+          <input type="text" id="comment" placeholder="what's wrong at this bar…">
+          <div class="line"><span>on</span>
+            <select id="instrument">${instruments}</select>
+            <span id="swap-arrow" style="display:none">&rarr;</span>
+            <select id="swap-to" style="display:none">${instruments}</select>
+            <button class="btn primary" id="save-note"
+                    style="margin-left:auto">Note</button></div>
+        </div>
+        <div id="chips"></div>
+        <div class="sideacts">
+          <button class="btn primary" id="promote-render"
+            title="promote every confident note, rebuild what that made stale, re-render the candidate, and come back to this section">
+            Promote &rarr; rebuild &rarr; re-render &middot; shift+R</button>
+          <button class="btn" id="promote"
+            title="turn every confident note into drums.additions / removals in song.yaml, and stop there so the git diff can be read">
+            Promote only</button>
+          <button class="btn" id="rebuild">Rebuild · r</button>
+          <button class="btn" id="rerender">Re-render</button>
+          <button class="btn" id="export">To EZdrummer</button></div>
+        <div class="settings">
+          <div class="setrow"><span>band <span class="kbd">b</span></span>
+            <button class="btn" id="band">band: off</button></div>
+          <div class="setrow"><span>zoom <span class="kbd">wheel</span></span>
+            <button class="btn" id="zoom"
+              title="wheel to zoom about the pointer, shift+wheel to pan; click here or 0 to fit the section again. A view only — it never changes what plays or loops">zoom: 1.0×</button></div>
+          <div class="setrow"><span>waveform <span class="kbd">w</span></span>
+            <button class="btn" id="wave"
+              title="how the lanes use their height: boost = dB scale, so a hat 24dB under the kick is half height; fit = normalised and linear; raw = absolute. A drawing scale only — it changes no velocity, no MIDI and no audio">wave: boost</button></div>
+          <div class="setrow"><span>snap grid <span class="kbd">g</span></span>
+            <button class="btn" id="snap"
+              title="the song's own subdivision, then halves and quarters of it — what the playhead lands on and what a note is filed at. alt+click the stack is no snap at all">snap: 1/3</button></div>
+          <div class="setrow"><span>loop <span class="kbd">l</span></span>
+            <button class="btn" id="loopstate">loop: on</button></div>
+        </div>
+      </aside></div>
       <div class="hintstrip">
         <span class="kbd">space</span><span class="kbd">s</span><span class="kbd">b</span>
         <span class="kbd">n</span><span class="kbd">p</span><span class="kbd">m</span>
-        <span class="kbd">x</span><span class="kbd">r</span><span class="muted" style="font-size:11px">? for all</span></div>`;
+        <span class="kbd">x</span><span class="kbd">[</span><span class="kbd">]</span>
+        <span class="kbd">r</span><span class="muted" style="font-size:11px">? for all</span></div>`;
 
     $("#done").addEventListener("click", () => this.toggleDone());
     $("#prev").addEventListener("click", () => this.move(-1));
     $("#next").addEventListener("click", () => this.move(1));
     $("#play").addEventListener("click", () => this.toggle());
+    /* The playhead only. `shift`+`space` is "again, from the top" and *plays*;
+       this is the same rewind with the transport left exactly as it was, which
+       is what you want when the section is already looping. */
+    $("#tostart").addEventListener("click", () => this.seek(0));
     $("#band").addEventListener("click", () => this.toggleBand());
+    $("#zoom").addEventListener("click", () => { this.fit(); this.repaint(); });
+    $("#wave").addEventListener("click", () => this.cycleWave());
+    /* The two settings that used to be keyboard-only readouts. In the settings
+       block they sit next to three buttons, and a readout that looks like its
+       neighbours and does nothing when clicked is a broken button. */
+    $("#snap").addEventListener("click", () => this.cycleSnap());
+    $("#loopstate").addEventListener("click", () => this.toggleLoop());
     app.querySelectorAll(".pill").forEach((el) =>
       el.addEventListener("click", () => this.setKind(el.dataset.kind)));
     $("#save-note").addEventListener("click", () => this.saveNote());
@@ -1073,6 +1448,11 @@ class ReviewView {
        position -- and the grid rows are rebuilt per section, so a listener per
        canvas would have to be re-attached each time. */
     const stack = $("#stack");
+    /* The lane names, on the same delegated handler and for the same reason:
+       they sit inside the stack, and `scrubFrom` ignores them anyway because
+       it wants a canvas -- so a click on a name is a pin and never a seek. */
+    stack.addEventListener("click", (event) => this.pickSide(event));
+    stack.addEventListener("wheel", (event) => this.onWheel(event), {passive: false});
     stack.addEventListener("pointerdown", (event) => this.scrubFrom(event, true));
     stack.addEventListener("pointermove", (event) => this.scrubFrom(event, false));
     stack.addEventListener("contextmenu", (event) => this.openMenu(event));
@@ -1126,12 +1506,20 @@ class ReviewView {
     if (this.bandSource("ref").available) this.refBand.src = section.ref_band_url;
     this.applyMute();
     this._label = "";   // the readouts are change-guarded; this is a new section
+    /* Fitted, every time: `n`/`p` means "now listen to this one", and coming
+       into a fresh section already zoomed 16x into wherever the last one was
+       being picked over hides the thing you came to hear. */
+    this.fit();
+    /* A new section is nothing-pointed-at-yet, so the sidebar lists the whole
+       of it rather than claiming the last section's position is on this one. */
+    this.focus = null;
+    this.noteScope = "at";
     this.buildGridRows(section);
     this.showMakeRef();
     this.repaint();
     this.ensurePeaks(section.cand_url, "cand");
     this.ensurePeaks(section.ref_url, "ref");
-    this.renderChips();
+    this.renderNotes();
   }
 
   /* Everything the eye compares vertically, redrawn from cache in one place.
@@ -1141,9 +1529,14 @@ class ReviewView {
     const section = this.section;
     if (!section) return;
     this.marks = this.beatMarks(section);
+    /* Once for the stack, before either lane is drawn: both of them are
+       scaled by the same number, and it is measured over what is on screen --
+       so zooming into a quiet bar opens it up instead of leaving it flat. */
+    this.waveRef = this.sharedPeak();
     this.paintLane("cand");
     this.paintLane("ref");
     this.drawRuler(section);
+    this.paintNotesLane();
     (this.data.grid[section.name] || []).forEach((row, i) =>
       this.paintGridRow(row, i, section));
     this.updatePlayhead();
@@ -1278,17 +1671,27 @@ class ReviewView {
     const width = context.canvas.width, height = context.canvas.height;
     const top = palette.top || 0;
     const subdivision = this.snapSubdivision();
-    const perBeat = width / this.sectionBeats(section);
+    const perBeat = this.perBeatPixels(width);
     const subs = perBeat / subdivision >= 7 * DPR ? subdivision : 1;
     this.marks.forEach((mark, i) => {
-      const x = mark.frac * width;
+      const x = this.viewX(mark.frac) * width;
+      const next = i + 1 < this.marks.length
+        ? this.viewX(this.marks[i + 1].frac) * width : x;
+      /* Skipped rather than clamped once there is a window: a clamp piles
+         every line left of it on x=0, which reads as a bar line where there
+         is none. The pair either side of the window still draws, so the
+         subdivisions leading into it are not lost. */
+      if (next < -2 || x > width + 2) return;
       if (subs > 1 && i + 1 < this.marks.length) {
-        const next = this.marks[i + 1].frac * width;
         context.fillStyle = palette.sub;
-        for (let k = 1; k < subs; k++)
-          context.fillRect(x + (next - x) * k / subs, top, 1, height - top);
+        for (let k = 1; k < subs; k++) {
+          const sub = x + (next - x) * k / subs;
+          if (sub >= 0 && sub <= width - 1)
+            context.fillRect(sub, top, 1, height - top);
+        }
       }
       const thick = mark.line ? 2 : 1;
+      if (x < 0 || x > width) return;
       context.fillStyle = mark.line ? palette.bar : palette.beat;
       context.fillRect(Math.min(x, width - thick), top, thick, height - top);
     });
@@ -1307,32 +1710,65 @@ class ReviewView {
     if (entry && entry.failed)
       return this.drawNoClip(context, source || {hint: "no clip yet"});
     this.drawBeatGrid(context, section, LANE_GRID);
-    if (!entry || !entry.peaks) return;  // still decoding; repainted when it lands
+    const peaks = entry && this.windowPeaks(entry);
+    if (!peaks) return;  // still decoding; repainted when it lands
     const width = lane.width, height = lane.height;
-    const step = width / entry.peaks.length;
+    /* The buckets describe exactly the visible window, so they still fill the
+       canvas -- the zoom is in what was measured, not in how it is stretched. */
+    const step = width / peaks.length;
     context.fillStyle = "#7d85a3";
-    entry.peaks.forEach((peak, i) => {
-      const bar = Math.max(3, peak * (height - 8));
+    peaks.forEach((peak, i) => {
+      /* 3px is the zero line: silence still reads as a waveform at rest
+         rather than as a gap in the canvas. */
+      const bar = Math.max(3, this.waveFraction(peak, this.waveRef)
+                              * (height - 8));
       context.fillRect(i * step, (height - bar) / 2,
                        Math.max(1, step * 0.7), bar);
     });
   }
 
+  /* The peaks for the window as it is now, re-measured when it moves and
+     cached when it has not. What is cached across a repaint is the DECODED
+     BUFFER -- 12 seconds of audio is the expensive half, and a resize or a
+     playhead frame must never pay for it again. */
+  windowPeaks(entry) {
+    if (!entry.buffer) return entry.peaks;
+    const key = `${this.left.toFixed(6)}:${this.zoom.toFixed(4)}`;
+    if (entry.key !== key) {
+      entry.peaks = peaksOf(entry.buffer, this.left, this.left + this.span());
+      entry.key = key;
+    }
+    return entry.peaks;
+  }
+
   async ensurePeaks(url, side) {
     if (url in this.peakCache) return;
-    this.peakCache[url] = {peaks: null, failed: false};
+    this.peakCache[url] = {peaks: null, buffer: null, failed: false};
     try {
       const response = await fetch(url);
       if (!response.ok) throw new Error();
       const buffer = await new AudioContext().decodeAudioData(
         await response.arrayBuffer());
-      this.peakCache[url] = {peaks: peaksOf(buffer), failed: false};
+      this.peakCache[url] = {peaks: null, buffer: buffer, failed: false};
     } catch (error) {
-      this.peakCache[url] = {peaks: null, failed: true};
+      this.peakCache[url] = {peaks: null, buffer: null, failed: true};
     }
-    /* Only if we are still looking at it: n/p while a clip decodes would
+    /* A full repaint, never `paintLane(side)`. Paolo: *"wave boost shows
+       incorrectly on first load (truncated waveforms). When I cycle fit, raw
+       and boost again, then it shows correctly"*. The gain both lanes are drawn
+       with is measured for the whole stack in `repaint()` -- so a clip that
+       painted its own lane on landing was drawn against the 0 from before
+       anything had decoded, which `waveFraction` floors at `WAVE_FLOOR` and so
+       clamps every peak over 0.05 to the full height of the lane. Cycling the
+       scale calls `repaint()`, which is why that "fixed" it.
+
+       And it is shared, so the *second* clip to land moves the number the first
+       lane was already drawn with: painting one lane could never be right here
+       even with the gain measured first.
+
+       Only if we are still looking at it: n/p while a clip decodes would
        otherwise paint the previous section's waveform over the new one. */
-    if (this.section && this.section[`${side}_url`] === url) this.paintLane(side);
+    if (this.section && this.section[`${side}_url`] === url) this.repaint();
   }
 
   drawNoClip(context, source) {
@@ -1371,7 +1807,7 @@ class ReviewView {
        theme-finale is 48 beats in ~1100px, where a label per beat cannot fit;
        theme-intro-stop is 8, where it easily can. A fixed step is unreadable
        on one and wasteful on the other. */
-    const perBeat = width / this.sectionBeats(section);
+    const perBeat = this.perBeatPixels(width);
     const steps = [1, beats, 2 * beats, 4 * beats, 8 * beats];
     const step = steps.find((n) => perBeat * n >= widest * 1.5)
                  || steps[steps.length - 1];
@@ -1383,7 +1819,8 @@ class ReviewView {
         ? true
         : mark.line && (mark.bar - firstLine) % (step / beats) === 0);
       if (!keep) return;
-      const x = mark.frac * width;
+      const x = this.viewX(mark.frac) * width;
+      if (x < 0) return;   // left of the window; its label belongs off screen
       if (x - lastX < widest * 1.2) return;
       if (x > width - widest * 0.7) return;  // no half-drawn label at the edge
       context.fillText(label(mark), x + 4, canvas.height - 6);
@@ -1413,11 +1850,177 @@ class ReviewView {
     row.ticks.forEach((tick) => {
       const frac = this.fracFor(section, tick.bar, tick.beat);
       if (frac < -0.001 || frac > 1.001) return;
+      /* Outside the window it is not drawn at all. Clamping it to the edge --
+         which is what the fitted view did, to keep a hit on the last beat from
+         being half cut off -- would stack every hit before the window against
+         the left border and invent a flam at zoom 8. */
+      const at = this.viewX(frac);
+      if (at < -0.002 || at > 1.002) return;
       const bar = 10 + (tick.velocity / 127) * (height - 18);
       // Centred on its own grid line, which is the alignment this is all for.
-      const x = Math.min(Math.max(frac * width - 2, 0), width - 4);
+      const x = Math.min(Math.max(at * width - 2, 0), width - 4);
       context.fillRect(x, (height - bar) / 2, 4, bar);
     });
+  }
+
+  /* ── the notes lane ───────────────────────────────────
+     Paolo: *"add a row in the instruments grid that shows a "dot" in the
+     timeline where there is a note ... the dots could have different colours to
+     distinguish promoted and not promoted"*. Before this a note had no position
+     on screen at all: the ledger was a list under the stack, so "which of these
+     eleven is the one I am hearing" was answered by reading bar numbers off it.
+
+     A row of the same stack, drawn from the same window through the same
+     `viewX` as every other row -- a dot that does not sit under the transient
+     it is about is worse than no dot. */
+  paintNotesLane() {
+    const canvas = $("#notes-canvas"), section = this.section;
+    if (!canvas || !section) return;
+    const context = this.sizeCanvas(canvas);
+    this.drawBeatGrid(context, section, ROW_GRID);
+    const width = canvas.width, height = canvas.height;
+    const radius = 5 * DPR;
+    const focus = this.focus;
+    this.noteMarks(section).forEach((mark) => {
+      const at = this.viewX(mark.frac);
+      if (at < -0.002 || at > 1.002) return;
+      const x = Math.min(Math.max(at * width, radius + 1), width - radius - 1);
+      const y = height / 2;
+      const colour = NOTE_DOT[mark.status] || NOTE_DOT.open;
+      /* The one the sidebar is about wears a ring, so "where am I in the
+         ledger" is answered on the timeline rather than only in the list. */
+      if (focus && mark.bar === focus.bar
+          && Math.abs(mark.beat - focus.beat) < 1e-6) {
+        context.beginPath();
+        context.arc(x, y, radius + 3, 0, Math.PI * 2);
+        context.strokeStyle = "#e7e9ec";
+        context.lineWidth = 1.5 * DPR;
+        context.stroke();
+      }
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      /* A dismissed note is hollow: it is on record and needs nobody, so it
+         should read as a mark rather than as a thing to go and look at. */
+      if (mark.status === "dismissed") {
+        context.strokeStyle = colour;
+        context.lineWidth = 1.5 * DPR;
+        context.stroke();
+      } else {
+        context.fillStyle = colour;
+        context.fill();
+      }
+      /* More than one note about the same hit is one dot -- two dots at one x
+         is one dot drawn twice -- so the count goes beside it, or the sidebar
+         would show two notes for something the lane called one. */
+      if (mark.count > 1) {
+        context.fillStyle = colour;
+        context.font = `${8.5 * DPR}px ui-monospace`;
+        context.fillText(String(mark.count), x + radius + 2 * DPR, y + 3 * DPR);
+      }
+    });
+  }
+
+  /* Every noted position in the section, one entry per position and in order.
+     Pure, so node checks it: what the lane draws and what the sidebar lists
+     both come from here, and they must not be able to disagree. */
+  noteMarks(section) {
+    const groups = new Map();
+    (this.data.notes || [])
+      .filter((note) => this.inSection(note, section))
+      .forEach((note) => {
+        const beat = Number(note.beat || 1);
+        const key = `${note.bar}:${beat.toFixed(3)}`;
+        if (!groups.has(key))
+          groups.set(key, {bar: note.bar, beat: beat, notes: [],
+                           frac: this.fracFor(section, note.bar, beat)});
+        groups.get(key).notes.push(note);
+      });
+    return [...groups.values()].sort((a, b) => a.frac - b.frac).map((group) => {
+      const statuses = group.notes.map((note) => note.status || "open");
+      return Object.assign({}, group, {
+        count: group.notes.length,
+        status: NOTE_DOT_ORDER.find((one) => statuses.includes(one)) || "open",
+      });
+    });
+  }
+
+  /* The dot nearest a point on the lane, in VIEW fractions -- the space the
+     dots are actually drawn in, which is what keeps the hit test honest at
+     zoom 16 where a beat is 60px wide. *tolerance* is the click radius in the
+     same units, so the caller converts pixels once. */
+  markNear(viewFraction, tolerance) {
+    let best = null, distance = Infinity;
+    this.noteMarks(this.section).forEach((mark) => {
+      const gap = Math.abs(this.viewX(mark.frac) - viewFraction);
+      if (gap <= tolerance && gap < distance) { distance = gap; best = mark; }
+    });
+    return best;
+  }
+  /* The next dot in *direction* from a position in the section, or null at
+     either end -- `[` and `]`. Never wraps: a step that came back round to the
+     first note would read as "there are no more", which is a different fact. */
+  nextMark(direction, from) {
+    const marks = this.noteMarks(this.section);
+    return (direction < 0
+      ? marks.slice().reverse().find((mark) => mark.frac < from - 1e-6)
+      : marks.find((mark) => mark.frac > from + 1e-6)) || null;
+  }
+  /* Point the sidebar at a position. Never seeks: the caller decides whether
+     the ear moves too, because filing a note points the sidebar at what was
+     just written without dragging the playhead off where it is playing. */
+  focusAt(bar, beat) {
+    this.focus = {bar: bar, beat: Number(beat || 1)};
+    this.noteScope = "at";
+    return this.focus;
+  }
+  focusLabel() {
+    return this.focus ? this.reaperAt(this.focus.bar, this.focus.beat) : "—";
+  }
+  /* The notes the sidebar shows: the ones at the focus, within half a step of
+     the grid in force -- the same window `hitNear` uses to decide whether the
+     right-click menu is on a hit, for the same reason. A dot click sets the
+     focus to a note's own beat, so a note filed at a finer snap is still
+     reachable however coarse the grid has since become. */
+  focusNotes() {
+    const section = this.section;
+    if (!this.focus || !section) return [];
+    const window = 0.5 / this.snapSubdivision();
+    return (this.data.notes || []).filter((note) =>
+      this.inSection(note, section) && note.bar === this.focus.bar
+      && Math.abs(Number(note.beat || 1) - this.focus.beat) < window);
+  }
+  /* What the summary says. Both scopes: "is this section done" and "is this
+     song done" are different questions, and the second is what a promote pass
+     is about. *Open* is what is still undecided; a dismissed note is not
+     promoted either, but it has had its decision. */
+  noteCounts() {
+    const all = this.data.notes || [];
+    const here = this.section
+      ? all.filter((note) => this.inSection(note, this.section)) : [];
+    const count = (list, status) =>
+      list.filter((note) => (note.status || "open") === status).length;
+    return {
+      here: here.length, hereOpen: count(here, "open"),
+      herePromoted: count(here, "promoted"),
+      hereDismissed: count(here, "dismissed"),
+      song: all.length, songOpen: count(all, "open"),
+    };
+  }
+  /* `[` / `]`: put the playhead on the previous / next dot and bring it up on
+     the right. The other half of *"difficult to locate a note related to a
+     particular point"* -- the lane says where they are, this is how you get on
+     one without aiming at a 10px target. */
+  stepNote(direction) {
+    const from = this.focus
+      ? this.fracFor(this.section, this.focus.bar, this.focus.beat)
+      : this.fraction();
+    const mark = this.nextMark(direction, from);
+    if (!mark) return this.say(direction < 0
+      ? "no note before this one in the section"
+      : "no note after this one in the section");
+    this.focusAt(mark.bar, mark.beat);
+    this.seek(mark.frac);
+    this.renderNotes();
   }
 
   /* ── the playhead ─────────────────────────────────
@@ -1441,7 +2044,22 @@ class ReviewView {
   updatePlayhead() {
     const line = $("#playhead"), lane = $("#lane-cand canvas");
     if (!line || !lane) return;
-    const x = this.fraction() * lane.clientWidth;
+    const fraction = this.fraction();
+    /* Page the window along while it is running, and only then: a scrub or a
+       nudge is the reviewer looking somewhere on purpose, and having the view
+       jump after the pointer is how a zoomed screen becomes unusable. The
+       nested repaint calls back in here, finds the playhead in view and stops
+       -- one level, not a loop. */
+    if (this.playing && !this._following && this.followTo(fraction)) {
+      this._following = true;
+      this.repaint();
+      this._following = false;
+      return;
+    }
+    const across = this.viewX(fraction);
+    // Hidden rather than drawn outside its own stack.
+    line.style.opacity = across < -0.002 || across > 1.002 ? 0 : "";
+    const x = Math.min(1, Math.max(0, across)) * lane.clientWidth;
     line.style.transform = `translateX(${x.toFixed(2)}px)`;
     // Only on a change: this runs every frame while playing.
     const at = $("#at"), label = this.playheadLabel();
@@ -1485,13 +2103,54 @@ class ReviewView {
          following the pointer instead of stopping at the edge. */
       if (canvas.setPointerCapture) canvas.setPointerCapture(event.pointerId);
     }
-    const box = canvas.getBoundingClientRect();
-    // The border is outside the content box `clientWidth` measures.
-    const inset = (box.width - canvas.clientWidth) / 2;
-    const at = (event.clientX - box.left - inset) / (canvas.clientWidth || 1);
-    this.seek(event.altKey ? Math.min(1, Math.max(0, at))
-                           : this.snapFraction(at));
+    /* Through the window: `at` is where the pointer is on the canvas, and the
+       position it means is `sectionAt` of that. Everything downstream --
+       snapping, the seek, the bar a note is filed at -- is in section
+       fractions and does not know the view is zoomed. */
+    const across = this.canvasFraction(event, canvas);
+    /* A dot on the notes lane wins over the grid: it is a 10px target that
+       stands for a note filed at whatever snap was in force then, so landing on
+       the nearest 1/3 instead would point the sidebar at an empty position next
+       to it. The tolerance is the dot's own radius, in view fractions, which is
+       what keeps it a dot-sized target at every zoom. */
+    if (canvas.id === "notes-canvas" && !event.altKey) {
+      const mark = this.markNear(across, 9 / (canvas.clientWidth || 1));
+      if (mark) {
+        this.seek(mark.frac);
+        this.pointAt(mark.bar, mark.beat);
+        return;
+      }
+    }
+    const at = this.sectionAt(across);
+    const to = event.altKey ? Math.min(1, Math.max(0, at))
+                            : this.snapFraction(at);
+    this.seek(to);
+    /* Placing the playhead is the gesture that means "look here", so it is
+       what points the sidebar -- not the playhead itself, which moves every
+       frame while a section loops. */
+    const where = this.positionAt(Math.min(to, 0.999999));
+    const subdivision = this.snapSubdivision();
+    this.pointAt(where.bar,
+      Math.round((where.beat - 1) * subdivision) / subdivision + 1);
     if (start) this.pickInstrument(canvas);
+  }
+
+  /* Point the sidebar at a position and redraw it only if that moved it. A
+     drag is a hundred `pointermove` events; rebuilding the note list on each
+     one would flicker the panel the drag is aiming at. */
+  pointAt(bar, beat) {
+    const before = `${this.focusLabel()}/${this.noteScope}`;
+    this.focusAt(bar, beat);
+    if (`${this.focusLabel()}/${this.noteScope}` !== before) this.renderNotes();
+  }
+
+  /* Where the pointer is across a canvas, 0..1. One place, because the border
+     is outside the content box `clientWidth` measures and getting that inset
+     wrong is a two-pixel error in every position filed from a click. */
+  canvasFraction(event, canvas) {
+    const box = canvas.getBoundingClientRect();
+    const inset = (box.width - canvas.clientWidth) / 2;
+    return (event.clientX - box.left - inset) / (canvas.clientWidth || 1);
   }
 
   /* Clicking an instrument row means "here, this instrument": the row is
@@ -1529,6 +2188,22 @@ class ReviewView {
     if (readout) readout.textContent =
       `snap: 1/${this.snapSubdivision()}`;
     this.repaint();
+    /* The window `focusNotes` reads is half a step of this grid, so dividing
+       it narrows what the sidebar is showing -- which has to be visible. */
+    this.renderNotes();
+  }
+  /* Loop was a keyboard-only readout; in the settings block it sits next to
+     four buttons, so it is one -- and both doors go through here. */
+  toggleLoop() {
+    this.loop = !this.loop;
+    this.showLoop();
+  }
+  showLoop() {
+    const readout = $("#loopstate");
+    /* No accent when it is on: loop defaults to on and stays there for most of
+       a pass, so a lit button would be permanent decoration rather than a
+       signal. The word says which way it is. */
+    if (readout) readout.textContent = "loop: " + (this.loop ? "on" : "off");
   }
   snapFraction(fraction) {
     const subdivision = this.snapSubdivision();
@@ -1645,19 +2320,37 @@ class ReviewView {
     log.style.display = "block";
     log.textContent = message;
   }
-  switchSide() {
+  /* Name the side you want to hear. Clicking a lane's own name is this, and
+     `s` is this applied to the other one -- so there is one path to "what is
+     audible" and a click on the name of the side already playing cannot swap
+     it out from under the ear, which a toggle would.
+
+     Like every other switch here it is a mute: the band layer is untouched
+     (`audible()` re-reads it, so the bed follows to the new side by itself)
+     and nothing is paused or restarted. */
+  selectSide(side) {
+    if (side !== "cand" && side !== "ref") return;
+    if (side === this.active) return;
     /* keep the musical position: scale by relative duration, since the
        reference clip breathes and is not the same length. Every element
        moves, so the bed under the side being switched to is already where
        the ear is. */
     const from = this.active === "cand" ? this.cand : this.ref;
     const fraction = from.duration ? from.currentTime / from.duration : 0;
-    this.active = this.active === "cand" ? "ref" : "cand";
+    this.active = side;
     for (const element of Object.values(this.tracks()))
       if (element.duration)
         element.currentTime = Math.max(
           0, Math.min(fraction * element.duration, element.duration - 0.01));
     this.applyMute();
+  }
+  switchSide() {
+    this.selectSide(this.active === "cand" ? "ref" : "cand");
+  }
+  pickSide(event) {
+    const label = event.target.closest && event.target.closest("b[data-side]");
+    if (!label) return;
+    this.selectSide(label.dataset.side);
   }
   toggle() { this.playing ? this.pause() : this.play(); }
   /* Shift+space: "again, from the top", which is most of what a review pass
@@ -1705,6 +2398,10 @@ class ReviewView {
       ? lines.slice().reverse().find((mark) => mark.frac < here - 0.002)
       : lines.find((mark) => mark.frac > here + 0.002);
     this.seek(target ? target.frac : (direction < 0 ? 0 : 1));
+    /* A nudge is a deliberate placement like a click, so the sidebar follows
+       it: stepping bar by bar looking for the thing you heard is exactly when
+       "what is filed here" wants answering. */
+    if (target) this.pointAt(target.bar, target.beat);
   }
   playheadBar() { return this.positionAt(Math.min(this.fraction(), 0.999999)).bar; }
   playheadBeat() {
@@ -1769,9 +2466,7 @@ class ReviewView {
        not about a hit, and the browser's own menu is more use there. */
     if (!row || !canvas.dataset.row) return;
     event.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const inset = (rect.width - canvas.clientWidth) / 2;
-    const at = (event.clientX - rect.left - inset) / (canvas.clientWidth || 1);
+    const at = this.sectionAt(this.canvasFraction(event, canvas));
     const model = this.menuModel(Number(canvas.dataset.row),
                                  Math.min(1, Math.max(0, at)));
     if (!model) return;
@@ -1843,7 +2538,9 @@ class ReviewView {
       });
       const added = result.notes.length !== before;
       this.data.notes = result.notes;
-      this.renderChips();
+      // Same as the panel: the sidebar comes up on what was just filed.
+      this.focusAt(model.bar, model.beat);
+      this.renderNotes();
       this.say(added
         ? `filed ${kind} on ${model.instrument} at ${model.reaper}`
         : `already noted: ${kind} on ${model.instrument} at ${model.reaper}`);
@@ -1862,10 +2559,61 @@ class ReviewView {
     const at = this.fracFor(section, note.bar, note.beat || 1);
     return at >= 0 && at < 1;
   }
+  /* The list and the lane are one act: a note in the sidebar has to be a dot on
+     the timeline, or the two disagree about the same ledger. Everything that
+     changes `this.data.notes` calls this, and nothing calls one half of it. */
+  renderNotes() {
+    this.renderChips();
+    this.paintNotesLane();
+  }
+  /* Which notes the list is showing. At the focus when there is one, because
+     that is the whole point -- *"only notes in at the playhead are shown, not
+     the whole list"* -- and the whole section otherwise, which is where a
+     section arrives before anything has been pointed at. */
+  listedNotes() {
+    const section = this.section;
+    if (!section) return [];
+    if (this.noteScope === "at" && this.focus) return this.focusNotes();
+    return (this.data.notes || []).filter(
+      (note) => this.inSection(note, section));
+  }
   renderChips() {
     const section = this.section;
-    const chips = this.data.notes
-      .filter((note) => this.inSection(note, section))
+    /* Guarded like every other DOM writer in this class: `cycleSnap` reaches
+       here now, and the transport and the grid arithmetic are both exercised in
+       node with no document at all. */
+    if (!section || !$("#chips")) return;
+    const counts = this.noteCounts();
+    const narrowed = this.noteScope === "at" && !!this.focus;
+    const summary = $("#note-summary");
+    if (summary) summary.innerHTML = `
+      <div class="notesum"><b>${counts.here}</b> here
+        <span class="n-open">${counts.hereOpen} open</span>
+        <span class="n-promoted">${counts.herePromoted} promoted</span>
+        ${counts.hereDismissed
+          ? `<span>${counts.hereDismissed} dismissed</span>` : ""}
+        <span class="scope">${counts.song} in song</span></div>
+      <div class="notesum">showing
+        <b>${narrowed ? `at ${esc(this.focusLabel())}` : "whole section"}</b>
+        <span class="scope"><button class="act" id="scope"
+          ${narrowed || this.focus ? "" : "disabled"}
+          title="${narrowed
+            ? "list every note in this section"
+            : "list only the notes at the position the dots are pointing at"}"
+          >${narrowed ? "show all" : "at the playhead"}</button></span></div>`;
+    const scope = $("#scope");
+    if (scope) scope.addEventListener("click", () => {
+      this.noteScope = this.noteScope === "at" ? "all" : "at";
+      this.renderNotes();
+    });
+    /* The lane's own label carries the count, so the row says what it is even
+       when the section has nothing on it. */
+    const laneCount = $("#lane-count");
+    if (laneCount) laneCount.textContent = counts.here ? String(counts.here) : "—";
+    const window = 0.5 / this.snapSubdivision();
+    const atFocus = (note) => !!this.focus && note.bar === this.focus.bar
+      && Math.abs(Number(note.beat || 1) - this.focus.beat) < window;
+    const chips = this.listedNotes()
       .map((note) => {
         /* `open` gets no badge: it is the default and every note starts there,
            so printing it on every row was a word that said nothing -- and read
@@ -1887,24 +2635,45 @@ class ReviewView {
             >${note.status === "dismissed" ? "reopen" : "dismiss"}</button>
           <button class="act drop" data-key="${esc(note.key)}" data-drop
             title="remove this note from the ledger">&times;</button>`;
-        return `<div class="note ${esc(note.status)}">
-          <span class="at">${this.chipPosition(note)}</span>
-          <span class="kind">${esc(note.kind)}</span>
-          <span class="inst ${note.instrument ? "" : "none"}"
-            >${esc(note.swap_to
-                   ? `${note.instrument || "?"} → ${note.swap_to}`
-                   : (note.instrument || "unnamed"))}</span>
-          <span class="said">${esc(note.comment || "")}</span>
-          ${badge}<span class="acts">${acts}</span></div>`;
+        /* Two lines: what the note is, then what somebody said about it. The
+           six-column row this replaced was page-wide; in a 372px sidebar every
+           column would be three characters. */
+        return `<div class="note ${esc(note.status)}${
+              atFocus(note) ? " here" : ""}">
+          <div class="top">
+            <span class="at" data-bar="${note.bar}"
+              data-beat="${Number(note.beat || 1)}"
+              title="put the playhead here">${this.chipPosition(note)}</span>
+            <span class="kind">${esc(note.kind)}</span>
+            ${badge}<span class="acts">${acts}</span></div>
+          <div class="bot">
+            <span class="inst ${note.instrument ? "" : "none"}"
+              >${esc(note.swap_to
+                     ? `${note.instrument || "?"} → ${note.swap_to}`
+                     : (note.instrument || "unnamed"))}</span>
+            <span class="said" title="${esc(note.comment || "")}"
+              >${esc(note.comment || "")}</span></div></div>`;
       }).join("");
     $("#chips").innerHTML = chips
       ? `<div class="notelist">${chips}</div>`
-      : `<div class="muted" style="font-size:12px;margin-top:10px">no notes on this section yet</div>`;
+      : `<div class="muted" style="font-size:12px">${narrowed
+          ? `nothing filed at ${esc(this.focusLabel())} — the form above files`
+            + ` a new one there`
+          : "no notes on this section yet"}</div>`;
     $("#chips").querySelectorAll(".act").forEach((el) =>
       el.addEventListener("click", () => {
         if (el.dataset.demote !== undefined) return this.demote(el.dataset.key);
         if (el.dataset.drop !== undefined) return this.dropNote(el.dataset.key);
         this.restatus(el.dataset.key, el.dataset.status);
+      }));
+    /* A row's position is a way to get to it: the same act as clicking its dot,
+       for the whole-section list where there is no dot under the pointer. */
+    $("#chips").querySelectorAll(".at").forEach((el) =>
+      el.addEventListener("click", () => {
+        const mark = this.focusAt(Number(el.dataset.bar),
+                                 Number(el.dataset.beat));
+        this.seek(this.fracFor(this.section, mark.bar, mark.beat));
+        this.renderNotes();
       }));
   }
 
@@ -1931,7 +2700,7 @@ class ReviewView {
     try {
       const result = await api(endpoint, Object.assign({song: this.slug}, payload));
       this.data.notes = result.notes;
-      this.renderChips();
+      this.renderNotes();
     } catch (error) { showProblem(error.message, true); }
   }
 
@@ -1961,7 +2730,11 @@ class ReviewView {
       this.data.notes = result.notes;
       $("#comment").value = "";
       $("#comment").blur();
-      this.renderChips();
+      /* The note you just filed is the one you want to look at -- and if the
+         filing was a de-dupe, the note it merged into is at that same position.
+         Either way the sidebar has to be about it. */
+      this.focusAt(payload.bar, payload.beat);
+      this.renderNotes();
       /* De-duping is silent by request -- but silence and an invisible chip
          read the same as a refusal, which is exactly how the section-boundary
          bug above was met. One line, naming the position, in the log this
@@ -1975,7 +2748,7 @@ class ReviewView {
     try {
       const result = await api("/api/note/demote", {song: this.slug, key: key});
       this.data.notes = result.notes;
-      this.renderChips();
+      this.renderNotes();
       /* The rebuilt MIDI still has the edit in it until `drums restore` runs
          again, which is the same thing promote has to say. */
       this.say(`demoted — ${result.removed} edit(s) out of song.yaml. `
@@ -2011,7 +2784,7 @@ class ReviewView {
       log.textContent = `promoted ${result.promoted} (${result.skipped} left ` +
         `for your ears) — read the git diff, then rebuild (r)`;
       this.data.notes = result.notes;
-      this.renderChips();
+      this.renderNotes();
     } catch (error) { log.textContent = "error: " + error.message; }
   }
   /* Promote, rebuild, and then *this*, which is the step that was missing:
@@ -2024,11 +2797,17 @@ class ReviewView {
     const box = $("#candidate-warning");
     if (!box) return;
     if (!state.exists || state.fresh) { box.innerHTML = ""; return; }
+    /* Which button, from what is actually behind. A candidate older than its
+       MIDI needs a re-render; a candidate whose MIDI is itself stale against
+       song.yaml needs the REBUILD first, and offering "re-render" there would
+       produce the same audio from the same stale part and look like a fix. */
+    const rebuilding = state.action === "rebuild";
     box.innerHTML = `<div class="legend" style="border-color:rgba(234,162,62,.4)">
       <span style="color:var(--amber)">${esc(state.why)}</span>
-      <button class="btn amber" id="rerender-now"
-        style="margin-left:auto">Re-render candidate</button></div>`;
-    $("#rerender-now").addEventListener("click", () => this.rerender());
+      <button class="btn amber" id="fix-candidate" style="margin-left:auto"
+        >${rebuilding ? "Rebuild · r" : "Re-render candidate"}</button></div>`;
+    $("#fix-candidate").addEventListener("click",
+      () => rebuilding ? this.rebuild() : this.rerender());
   }
 
   async rerender() {
@@ -2134,15 +2913,26 @@ document.addEventListener("keydown", (event) => {
   else if (event.key === "b") view.toggleBand();
   else if (event.key === "D") view.toggleDone();
   else if (event.key === "g") view.cycleSnap();
+  else if (event.key === "w") view.cycleWave();
+  /* The wheel is the gesture; these are for a trackpad and for saying where
+     you are. `0` is "fit", which is also what clicking the readout does. */
+  else if (event.key === "0") { view.fit(); view.repaint(); }
+  else if (event.key === "=" || event.key === "+") {
+    if (view.zoomBy(ZOOM_STEP, 0.5)) view.repaint();
+  }
+  else if (event.key === "-" || event.key === "_") {
+    if (view.zoomBy(1 / ZOOM_STEP, 0.5)) view.repaint();
+  }
   else if (event.key === "R") view.promoteRender();
   else if (event.key === "n") view.move(1);
   else if (event.key === "p") view.move(-1);
   else if (event.key === ",") view.nudgeBar(-1);
   else if (event.key === ".") view.nudgeBar(1);
-  else if (event.key === "l") {
-    view.loop = !view.loop;
-    $("#loopstate").textContent = "loop: " + (view.loop ? "on" : "off");
-  }
+  /* Between the dots on the notes lane. Bracket keys because they are next to
+     each other and free: `,`/`.` already step bars and `n`/`p` sections. */
+  else if (event.key === "[") view.stepNote(-1);
+  else if (event.key === "]") view.stepNote(1);
+  else if (event.key === "l") view.toggleLoop();
   else if (event.key === "m") { event.preventDefault(); view.quickNote("missing-hit"); }
   else if (event.key === "x") { event.preventDefault(); view.quickNote("extra-hit"); }
 });

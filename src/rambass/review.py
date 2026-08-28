@@ -1084,15 +1084,69 @@ def candidate_state(song) -> dict:
     candidate = song.path("qa", "candidate.wav")
     midi = song.best_drum_midi()
     state = {"exists": candidate.is_file(), "fresh": False, "why": "",
+             "action": "render",
              "command": f"rambass review render {song.slug}"}
     if not state["exists"] or not midi.exists():
         return state
-    if candidate.stat().st_mtime >= midi.stat().st_mtime:
-        state["fresh"] = True
+    if candidate.stat().st_mtime < midi.stat().st_mtime:
+        state["why"] = (f"{midi.name} is newer than the rendered candidate, so "
+                        f"the A/B is playing the part from before it was "
+                        f"rebuilt")
         return state
-    state["why"] = (f"{midi.name} is newer than the rendered candidate, so the "
-                    f"A/B is playing the part from before it was rebuilt")
+    behind = midi_behind_manifest(song, midi)
+    if behind:
+        # Rendering again would produce the same audio from the same stale part,
+        # so the button has to run the rebuild rather than the render.
+        state["why"] = behind.why
+        state["action"] = "rebuild"
+        state["command"] = behind.command
+        return state
+    state["fresh"] = True
     return state
+
+
+def midi_behind_manifest(song, midi):
+    """The staleness of the drum MIDI this screen draws and renders from.
+
+    The second half of the same lie, and the one that is invisible: a candidate
+    newer than its MIDI is not current if the *MIDI* is behind ``song.yaml``.
+    Paolo, on Manlio: *"I have added hihat_open at 58.4.5 and I can see it in
+    the instrument grid, however, when I play the candidate that hit is not
+    played. There are no warnings about stale content"*. Promote a note and
+    re-render without rebuilding and every mtime is in the right order while
+    neither file has the addition in it — the grid draws the old part, the
+    audio plays the old part, and the screen says the loop is closed.
+
+    ``rambass stale`` has always known (the restore step watches
+    ``drums/additions``); this asks it the same question, for the one artifact
+    the review screen is about. Only ``stale`` counts — including a cascade,
+    which is the point. **Not** ``edited``: a hand-drawn MIDI is intentional and
+    a candidate rendered from it is exactly right, so telling somebody to
+    rebuild would offer to discard the edit. Not ``missing`` or ``unknown``
+    either, for the reason :func:`~rambass.provenance.stale_report` does not
+    cascade those: they are not evidence that this audio is out of date.
+    """
+    from pathlib import Path
+
+    from .provenance import stale_report
+
+    for entry in stale_report(song):
+        if Path(entry.artifact).name != midi.name or entry.state != "stale":
+            continue
+        return _Behind(
+            why=(f"{entry.artifact} is stale ({'; '.join(entry.reasons)}), so "
+                 f"the grid and the candidate are both the part from before "
+                 f"that — rebuild first, then re-render"),
+            command=entry.command)
+    return None
+
+
+@dataclass
+class _Behind:
+    """Why the MIDI is behind, and the command that catches it up."""
+
+    why: str
+    command: str
 
 
 def note_key(note: Note) -> str:
