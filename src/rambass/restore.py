@@ -36,6 +36,87 @@ _HANDS = (
 )
 
 
+def revoice_sections(
+    performance: DrumPerformance,
+    sections,
+    *,
+    end_bar: int,
+) -> tuple[DrumPerformance, dict]:
+    """Apply each section's declared ``voicing`` map: played drum → wanted drum.
+
+    Paolo, on Manlio's finale: *"in theme finale move all hihat_open to a
+    ride"* — a ride bell. 66 hits, all of them transcribed, and the mechanism
+    that existed was a ``swap-hit`` note per hit promoting to 66 removals and 66
+    additions. The decision is one statement about the section, so it is written
+    once: ``sections[].voicing: {hihat_open: ride_bell}``. Positions do not
+    survive a re-transcription that moves a hit by a triplet; a named instrument
+    does.
+
+    **The velocities are kept, and that is the opposite of what a single swap
+    does — deliberately.** ``apply_edits`` re-derives a swapped hit's velocity
+    from the target instrument's own median, because one hit has no shape to
+    preserve and the number it carries means "loud for a hi-hat"
+    (:func:`voice_backbeats` has the measurement). A section-wide re-voicing has
+    a whole figure in it — Manlio's finale runs 111, 96, 106, 82, 83, 84, 84,
+    77, 89, 89, 90, which is the accent pattern of the part — and flattening
+    that to one number would delete the part while renaming it. This is a
+    **retarget**, which is free exactly because the data is carried as
+    instrument names (CLAUDE.md). How loud the new drum sounds is a kit
+    decision, the same as it is for the declared backbeat.
+
+    *end_bar* is exclusive and bounds the last section, for the same reason
+    :func:`voice_backbeats` takes it: a section list says where each part starts
+    and nothing about where the last one stops. On these recordings the file
+    runs past the music, so an unbounded last section would re-voice a sung note
+    after the band has stopped.
+
+    A mapping whose source instrument is not in the section renames nothing and
+    is not an error: a declaration is allowed to describe what the part should
+    be and be ahead of the transcription.
+
+    Returns (performance, report) with ``renamed`` and a per-section breakdown.
+    """
+    timeline = performance.timeline
+    ordered = sorted(sections, key=lambda s: (s.bar, getattr(s, "beat", 1.0)))
+    report: dict = {"renamed": 0, "sections": []}
+    if not ordered or not performance.hits:
+        return performance, report
+
+    hits = list(performance.hits)
+    rename: dict[int, str] = {}
+    for index, section in enumerate(ordered):
+        voicing = {played: wanted for played, wanted
+                   in (getattr(section, "voicing", None) or {}).items()
+                   if played != wanted}
+        if not voicing:
+            continue
+        start = timeline.bar_beat_to_seconds(
+            section.bar, getattr(section, "beat", 1.0))
+        if index + 1 < len(ordered):
+            following = ordered[index + 1]
+            stop = timeline.bar_beat_to_seconds(
+                following.bar, getattr(following, "beat", 1.0))
+        else:
+            stop = timeline.bar_beat_to_seconds(end_bar, 1.0)
+        entry = {"name": section.name, "voicing": dict(voicing), "renamed": 0}
+        for i, hit in enumerate(hits):
+            if not (start - 1e-9 <= hit.time < stop - 1e-9):
+                continue
+            wanted = voicing.get(hit.instrument)
+            if not wanted:
+                continue
+            rename[i] = wanted
+            entry["renamed"] += 1
+        report["renamed"] += entry["renamed"]
+        report["sections"].append(entry)
+
+    if not rename:
+        return performance, report
+    out = [replace(hit, instrument=rename[i]) if i in rename else hit
+           for i, hit in enumerate(hits)]
+    return DrumPerformance(out, timeline, performance.name), report
+
+
 def voice_backbeats(
     performance: DrumPerformance,
     sections,

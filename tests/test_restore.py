@@ -275,3 +275,155 @@ def test_something_already_in_the_manifest_is_not_proposed_twice():
     proposed, skipped = propose_additions(
         items, existing=[Addition(bar=32, beat=3.0, instrument="crash")])
     assert proposed == [] and skipped == 1
+
+
+# ── `drums restore` applies a section's declared voicing ─────────────────────
+#
+# Stage 7 and not `drums clean`, unlike the declared *backbeat*. The backbeat has
+# to be voiced before quantise so the right stroke gets snapped and before
+# consolidate so the section's vote sees a consistent one. A re-voicing moves no
+# hit and changes no vote -- it renames -- so forcing a re-quantise and a
+# re-consolidate for it would spend minutes to reach the same positions. It is a
+# hand decision about a section, which is what this stage is.
+
+
+def _cwd(project, monkeypatch):
+    monkeypatch.chdir(project.root)
+    return project
+
+
+def test_drums_restore_applies_a_section_voicing(project, monkeypatch, capsys):
+    from rambass.cli import main
+    from rambass.manifest import load_song
+    from rambass.midiio import DrumPerformance, Hit, read_drum_midi, write_drum_midi
+
+    monkeypatch.chdir(project.root)
+    song = load_song(_seeded(project))
+    timeline = song.timeline()
+    write_drum_midi(
+        song.drum_midi_path("consolidated"),
+        DrumPerformance([
+            Hit("hihat_open", timeline.bar_beat_to_seconds(3, 1.0), 111),
+            Hit("hihat_open", timeline.bar_beat_to_seconds(3, 3.0), 82),
+            Hit("hihat_open", timeline.bar_beat_to_seconds(1, 1.0), 90),
+            Hit("kick", timeline.bar_beat_to_seconds(3, 2.0), 100),
+        ], timeline))
+
+    assert main(["drums", "restore", song.slug]) == 0
+    out = capsys.readouterr().out
+    assert "finale" in out and "ride_bell" in out, out
+
+    again = read_drum_midi(song.drum_midi_path("restored"),
+                           _map(project, song))
+    at = {round(hit.time, 4): hit.instrument for hit in again.hits}
+    assert at[round(timeline.bar_beat_to_seconds(3, 1.0), 4)] == "ride_bell"
+    assert at[round(timeline.bar_beat_to_seconds(3, 3.0), 4)] == "ride_bell"
+    # Before the section, untouched.
+    assert at[round(timeline.bar_beat_to_seconds(1, 1.0), 4)] == "hihat_open"
+    # The velocities of the figure survive the rename.
+    assert sorted(hit.velocity for hit in again.hits
+                  if hit.instrument == "ride_bell") == [82, 111]
+
+
+def test_a_song_with_only_a_voicing_is_not_skipped(project, monkeypatch, capsys):
+    """The guard used to be "no additions and no removals, nothing to do". A
+    section voicing is a third kind of declared edit and has to keep the command
+    from bailing before it applies one."""
+    from rambass.cli import main
+    from rambass.manifest import load_song
+    from rambass.midiio import DrumPerformance, Hit, write_drum_midi
+
+    monkeypatch.chdir(project.root)
+    song = load_song(_seeded(project))
+    assert not song.drum_additions and not song.drum_removals
+    timeline = song.timeline()
+    write_drum_midi(
+        song.drum_midi_path("consolidated"),
+        DrumPerformance(
+            [Hit("hihat_open", timeline.bar_beat_to_seconds(3, 1.0), 111)],
+            timeline))
+
+    assert main(["drums", "restore", song.slug]) == 0
+    assert song.drum_midi_path("restored").exists(), (
+        "restore bailed on a song whose only Stage 7 edit is a voicing")
+    assert "no drums.additions" not in capsys.readouterr().out
+
+
+def test_a_declared_addition_wins_over_the_sections_voicing(project, monkeypatch):
+    """The escape hatch, and the repo's usual precedence: a declaration is the
+    last word. `drums.additions` is applied *after* the re-voicing, so a hi-hat
+    deliberately declared inside a re-voiced section stays a hi-hat."""
+    from rambass.cli import main
+    from rambass.manifest import Addition, load_song, save_song
+    from rambass.midiio import DrumPerformance, Hit, read_drum_midi, write_drum_midi
+
+    monkeypatch.chdir(project.root)
+    song = load_song(_seeded(project))
+    song.drum_additions.append(
+        Addition(bar=3, beat=4.0, instrument="hihat_open", velocity=70))
+    save_song(song, song.dir)
+    song = load_song(song.dir)
+    timeline = song.timeline()
+    write_drum_midi(
+        song.drum_midi_path("consolidated"),
+        DrumPerformance(
+            [Hit("hihat_open", timeline.bar_beat_to_seconds(3, 1.0), 111)],
+            timeline))
+
+    assert main(["drums", "restore", song.slug]) == 0
+    again = read_drum_midi(song.drum_midi_path("restored"), _map(project, song))
+    at = {round(hit.time, 4): hit.instrument for hit in again.hits}
+    assert at[round(timeline.bar_beat_to_seconds(3, 1.0), 4)] == "ride_bell"
+    assert at[round(timeline.bar_beat_to_seconds(3, 4.0), 4)] == "hihat_open"
+
+
+def test_editing_a_sections_voicing_makes_the_restored_midi_stale(project):
+    """`drums restore` reads the section list now, so it has to watch it. Before
+    this the restore step's provenance fields were tempo, bars, drums/map,
+    drums/additions and drums/removals -- a voicing change moved none of them,
+    so `rambass stale` reported ok and the console said the candidate was
+    current. Exactly the hole `midi_behind_manifest` is about."""
+    from rambass.manifest import load_song, save_song
+    from rambass.provenance import stale_report, stamp
+
+    directory = _seeded(project)
+    song = load_song(directory)
+    consolidated = song.drum_midi_path("consolidated")
+    consolidated.parent.mkdir(parents=True, exist_ok=True)
+    consolidated.write_bytes(b"MThd-consolidated")
+    restored = song.drum_midi_path("restored")
+    restored.write_bytes(b"MThd-restored")
+    stamp(song, restored, step="drums restore", inputs=[consolidated])
+
+    def verdict(one):
+        return next(e for e in stale_report(one)
+                    if e.artifact.endswith("drums-restored.mid"))
+
+    assert verdict(load_song(directory)).state == "ok"
+
+    song.sections[1].voicing = {"hihat_open": "ride"}
+    save_song(song, directory)
+    entry = verdict(load_song(directory))
+    assert entry.state == "stale"
+    assert any("sections" in reason for reason in entry.reasons), entry.reasons
+
+
+def _seeded(project):
+    """A two-section song whose second section re-voices its open hats."""
+    from rambass.manifest import STAGES, Section, Song, save_song
+
+    directory = project.songs_dir / "tutti-in-fila" / "09-manlio"
+    save_song(Song(
+        slug="manlio", title="Manlio", album="tutti-in-fila", track=9,
+        directory=directory, bpm=60.0, count_in_bars=2, bars=8,
+        drums_origin="extracted", drum_map="general-midi",
+        sections=[Section("intro", 1),
+                  Section("finale", 3, voicing={"hihat_open": "ride_bell"})],
+        status={stage: "todo" for stage in STAGES}), directory)
+    return directory
+
+
+def _map(project, song):
+    from rambass.drummap import load_drum_map
+
+    return load_drum_map(song.drum_map, project)

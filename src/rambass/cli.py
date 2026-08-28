@@ -1210,7 +1210,7 @@ def cmd_drums_restore(args: argparse.Namespace) -> int:
     whole pipeline reproduces the restored file rather than losing it.
     """
     from .midiio import read_drum_midi, write_drum_midi
-    from .restore import apply_edits
+    from .restore import apply_edits, revoice_sections
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
@@ -1218,18 +1218,33 @@ def cmd_drums_restore(args: argparse.Namespace) -> int:
         if not source.exists():
             _say(f"{song.slug}: no {source.name} — consolidate it first")
             continue
-        if not song.drum_additions and not song.drum_removals:
-            _say(f"{song.slug}: no drums.additions or drums.removals in "
-                 f"song.yaml. `rambass drums missing {song.slug}` lists what "
-                 f"Stage 7 has to put back.")
+        voiced = [s for s in song.sections if getattr(s, "voicing", None)]
+        # A section voicing is the third kind of declared Stage 7 edit, so it
+        # has to keep this command from bailing before it applies one.
+        if not song.drum_additions and not song.drum_removals and not voiced:
+            _say(f"{song.slug}: no drums.additions, drums.removals or section "
+                 f"voicing in song.yaml. `rambass drums missing {song.slug}` "
+                 f"lists what Stage 7 has to put back.")
             continue
         drum_map = load_drum_map(song.drum_map, project)
         performance = read_drum_midi(source, drum_map)
         performance.timeline = song.timeline()
+        # Before the edits, so a declaration wins: `drums.additions` is the last
+        # word everywhere else in Stage 7 (see restore.apply_edits), and a hi-hat
+        # deliberately declared inside a re-voiced section should stay one.
+        revoicing = {"renamed": 0, "sections": []}
+        if voiced:
+            performance, revoicing = revoice_sections(
+                performance, song.sections,
+                end_bar=(song.bars or song.total_bars()) + 1)
         performance, report = apply_edits(
             performance,
             additions=song.drum_additions, removals=song.drum_removals)
         _say(f"── {song.title}: {len(performance.hits)} hits from {source.name}")
+        for entry in revoicing["sections"]:
+            played = ", ".join(f"{a} → {b}" for a, b in entry["voicing"].items())
+            _say(f"   voicing       {entry['name']:<18} "
+                 f"{entry['renamed']} renamed  ({played})")
         _say(f"   restore       +{report['added']} added, "
              f"-{report['removed']} removed, "
              f"{report['already_there']} already there"

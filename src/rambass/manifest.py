@@ -127,6 +127,22 @@ class Section:
     #: arrangement structure, not a tuning knob: it is settled by ear once, the
     #: same way ``drums.subdivision`` is, and never re-derived from audio.
     backbeat: str = ""
+    #: ``{played: should be}`` for this section, applied by
+    #: :func:`~rambass.restore.revoice_sections`.
+    #:
+    #: Paolo, on Manlio's finale: *"in theme finale move all hihat_open to a
+    #: ride"* — a ride bell. That is 66 hits, and the mechanism that existed was
+    #: a ``swap-hit`` note per hit promoting to 66 removals and 66 additions.
+    #: But the decision is one statement *about the section*, the same category
+    #: as ``backbeat`` above, and writing it 132 times means a re-transcription
+    #: that moves one hit by a triplet leaves stale removals behind and the
+    #: section half re-voiced. Named instruments survive that; positions do not.
+    #:
+    #: Where ``backbeat`` is deliberately a closed list of two articulations,
+    #: this is the general facility: any canonical name to any canonical name,
+    #: checked against :data:`~rambass.drummap.CANONICAL` in :meth:`problems`
+    #: because a typo here re-voices nothing and looks exactly like a no-op.
+    voicing: dict = field(default_factory=dict)
 
     @property
     def position(self) -> tuple[int, float]:
@@ -141,6 +157,8 @@ class Section:
             beat=float(data.get("beat", 1.0)),
             note=str(data.get("note", "")),
             backbeat=str(data.get("backbeat", "") or ""),
+            voicing={str(played): str(wanted) for played, wanted
+                     in (data.get("voicing") or {}).items()},
         )
 
     def to_dict(self) -> dict:
@@ -149,6 +167,8 @@ class Section:
             out["beat"] = self.beat
         if self.backbeat:
             out["backbeat"] = self.backbeat
+        if self.voicing:
+            out["voicing"] = dict(self.voicing)
         if self.note:
             out["note"] = self.note
         return out
@@ -522,6 +542,11 @@ class Song:
 
     def problems(self) -> list[str]:
         """Non-fatal-ish consistency checks, reported by ``rambass check``."""
+        # Hoisted to the top of the method because it is used in three places
+        # now -- a section's voicing map, drums.accents and the Stage 7 edits --
+        # and a `from ... import` half way down shadows the name above it.
+        from .drummap import CANONICAL
+
         out: list[str] = []
         if self.bpm <= 20 or self.bpm > 300:
             out.append(f"implausible bpm {self.bpm}")
@@ -553,6 +578,17 @@ class Song:
                     f"section {section.name!r} declares backbeat "
                     f"{section.backbeat!r}; expected empty or one of {named}"
                 )
+            # Both ends of every mapping, against the one list a hit may be
+            # named with. A typo here re-voices nothing and reads as a no-op,
+            # which is the worst way for a declaration to fail.
+            for played, wanted in (section.voicing or {}).items():
+                for name in (played, wanted):
+                    if name not in CANONICAL:
+                        out.append(
+                            f"section {section.name!r} voices {played!r} as "
+                            f"{wanted!r}, but {name!r} is not a canonical drum "
+                            f"name (see drummap.CANONICAL)"
+                        )
         if self.bars and any(s.bar > self.bars for s in self.sections):
             out.append("a section starts after the last bar of the song")
         for name, value in (("subdivision", self.drum_subdivision),
@@ -568,8 +604,6 @@ class Song:
                 "expected a MIDI velocity 1-127, or 0 for \"use the measured "
                 "median\""
             )
-        from .drummap import CANONICAL
-
         for instrument, velocity in self.drum_accents.items():
             if instrument not in CANONICAL:
                 out.append(

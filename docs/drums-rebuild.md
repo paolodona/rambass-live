@@ -419,6 +419,56 @@ An addition already present is counted, not doubled, so running it twice cannot
 build a flam. A removal that matches nothing is *reported*: it means the hit it
 named was deleted upstream, and swallowing that hides the drift.
 
+### A whole section re-voiced: `sections[].voicing`
+
+Paolo, on Manlio's finale: *"in theme finale move all hihat_open to a ride"* — a
+ride bell. That is **66 hits**, and by the rules above it is 66 `swap-hit` notes
+promoting to 66 removals and 66 additions. Which is not what the decision *is*:
+"the open hats in the finale are a ride bell" is one statement about the section,
+the same category as `backbeat: sidestick` or `drums.subdivision`. Written 132
+times, a re-transcription that moves one hit by a triplet leaves stale removals
+behind and the section half re-voiced. A named instrument survives that; a
+position does not.
+
+```yaml
+sections:
+- name: theme-finale
+  bar: 65
+  beat: 3.0
+  voicing:
+    hihat_open: ride_bell
+```
+
+`restore.revoice_sections` applies it in `drums restore`, **before** the
+additions and removals — so a declaration is still the last word, and a hi-hat
+deliberately declared inside a re-voiced section stays a hi-hat. Both ends of
+every mapping are checked against `drummap.CANONICAL` by `rambass check`, because
+a typo re-voices nothing and reads exactly like a no-op. `sections` is in the
+restore step's provenance fields, so editing a voicing makes
+`midi/drums-restored.mid` stale and the review screen says the candidate needs
+re-rendering.
+
+**The velocities are kept, and that is the opposite of what a single swap does.**
+`apply_edits` re-derives a swapped hit's velocity from the target instrument's
+own median, because one hit has no shape to preserve and the number it carries
+means "loud for a hi-hat". A section-wide re-voicing has a whole figure in it —
+Manlio's finale runs 111, 96, 106, 82, 83, 84, 84, 77, 89, 89, 90, which is the
+accent pattern of the part — and flattening that to one number would delete the
+part while renaming it. This is a **retarget**, free precisely because the data
+is carried as instrument names. How loud the new drum sounds is a Stage 8
+decision about the kit.
+
+One measured side effect, worth knowing rather than fixing: re-voicing 66 of
+Manlio's open hats moved the *median* `hihat_open` velocity, and three
+`drums.additions` elsewhere in the song that declare no velocity of their own
+take that median — so they came out v83/v84 instead of v88/v89. Five velocities,
+and the mechanism is the documented one ("blank means take the instrument's
+median"). Declare a velocity on an addition you care about.
+
+It is not a replacement for a `swap-hit` note. One hit in one place is still one
+note in the ledger; this is for when the answer is the same for every one of them
+in a section.
+
 While you are here, fix the other articulations the detector cannot see: open the
 hat where the part opens up, put the ride where the ride is, add the pedal hat.
 A fill is best played in on pads, drawn in EZdrummer 3 Grid Editor, or pulled out

@@ -375,3 +375,221 @@ def test_with_no_manifest_velocity_the_measured_median_still_wins(cwd_song):
     # nothing was named sidestick by the detector here, so there is no reference
     # population and the renamed hits keep the open hat's own velocity
     assert clicks and set(clicks) == {85}
+
+
+# ── a section can re-voice one drum as another ───────────────────────────────
+#
+# Paolo, on Manlio's finale: *"in theme finale move all hihat_open to a ride"* —
+# a ride bell, as it turned out. That is 66 hits in one section, all of them
+# transcribed rather than declared, and `consolidate` stamped the same two-bar
+# figure across it six times.
+#
+# The mechanism that already existed was a `swap-hit` note per hit: 66 notes
+# promoting to 66 removals and 66 additions, every one pinned to an exact
+# bar.beat. That is not what the decision *is*. "The open hats in the finale are
+# a ride bell" is a statement about the section, in the same category as
+# `sections[].backbeat: sidestick` or `drums.subdivision` — arrangement
+# structure, settled by ear once — and writing it 132 times means a
+# re-transcription that moves one hit by a triplet leaves stale removals behind
+# and the section half re-voiced.
+#
+# So `sections[].voicing: {hihat_open: ride_bell}`, applied by
+# `revoice_sections` in `drums restore` beside the additions and removals.
+# `BACKBEAT_ARTICULATIONS` says of itself that it is *not* a general re-voicing
+# facility; this is the general one, and the two stay apart.
+
+
+def _finale(bpm=60.0):
+    """Two sections, the second starting mid-bar as Manlio's finale does."""
+    timeline = Timeline(bpm=bpm, time_signature=(4, 4))
+    hits = [
+        # break-3, before the finale: an open hat that must NOT be touched.
+        Hit("hihat_open", timeline.bar_beat_to_seconds(63, 1.0), 90),
+        Hit("kick", timeline.bar_beat_to_seconds(64, 1.0), 100),
+        # theme-finale, from 65 beat 3. The two open hats before beat 3 of bar
+        # 65 are still break-3's.
+        Hit("hihat_open", timeline.bar_beat_to_seconds(65, 2.0), 70),
+        Hit("hihat_open", timeline.bar_beat_to_seconds(65, 3.0), 111),
+        Hit("hihat_open", timeline.bar_beat_to_seconds(65, 4.0), 96),
+        Hit("hihat_open", timeline.bar_beat_to_seconds(66, 1.0), 106),
+        Hit("hihat_open", timeline.bar_beat_to_seconds(66, 2.667), 83),
+        # ...and everything else in the section is left alone.
+        Hit("kick", timeline.bar_beat_to_seconds(66, 1.0), 104),
+        Hit("snare", timeline.bar_beat_to_seconds(66, 2.0), 112),
+        Hit("hihat_closed", timeline.bar_beat_to_seconds(66, 3.0), 88),
+    ]
+    sections = [
+        Section("break-3", 63),
+        Section("theme-finale", 65, beat=3.0, voicing={"hihat_open": "ride_bell"}),
+    ]
+    return DrumPerformance(hits, timeline, "manlio"), sections
+
+
+def test_a_declared_voicing_renames_every_matching_hit_in_the_section():
+    from rambass.restore import revoice_sections
+
+    performance, sections = _finale()
+    out, report = revoice_sections(performance, sections, end_bar=78)
+
+    at = lambda bar, beat: [  # noqa: E731 - a table reads better than a loop
+        hit.instrument for hit in out.hits
+        if abs(hit.time - out.timeline.bar_beat_to_seconds(bar, beat)) < 1e-6]
+    # Inside the section, every open hat is a ride bell.
+    assert at(65, 3.0) == ["ride_bell"]
+    assert at(65, 4.0) == ["ride_bell"]
+    assert sorted(at(66, 1.0)) == ["kick", "ride_bell"]
+    assert at(66, 2.667) == ["ride_bell"]
+    # Outside it, nothing moved -- including the open hat two beats before the
+    # boundary, because the section starts at 65.3 and not at bar 65.
+    assert at(63, 1.0) == ["hihat_open"]
+    assert at(65, 2.0) == ["hihat_open"]
+    # And nothing the map does not name.
+    assert sorted(at(66, 2.0)) == ["snare"]
+    assert at(66, 3.0) == ["hihat_closed"]
+
+    assert report["renamed"] == 4
+    assert report["sections"] == [
+        {"name": "theme-finale", "voicing": {"hihat_open": "ride_bell"},
+         "renamed": 4}]
+
+
+def test_a_re_voiced_hit_keeps_its_velocity():
+    """The opposite of the declared *backbeat*, and for a measured reason.
+
+    A single `swap-hit` takes the median of the target instrument's own hits,
+    because one hit has no shape to preserve and the number it carries means
+    "loud for a hi-hat" (see `voice_backbeats`). A section-wide re-voicing has
+    66 hits with a figure in them -- Manlio's finale runs 111, 96, 106, 82, 83,
+    84, 84, 77, 89, 89, 90 -- and flattening that to one number would delete
+    the part while renaming it. This is a **retarget**, which CLAUDE.md calls
+    free precisely because the data is carried as instrument names.
+    """
+    from rambass.restore import revoice_sections
+
+    performance, sections = _finale()
+    out, _ = revoice_sections(performance, sections, end_bar=78)
+
+    bells = sorted(hit.velocity for hit in out.hits
+                   if hit.instrument == "ride_bell")
+    assert bells == [83, 96, 106, 111], "the figure's dynamics were flattened"
+
+
+def test_a_voicing_map_can_name_more_than_one_drum():
+    from rambass.restore import revoice_sections
+
+    performance, sections = _finale()
+    sections[1].voicing = {"hihat_open": "ride_bell", "hihat_closed": "ride"}
+    out, report = revoice_sections(performance, sections, end_bar=78)
+
+    assert sorted(hit.instrument for hit in out.hits
+                  if hit.time >= out.timeline.bar_beat_to_seconds(66, 3.0)) == ["ride"]
+    assert report["renamed"] == 5
+
+
+def test_two_drums_can_collapse_onto_the_same_one():
+    """Manlio's theme-intro: *"turn all hihat_open and hihat_closed into ride
+    hits"*. Both hi-hat articulations land on one drum, which is a different
+    shape from the finale's map -- there each source has its own target, here
+    two sources share one -- and it is what flattens a hat part into a ride
+    pattern. The dynamics still carry the figure, so the open/closed contrast
+    survives as velocity rather than as two note numbers."""
+    from rambass.restore import revoice_sections
+
+    performance, sections = _finale()
+    sections[1].voicing = {"hihat_open": "ride", "hihat_closed": "ride"}
+    out, report = revoice_sections(performance, sections, end_bar=78)
+
+    inside = [hit for hit in out.hits
+              if hit.time >= out.timeline.bar_beat_to_seconds(65, 3.0)]
+    assert sorted(hit.instrument for hit in inside) == [
+        "kick", "ride", "ride", "ride", "ride", "ride", "snare"]
+    # The open hats' figure and the closed hat's own level both survive.
+    assert sorted(hit.velocity for hit in inside
+                  if hit.instrument == "ride") == [83, 88, 96, 106, 111]
+    assert report["renamed"] == 5
+    # The break-3 hat before the boundary is still a hi-hat.
+    assert [hit.instrument for hit in out.hits
+            if hit.time < out.timeline.bar_beat_to_seconds(65, 3.0)
+            and hit.instrument.startswith("hihat")] == [
+        "hihat_open", "hihat_open"]
+
+
+def test_a_section_that_declares_no_voicing_is_a_no_op():
+    from rambass.restore import revoice_sections
+
+    performance, sections = _finale()
+    sections[1].voicing = {}
+    out, report = revoice_sections(performance, sections, end_bar=78)
+
+    assert out is performance, "a no-op rebuilt the performance"
+    assert report["renamed"] == 0 and report["sections"] == []
+
+
+def test_a_voicing_for_a_drum_that_is_not_there_renames_nothing():
+    """Not an error: the finale might not have had an open hat in it, and a
+    declaration that describes what the part should be is allowed to be ahead
+    of the transcription."""
+    from rambass.restore import revoice_sections
+
+    performance, sections = _finale()
+    sections[1].voicing = {"china": "splash"}
+    out, report = revoice_sections(performance, sections, end_bar=78)
+
+    assert report["renamed"] == 0
+    assert report["sections"] == [
+        {"name": "theme-finale", "voicing": {"china": "splash"}, "renamed": 0}]
+
+
+def test_the_last_section_is_bounded_by_end_bar():
+    """A section list says where each part starts and nothing about where the
+    last one stops -- the same reason `voice_backbeats` takes *end_bar*. Manlio
+    is 78 bars and the track runs to 80: a sung note after the band stops must
+    not be re-voiced into a ride bell."""
+    from rambass.restore import revoice_sections
+
+    performance, sections = _finale()
+    timeline = performance.timeline
+    late = Hit("hihat_open", timeline.bar_beat_to_seconds(79, 1.0), 40)
+    performance = DrumPerformance(
+        [*performance.hits, late], timeline, performance.name)
+
+    out, report = revoice_sections(performance, sections, end_bar=78)
+
+    assert report["renamed"] == 4, "a hit past the last bar was re-voiced"
+    assert [hit.instrument for hit in out.hits
+            if hit.time >= timeline.bar_beat_to_seconds(79, 1.0)] == ["hihat_open"]
+
+
+def test_a_voicing_round_trips_through_song_yaml(project):
+    from rambass.manifest import Song, load_song, save_song
+
+    directory = project.songs_dir / "tutti-in-fila" / "09-manlio"
+    song = Song(slug="manlio", title="Manlio", album="tutti-in-fila", track=9,
+                directory=directory, bpm=60.0, bars=78,
+                sections=[Section("theme-finale", 65, beat=3.0,
+                                  voicing={"hihat_open": "ride_bell"}),
+                          Section("closing-fill", 77, beat=3.0)])
+    save_song(song, directory)
+    again = load_song(directory)
+
+    assert again.sections[0].voicing == {"hihat_open": "ride_bell"}
+    # And a section with none gains no key, like `backbeat`.
+    assert "voicing" not in again.sections[1].to_dict()
+    assert again.problems() == []
+
+
+def test_a_voicing_naming_a_drum_the_kit_does_not_have_is_refused():
+    """Both ends, against `drummap.CANONICAL` -- the same list a note may name.
+    A silent typo here re-voices nothing and looks exactly like a no-op."""
+    from rambass.manifest import Song
+
+    song = Song(slug="x", title="X", album="tutti-in-fila", track=1,
+                bpm=60.0, bars=8,
+                sections=[Section("a", 1, voicing={"hihat_opne": "ride_bell"})])
+    assert any("hihat_opne" in problem for problem in song.problems())
+
+    song.sections[0].voicing = {"hihat_open": "ride_bel"}
+    assert any("ride_bel" in problem for problem in song.problems())
+
+    song.sections[0].voicing = {"hihat_open": "ride_bell"}
+    assert song.problems() == []

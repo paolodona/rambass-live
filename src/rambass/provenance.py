@@ -188,8 +188,12 @@ PIPELINE: tuple[Step, ...] = (
         command="rambass drums restore {slug}",
         inputs=("midi/drums-consolidated.mid",),
         modules=("restore", "midiio"),
-        # Only Stage 7's own edits, plus what places them on the grid.
-        fields=("tempo", "bars", "drums/map", "drums/additions",
+        # Stage 7's own edits, plus what places them on the grid. `sections`
+        # is here because a section may declare a `voicing` map that
+        # `restore.revoice_sections` applies at this step -- without it a
+        # re-voicing changed nothing this report watches, so `rambass stale`
+        # said ok and the review screen said the candidate was current.
+        fields=("tempo", "bars", "sections", "drums/map", "drums/additions",
                 "drums/removals"),
         skip_origins=("a-cappella", "backing-track"),
     ),
