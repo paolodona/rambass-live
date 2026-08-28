@@ -342,6 +342,56 @@ tile the bar grid, but each slot is judged against the repetitions it *could*
 have appeared in, so the half-bars at either end are voted on like everything
 else.
 
+### The stamp stops where the band stopped
+
+The docstring's "this deliberately removes the fills" has a mirror case, and it
+was undocumented until Manlio's review pass costed it: the voted pattern was
+stamped into **every** repetition including the last, which is the one least
+likely to repeat, because it is where the band lifts off into the break.
+
+Bar 17, the last of `verse-1-lift`: the detections stop dead at beat 3 and the
+vote stamped six hits over the silence. Bars 32 and 54 are the same bar of
+`verse-2-lift` and `verse-3-lift`. A third of the song's extra-hit edits.
+
+So if a bar's own playing stops at least `stop_beats` (default **1.25**) before
+its slots run out, nothing is stamped after it. A whole beat of silence inside a
+bar of continuous triplets is a stop, and a drummer who stopped is information
+rather than a dropout — the same argument `bars` makes for bounding the part.
+
+Below 1.25 the rule is **worse than not doing it at all**: it finds the same ten
+phantoms and takes 17 to 19 real hits with them, because at that width it stops
+reading "the band stopped" and starts reading "this bar is missing a hit at the
+end", which is the case the vote exists to repair. The sweep is in
+`docs/transcription-lessons.md`. An empty bar is never a stop — there has to be
+playing for it to stop after — and `--stop-beats 0` turns the rule off for a
+sparse pattern, where losing a beat-4 hit already leaves two beats of silence.
+
+Withheld hits are printed per section by `drums consolidate`, in Reaper bar
+numbers. Worth reading: a silent behaviour change here looks like a bug six
+months later.
+
+### A quiet snare in a section too short to vote on
+
+`min_repeats: 4` means a 2-bar break is passed through untouched, so every
+detection artefact in it survives — on Manlio `break-1` and `break-3` are the
+second-densest edit region in the song. The one thing level can settle there is
+the snare: of the seven snares at or below v50 in the six skipped sections, **six
+are phantoms**, while the eleven floor hi-hats, two toms and one kick down there
+are all real.
+
+`--phantom-snare-velocity` (default 50, 0 to disable) drops them. It applies only
+where the section was skipped: a voted section has agreement, which is a better
+instrument than loudness.
+
+**Only the snare**, and the asymmetry is the whole finding — it is the "a hi-hat
+is never loudness evidence" rule pointed the other way. A snare is the one
+instrument whose own quietness is evidence against it, because this drummer's
+soft strokes on that drum are side-sticks and ghost notes that land in other
+lanes. Applying it to every instrument at the floor scores worse than not having
+it, and folding in `sidestick` — the obvious simplification, since both are the
+same drum — is measurably worse too: a rim click is 25–30 dB below the same
+drummer's snare, so the floor is where a *real* side-stick lives.
+
 ## Stage 7 — fills, crashes, articulation
 
 ```
@@ -468,6 +518,79 @@ median"). Declare a velocity on an addition you care about.
 It is not a replacement for a `swap-hit` note. One hit in one place is still one
 note in the ledger; this is for when the answer is the same for every one of them
 in a section.
+
+### A whole section's hi-hat pattern: `sections[].hats`
+
+The largest single cause of Manlio's review notes: **89 of the 207** are a hat
+pattern the pipeline got wrong, 66 of them holes in a continuous hi-hat run. And
+it is **not recoverable from the audio** — the threshold sweep (0.55 is the best
+of twenty settings), the hat-stem flux probe (2.5× separation on a median of
+0.001 in `chorus-1`, where every other section separates by 20–50×) and the
+occupancy count all fail, the last because it cannot tell `chorus-1` (a
+continuous triplet run reading 6 of 12 slots) from `chorus-2` (a genuine shuffle
+reading 9). `docs/transcription-lessons.md` has the measurements.
+
+So it is declared, the same register as `backbeat:` and `voicing:` above:
+
+```yaml
+sections:
+- name: chorus-1
+  bar: 32
+  beat: 3.0
+  hats: run                       # every slot of drums.subdivision
+- name: verse-1
+  bar: 6
+  backbeat: sidestick
+  hats: run                       # the hat plays under the click too
+- name: verse-3-lift
+  bar: 51
+  hats: "x.xx.xx.xx.x"            # explicit, one char per slot in a bar
+```
+
+`run` is every subdivision slot; `shuffle` is the first and last slot of each
+beat and needs a triplet grid; a mask is `x` and `.` one character per slot, with
+whitespace and `|` ignored so you can group it by beat. Absent means do nothing.
+A bad value is an error in `rambass check`, not a no-op, because a typo fills
+nothing and reads exactly like success.
+
+`restore.fill_hat_runs` applies it in `drums restore`, **before**
+`revoice_sections` and so before the additions. That order is why this is one
+field and not two: `hats` says where the hat plays and `voicing` says which hat
+it is, so a ride run in the finale is two lines rather than a new keyword.
+
+Four things it will not do:
+
+* **It never moves, re-voices or overwrites an existing hit.** A slot already
+  holding any hat-family instrument is left exactly as it is — `chorus-1`'s own
+  hats carry velocities of 86–113, and flattening them would delete the part
+  while claiming to complete it.
+* **It fills `hihat_closed` only.** `voicing:` retargets it.
+* **It respects Stage 6's stop rule** (the shared `quantize.stopped_bars`), or a
+  declared `run` would put twelve hats straight back into bar 17 and silently
+  undo it. An *empty* bar is not a stop and is filled — that is what a
+  declaration is for.
+* **The mask tiles the bar grid, not the section.** A one-bar figure repeats
+  every bar whichever beat the section began on, because a section boundary does
+  not move where beat 1 is.
+
+Velocity is the median of the section's own hats, else the song's, else 45, and
+the report says which — "45 because nothing was measured" and "45 because that is
+what this section plays" are different facts.
+
+`rambass sections <song> --hats` proposes a mask per section from the part's own
+occupancy, beside the nearest keyword. It **suggests only** and never writes:
+which slots are detection holes and which are the part is a question for an ear,
+and it marks the sections too short for `consolidate` to vote on, where every slot
+is played in one bar or two and the share says very little.
+
+What it is worth, measured: `hats: run` on `chorus-1`, `verse-1` and `verse-2`
+recovers all 81 hat holes in those sections and takes the whole song from 140 to
+78 errors. One caution when filling it in — it also adds 19 hats the review pass
+does not have, almost all in the **partial bars at either end of a section**,
+where whether the band plays the run from the section's very first slot is an ear
+question. And if a section already carries promoted `swap-hit` and `missing-hit`
+edits for its hats, take those out with `rambass review demote` first or the
+declaration and the additions will double up.
 
 While you are here, fix the other articulations the detector cannot see: open the
 hat where the part opens up, put the ride where the ride is, add the pedal hat.
