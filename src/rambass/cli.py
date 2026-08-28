@@ -1310,6 +1310,7 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
             subdivision=args.subdivision or song.drum_subdivision,
             threshold=args.threshold,
             unit_bars=args.unit_bars,
+            stop_beats=args.stop_beats,
         ))
 
         _say(f"   {'section':<16}{'spans':>6}{'reps':>6}{'unit':>6}"
@@ -1322,6 +1323,13 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
             _say(f"   {entry['name']:<16}{entry['spans']:>6}{entry['repeats']:>6}"
                  f"{entry['unit_bars']:>5}b{entry['hits_before']:>6} ->"
                  f"{entry['hits_after']:>4}{entry['coverage']:>7.0%}")
+            for item in entry.get("stopped", []):
+                _say(f"      · {entry['name']} bar "
+                     f"{item['bar'] + song.count_in_bars} stops playing at beat "
+                     f"{item['beat']:g}, so {item['withheld']} hit"
+                     f"{'s' if item['withheld'] != 1 else ''} of the pattern "
+                     f"were not stamped over the silence — the band lifted off "
+                     f"here. `--stop-beats 0` stamps it anyway")
             for item in entry.get("demoted", []):
                 _say(f"      ! {entry['name']} {item['bar'] + song.count_in_bars}."
                      f"{item['beat']:g}: {item['kept']} and "
@@ -2397,6 +2405,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "it (default 0.55; docs/drums-rebuild.md argues 0.5-0.6)")
     p.add_argument("--subdivision", type=int, default=None,
                    help="slot grid to vote on; default drums.subdivision")
+    p.add_argument("--stop-beats", type=float, default=1.25,
+                   help="do not stamp the pattern over a bar whose own playing "
+                        "stops this many beats before its slots run out "
+                        "(default 1.25; 0 disables it — see "
+                        "ConsolidateSettings.stop_beats for the sweep)")
     p.add_argument("--unit-bars", type=int, default=0,
                    help="repeat length in bars; 0 works out 1 or 2 per section")
     p.add_argument("--dry-run", action="store_true",

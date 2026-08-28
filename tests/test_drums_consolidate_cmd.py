@@ -148,3 +148,54 @@ def test_the_threshold_is_adjustable(cwd, song):
 
     assert not [h for h in strict.hits if h.instrument == "tom_mid"]
     assert [h for h in loose.hits if h.instrument == "tom_mid"]
+
+
+def test_it_says_which_bars_stopped_playing(cwd, song, capsys):
+    """A withheld stamp is reported, never silent.
+
+    "A silent behaviour change here is exactly the kind of thing that reads as
+    a bug six months later": somebody comparing the consolidated part against
+    the input will find the tail of a bar empty, and the report is where the
+    reason lives. Printed the way `demoted` already is.
+    """
+    song.bars = 32
+    song.sections = [Section("verse", 1), Section("break", 9)]
+    save_song(song, song.dir)
+    reloaded = load_song(song.dir)
+    timeline = reloaded.timeline()
+    hits = _backbeat(timeline, 1, 7)
+    # Bar 8 — the verse's last — stops dead after beat 1.
+    hits.append(Hit("kick", timeline.bar_beat_to_seconds(8, 1.0), 100))
+    hits += _backbeat(timeline, 9, 24)
+    _seed(reloaded, hits)
+
+    assert main(["drums", "consolidate", "tutti-in-fila"]) == 0
+    out = capsys.readouterr().out
+    assert "bar 10 stops playing at beat 1" in out, out   # Reaper's ruler: 8 + 2
+    assert "3 hits of the pattern were not stamped" in out
+    assert "--stop-beats 0" in out
+
+    after = read_drum_midi(reloaded.drum_midi_path("consolidated"))
+    after.timeline = timeline
+    assert not [h for h in after.hits
+                if h.time > timeline.bar_beat_to_seconds(8, 1.0) + 1e-9
+                and h.time < timeline.bar_beat_to_seconds(9, 1.0) - 1e-9]
+
+
+def test_stop_beats_zero_turns_the_rule_off_from_the_command_line(cwd, song):
+    song.bars = 32
+    song.sections = [Section("verse", 1), Section("break", 9)]
+    save_song(song, song.dir)
+    reloaded = load_song(song.dir)
+    timeline = reloaded.timeline()
+    hits = _backbeat(timeline, 1, 7)
+    hits.append(Hit("kick", timeline.bar_beat_to_seconds(8, 1.0), 100))
+    hits += _backbeat(timeline, 9, 24)
+    _seed(reloaded, hits)
+
+    assert main(["drums", "consolidate", "tutti-in-fila", "--stop-beats", "0"]) == 0
+    after = read_drum_midi(reloaded.drum_midi_path("consolidated"))
+    after.timeline = timeline
+    assert len([h for h in after.hits
+                if timeline.bar_beat_to_seconds(8, 1.0) - 1e-9 <= h.time
+                < timeline.bar_beat_to_seconds(9, 1.0) - 1e-9]) == 4

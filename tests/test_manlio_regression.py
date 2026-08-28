@@ -154,16 +154,21 @@ def test_the_committed_consolidated_part_scores_the_baseline():
 
 
 def test_consolidate_still_reproduces_the_committed_fixture():
-    """``drums-consolidated.mid`` is what today's code produces, hit for hit.
+    """``drums-consolidated.mid`` is what the code produces, hit for hit.
 
     If this fails the fixture and the code have already diverged, and every
     measurement in the tuning phases is against the wrong baseline — so it is
     checked on instrument, time and velocity rather than on the score, which
     would hide a re-voicing behind a matching placement.
+
+    ``stop_beats=0`` because the fixture predates the stop rule, and this is
+    that escape hatch tested on the real thing rather than on a synthetic
+    section: turning the rule off must reproduce the old behaviour *exactly*,
+    or the 11 hits it withholds are not the only thing it changed.
     """
     song, quantized = load("drums-quantized")
     _, committed = load("drums-consolidated")
-    rebuilt = consolidated_today(song, quantized)
+    rebuilt = consolidated_today(song, quantized, stop_beats=0.0)
 
     def key(performance):
         return sorted((h.instrument, round(h.time, 3), h.velocity)
@@ -243,3 +248,118 @@ def test_proximity_matching_is_not_the_same_measurement():
     assert (missing, extra) == (135, 28)
     assert missing + extra == 163
     assert sum(BASELINE[1:]) == 154
+
+
+# ── Phase 1: consolidate stops stamping over a bar that stopped ──────────
+
+def test_the_stop_rule_removes_ten_phantoms_for_one_real_hit():
+    """Measured before the rule was written, and asserted exactly.
+
+    Eleven hits withheld across three bars — all three the last bar of a
+    section, which is the whole argument: the last repetition is the one least
+    likely to repeat, because it is where the band lifts off into the break.
+    Ten of the eleven are phantoms and one is real, so ``extra`` falls by ten
+    and ``missing`` rises by one.
+    """
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+
+    before = consolidated_today(song, quantized, stop_beats=0.0)
+    after = consolidated_today(song, quantized)
+
+    assert len(before.hits) - len(after.hits) == 11
+    assert score(song, before, truth) == BASELINE
+    assert score(song, after, truth) == (960, 127, 18)
+    assert errors(song, after, truth) == 145
+
+
+def test_the_stop_rule_fires_only_on_the_last_bar_of_a_section():
+    """Bars 17, 32 and 54 — verse-1-lift, verse-2-lift and verse-3-lift."""
+    song, quantized = load("drums-quantized")
+    report = consolidate(quantized, song.consolidation_spans(),
+                         settings=ConsolidateSettings(
+                             subdivision=song.drum_subdivision,
+                             threshold=0.55, unit_bars=0))[1]
+    stopped = {(entry["name"], stop["bar"], stop["beat"])
+               for entry in report["sections"]
+               for stop in entry.get("stopped", [])}
+    assert stopped == {
+        ("verse-1-lift", 17, 3.0),
+        ("verse-2-lift", 32, 1.0),
+        ("verse-3-lift", 54, 3.0),
+    }
+    for entry in report["sections"]:
+        for stop in entry.get("stopped", []):
+            last_bar = entry["bars"][1] - 1
+            assert stop["bar"] in (last_bar, entry["bars"][1]), (
+                f"{entry['name']}: the stop at bar {stop['bar']} is not its last")
+
+
+def test_the_sweep_that_settled_on_one_and_a_quarter_beats():
+    """The whole sweep, as executable evidence, measured 28 Aug 2026.
+
+    ==========  =======  =======  ===========  ======
+    stop_beats  dropped  phantom  real killed  errors
+    ==========  =======  =======  ===========  ======
+    0.0 (off)   0        0        0            154
+    0.5         29       10       19           163
+    1.0         27       10       17           161
+    **1.25**    **11**   **10**   **1**        **145**
+    1.5         11       10       1            145
+    2.0         11       10       1            145
+    ==========  =======  =======  ===========  ======
+
+    Two things this pins that no comment could. **Everything below 1.25 is
+    worse than not doing it at all** — it finds the same 10 phantoms and takes
+    17 to 19 real hits with them, because at that width the rule stops reading
+    "the band stopped" and starts reading "this bar is missing a hit at the
+    end", which is the case Stage 6's vote exists to repair. And **1.25 is a
+    plateau, not a peak**: 1.25, 1.5 and 2.0 fire on the same three bars, so
+    the number is not balanced on a knife edge between two songs.
+
+    ``real killed`` is counted on placement class, the same as the score — the
+    one real hit at 1.25 is a ``hihat_closed`` withheld at bar 17 beat 4 where
+    the ground truth has a ``hihat_pedal``. Per *instrument* all 11 are
+    phantoms, which would flatter the rule by counting a right-place-wrong-drum
+    hit as a win.
+    """
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+    swept = {stop: errors(song, consolidated_today(song, quantized, stop_beats=stop), truth)
+             for stop in (0.0, 0.5, 1.0, 1.25, 1.5, 2.0)}
+    assert swept == {0.0: 154, 0.5: 163, 1.0: 161, 1.25: 145, 1.5: 145, 2.0: 145}
+    assert swept[1.25] < swept[0.0], "the rule has to be worth doing"
+    assert swept[1.0] > swept[0.0], "below 1.25 it is worse than not doing it"
+
+
+def test_the_withheld_hits_are_the_eleven_that_were_measured():
+    """Named, not counted — bar 17 is the worked example in the plan."""
+    song, quantized = load("drums-quantized")
+    before = consolidated_today(song, quantized, stop_beats=0.0)
+    after = consolidated_today(song, quantized)
+    timeline = song.timeline()
+
+    def keys(performance):
+        return sorted((h.instrument, round(h.time, 4), h.velocity)
+                      for h in performance.hits)
+
+    kept = set(keys(after))
+    withheld = sorted(
+        (*timeline.seconds_to_bar_beat(time), instrument)
+        for instrument, time, _velocity in keys(before)
+        if (instrument, time, _velocity) not in kept
+    )
+    rounded = [(bar, round(beat, 3), instrument) for bar, beat, instrument in withheld]
+    assert rounded == [
+        (17, 3.333, "hihat_closed"),
+        (17, 3.667, "hihat_closed"),
+        (17, 4.0, "hihat_closed"),
+        (17, 4.0, "snare"),
+        (17, 4.333, "hihat_closed"),
+        (17, 4.667, "hihat_closed"),
+        (32, 2.0, "hihat_closed"),
+        (32, 2.0, "snare"),
+        (32, 2.667, "hihat_closed"),
+        (54, 4.0, "hihat_closed"),
+        (54, 4.0, "snare"),
+    ]
