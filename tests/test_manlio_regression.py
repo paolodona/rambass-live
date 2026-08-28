@@ -618,3 +618,119 @@ def test_what_three_declarations_are_worth_and_what_they_cost():
     assert report["added"] == 100
     assert score(song, filled, truth) == (1040, 47, 31)
     assert errors(song, filled, truth) == 78
+
+
+# ── Phase 4: a boundary hat rule, measured and rejected ──────────────────
+
+def test_a_boundary_hat_candidate_rule_is_not_precise_enough_to_ship():
+    """Why there is no ``restore.hat_candidates``. Measured 28 Aug 2026.
+
+    Ten of Manlio's leftover notes are an open hat or a foot splash near a
+    section change — ``hihat_open`` at bars 13.4, 17.3, 24.2.667, 32.1,
+    44.2.667 and 54.3, ``hihat_pedal`` at 17.4, 39.4, 40.1 and 40.2 — and the
+    obvious move is to copy :func:`~rambass.restore.crash_candidates`, which
+    makes exactly this argument for cymbals: what separates a boundary crash
+    from a wash is musical position, not spectrum.
+
+    **It does not transfer, and the reason is precision.** Two of the ten
+    (24.2.667 and 44.2.667) sit 16 and 26 beats from the nearest change, so no
+    boundary rule can reach them at all. For the other eight, every formulation
+    tried lands between 0% and 28%:
+
+    ====================================================  ==========  =====
+    rule                                                  candidates  right
+    ====================================================  ==========  =====
+    the last hat within 1 beat of the start               9           0
+    the last hat within 2 beats                           14          4
+    every hat within 1 beat                               14          0
+    every hat within 2 beats                              43          5
+    every hat within 3 beats                              69          7
+    every hat within 2 beats, v >= 83                     18          5
+    ====================================================  ==========  =====
+
+    The best of them is 18 candidates for 5 right, and that velocity gate is
+    fitted to five hits — the boundary hats that really are open run v83-97
+    against v45-121 for the 38 that are not, so the distributions overlap
+    almost completely. ``CRASH_CANDIDATE_VELOCITY`` had a 23 dB decay
+    separation behind it *and* nine of ten at v83+; there is no acoustic story
+    here at all.
+
+    And the cost of shipping it is known: :data:`~rambass.restore.NOTICEABLE`
+    exists because the first Manlio ledger "listed 204 items and about 170 were
+    single hi-hats; the 6 crashes and 25 toms that a listener actually notices
+    were buried in them". An 18-item hi-hat checklist at 28% precision puts
+    them straight back.
+
+    What is real is the *observation*: eight of the ten are in the last bar
+    before a change, so the last bar before each change is worth a listen. That
+    belongs in docs/transcription-lessons.md, which is where it is, and a hat
+    somebody hears is an ordinary ``swap-hit`` note in the review console.
+    """
+    from rambass.restore import HAT_FAMILY
+
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+    consolidated = consolidated_today(song, quantized)
+    timeline = song.timeline()
+    beat = 60.0 / timeline.bpm
+    step = beat / song.drum_subdivision
+    ordered = sorted(song.sections, key=lambda s: (s.bar, s.beat))
+    opened = {int(round(h.time / step)) for h in truth.hits
+              if h.instrument in ("hihat_open", "hihat_pedal")}
+
+    def candidates(*, beats, last_only=False, min_velocity=0):
+        out = []
+        for section in ordered:
+            start = timeline.bar_beat_to_seconds(section.bar, section.beat)
+            near = [h for h in consolidated.hits
+                    if h.instrument in HAT_FAMILY
+                    and start - beats * beat - 1e-9 <= h.time < start - 1e-9
+                    and h.velocity >= min_velocity]
+            if not near:
+                continue
+            out += [max(near, key=lambda h: h.time)] if last_only else near
+        return out
+
+    def right(found):
+        return sum(1 for h in found if int(round(h.time / step)) in opened)
+
+    for beats, last_only, gate, wanted, hits in (
+            (1.0, True, 0, 9, 0),
+            (2.0, True, 0, 14, 4),
+            (1.0, False, 0, 14, 0),
+            (2.0, False, 0, 43, 5),
+            (3.0, False, 0, 69, 7),
+            (2.0, False, 83, 18, 5),
+    ):
+        found = candidates(beats=beats, last_only=last_only, min_velocity=gate)
+        assert (len(found), right(found)) == (wanted, hits), (
+            f"{beats} beats, last_only={last_only}, v>={gate}: "
+            f"{len(found)} candidates, {right(found)} right")
+
+    # Nothing better than 28%, against crash_candidates' one-per-section.
+    best = candidates(beats=2.0, min_velocity=83)
+    assert right(best) / len(best) < 0.30
+
+    # And the rule is not in the module, deliberately.
+    import rambass.restore as restore
+    assert not hasattr(restore, "hat_candidates"), (
+        "if this ships, the measurement above has to be redone first")
+
+
+def test_two_of_the_ten_are_not_near_a_boundary_at_all():
+    """The premise's own limit: 24.2.667 and 44.2.667 are mid-section."""
+    song, _ = load("drums-quantized")
+    timeline = song.timeline()
+    beat = 60.0 / timeline.bpm
+    starts = [timeline.bar_beat_to_seconds(s.bar, s.beat) for s in song.sections]
+
+    def beats_to_next_change(bar, at_beat):
+        when = timeline.bar_beat_to_seconds(bar, at_beat)
+        following = [s - when for s in starts if s > when + 1e-9]
+        return min(following) / beat if following else float("inf")
+
+    assert round(beats_to_next_change(24, 2.667), 2) == 16.33
+    assert round(beats_to_next_change(44, 2.667), 2) == 26.33
+    for bar, at_beat in ((13, 4.0), (17, 3.0), (17, 4.0), (32, 1.0),
+                         (39, 4.0), (40, 1.0), (40, 2.0), (54, 3.0)):
+        assert beats_to_next_change(bar, at_beat) <= 3.0
