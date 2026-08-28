@@ -44,6 +44,41 @@ DEFAULT_SUBDIVISIONS: dict[str, int] = {
     "ride_bell": 4,
 }
 
+#: The instruments :attr:`ConsolidateSettings.phantom_snare_velocity` applies to.
+#:
+#: **One entry, and the asymmetry is the whole finding.** Velocity-floor hits in
+#: the six sections consolidate skipped on Manlio, against the review pass:
+#:
+#: ============  ====  =======  ====  =============
+#: instrument    hits  phantom  real  in the rule?
+#: ============  ====  =======  ====  =============
+#: snare         7     **6**    1     **yes**
+#: hihat_closed  11    0        11    no
+#: sidestick     3     1        2     **no**
+#: hihat_open    2     0        2     no
+#: tom_mid       2     0        2     no
+#: kick          1     0        1     no
+#: ============  ====  =======  ====  =============
+#:
+#: The snares Paolo kept in those sections run a median of v107. The hats, kicks
+#: and toms down at the floor genuinely play that quietly, and generalising the
+#: rule to them scores 155 against 140 — worse than not having it at all.
+#:
+#: This is the existing "a hi-hat is never loudness evidence" rule pointed the
+#: other way (see :func:`~rambass.transcribe.suppress_cross_stem_bleed`, whose
+#: ``exclude`` list means "quiet by nature"): **a snare is the one instrument
+#: whose own quietness is evidence against it**, because this drummer's soft
+#: strokes on that drum are side-sticks and ghost notes that land in other lanes.
+#:
+#: ``sidestick`` is excluded deliberately and it was measured, not assumed:
+#: adding it drops three more hits of which only one is a phantom, and the score
+#: gets worse — 141 against 140. A rim click is 25-30 dB below the same drummer's
+#: snare (``transcribe.SIDESTICK_BODY_SHARE``, ``drums.backbeat_velocity``), so
+#: the velocity floor is where a *real* side-stick lives. It is a quiet
+#: instrument, not a quiet stroke, and folding the two together is the obvious
+#: "simplification" that costs real hits.
+PHANTOM_FLOOR_INSTRUMENTS: tuple[str, ...] = ("snare",)
+
 #: How far from a grid line a hit may be and still get snapped, as a fraction
 #: of the grid step. The furthest a hit can ever be is half a step, so 0.5 means
 #: "always snap" and 0.35 leaves the outer 30% of each gap alone — those are
@@ -307,6 +342,153 @@ class ConsolidateSettings:
     #: better. Any one-bar pattern is also a valid two-bar pattern, so without a
     #: margin the longer unit always ties and half the sections come out wrong.
     unit_margin: float = 0.05
+    #: Withhold the stamp after a bar's own playing stops, if it stops at least
+    #: this many beats before that bar's slots run out. 0 disables the rule.
+    #:
+    #: :func:`consolidate` owns the fill problem in its own docstring. This is
+    #: the mirror case, and it was undocumented: the voted pattern is stamped
+    #: into **every** repetition including the last, which is the one least
+    #: likely to repeat, because it is where the band lifts off into the break.
+    #: Measured on Manlio, bar 17 (last of ``verse-1-lift``): the input's
+    #: detections stop dead at beat 3 and the vote stamps 3.333, 3.667, 4.0 hat,
+    #: 4.0 snare, 4.333 and 4.667 over the silence. Bars 32 and 54 are the same
+    #: bar of ``verse-2-lift`` and ``verse-3-lift``.
+    #:
+    #: **The constant is 1.25 beats.** The sweep, scored against
+    #: ``drums-restored.mid``:
+    #:
+    #: ==========  =======  =======  ===========  ======
+    #: stop_beats  dropped  phantom  real killed  errors
+    #: ==========  =======  =======  ===========  ======
+    #: 0.0 (off)   0        0        0            154
+    #: 0.5         29       10       19           163
+    #: 1.0         27       10       17           161
+    #: **1.25**    **11**   **10**   **1**        **145**
+    #: 1.5         11       10       1            145
+    #: 2.0         11       10       1            145
+    #: ==========  =======  =======  ===========  ======
+    #:
+    #: It is not near 1 by accident. Below a beat the rule starts eating the
+    #: ordinary one-slot gaps consolidation exists to fill — the drummer who
+    #: missed one hat at the end of a bar, which is the whole reason for the
+    #: vote. A **whole beat of silence** inside a bar of continuous triplets is
+    #: not a dropout, it is a stop, and a drummer who stopped is information
+    #: rather than a detection failure: the same argument ``bars`` makes for
+    #: bounding the part (CLAUDE.md).
+    #:
+    #: At 1.25 it fires on exactly three bars of Manlio, all three the last bar
+    #: of a section, removing ten phantoms for one real hit lost. It is a
+    #: plateau rather than a peak — 1.25, 1.5 and 2.0 fire on the same three
+    #: bars — so the number is not balanced between two songs.
+    #:
+    #: The one thing it assumes is a **dense** grid: Manlio plays twelve hat
+    #: slots to the bar, so a beat and a quarter of silence is the band
+    #: stopping. On a pattern that only plays the four beats, a bar that merely
+    #: loses its beat-4 hit has two beats of silence behind it and reads as a
+    #: stop. ``stop_beats=0`` is the escape hatch for such a song, and the
+    #: sweep says a smaller number is not (below a beat is worse than not doing
+    #: it at all on real material).
+    stop_beats: float = 1.25
+    #: In a section too short to vote on, drop
+    #: :data:`PHANTOM_FLOOR_INSTRUMENTS` hits at or below this velocity.
+    #: 0 disables it, and that is **not** velocity 0 — same convention as
+    #: ``drums.backbeat_velocity``.
+    #:
+    #: :attr:`min_repeats` means a 2-bar break is passed through untouched, so
+    #: every detection artefact in it survives. On Manlio ``break-1`` and
+    #: ``break-3`` are the second-densest edit region in the song — 26 review
+    #: notes, 17 of them in bar 63 alone — and seven of those hits are snares at
+    #: the velocity floor, six of which are phantoms. See
+    #: :data:`PHANTOM_FLOOR_INSTRUMENTS` for the table and for why it is the
+    #: snare alone.
+    #:
+    #: **50, and it is the floor plus slack rather than the best score.**
+    #: ``scale_velocities`` puts Manlio's floor at v45, so "at or below 50"
+    #: means *at the floor* — a boundary with a reason. 55 would also catch the
+    #: v53 phantom at bar 19 beat 4.809 and score 139 against 140, and is
+    #: deliberately not taken: one drummer and one kit means this number has to
+    #: hold for the other ten songs of the album, and above the floor it starts
+    #: deleting strokes that carry a measured level.
+    #:
+    #: It applies **only** where the section was skipped. A voted section
+    #: already has a better instrument than level, namely agreement, and must
+    #: not be second-guessed on loudness.
+    phantom_snare_velocity: int = 50
+
+
+@dataclass(frozen=True)
+class BarStop:
+    """A bar whose own playing stops well before its slots run out.
+
+    ``low``/``high`` are the window the stop was measured in — a bar's extent
+    intersected with the section's, since a section may begin or end mid-bar and
+    the question is where the playing stopped *inside this part*.
+    """
+
+    bar: int
+    beat: float
+    stopped_at: float
+    low: float
+    high: float
+
+    def withholds(self, time: float) -> bool:
+        """Is *time* inside this window and after the playing stopped?"""
+        return (self.low - 1e-9 <= time < self.high - 1e-9
+                and time > self.stopped_at + 1e-9)
+
+
+def stopped_bars(
+    timeline: Timeline,
+    hits,
+    *,
+    low: float,
+    high: float,
+    stop_beats: float,
+) -> list[BarStop]:
+    """Which bars in ``[low, high)`` stop playing early, and where.
+
+    Shared by :func:`consolidate` (which withholds its stamp after a stop) and
+    :func:`~rambass.restore.fill_hat_runs` (which withholds a declared hat
+    pattern for the same reason) — deliberately one helper, because a declared
+    pattern that ignored the stop would put twelve hats straight back into the
+    bar Stage 6 had just cleared.
+
+    The window is a bar intersected with ``[low, high)``, so a section that
+    starts on beat 3 asks whether its two beats of that bar stopped early rather
+    than measuring against a bar line the section does not reach. Manlio's
+    ``chorus-1`` starts at bar 32 beat 3, which makes ``verse-2-lift``'s last
+    bar two beats long.
+
+    **A bar with no hits at all is not a stop.** There has to be playing for it
+    to stop after: an empty bar is precisely the case Stage 6's vote exists for,
+    and withholding the pattern there would delete a whole bar of the part on
+    the strength of a detection failure.
+    """
+    if stop_beats <= 0:
+        return []
+    times = sorted(hit.time for hit in hits)
+    out: list[BarStop] = []
+    bar = max(timeline.seconds_to_bar_beat(low)[0], 1)
+    while True:
+        bar_start = timeline.bar_beat_to_seconds(bar, 1.0)
+        if bar_start >= high - 1e-9:
+            break
+        bar_end = timeline.bar_beat_to_seconds(bar + 1, 1.0)
+        window_low, window_high = max(bar_start, low), min(bar_end, high)
+        if window_high - window_low > 1e-9:
+            beats_per_bar = timeline.time_signature_at(bar)[0]
+            beat_seconds = (bar_end - bar_start) / beats_per_bar
+            inside = [t for t in times
+                      if window_low - 1e-9 <= t < window_high - 1e-9]
+            if inside:
+                last = inside[-1]
+                if window_high - last >= stop_beats * beat_seconds - 1e-9:
+                    _, beat = timeline.seconds_to_bar_beat(last)
+                    out.append(BarStop(bar=bar, beat=round(beat, 3),
+                                       stopped_at=last,
+                                       low=window_low, high=window_high))
+        bar += 1
+    return out
 
 
 @dataclass(frozen=True)
@@ -377,11 +559,25 @@ def consolidate(
     never on a prefix family.
 
     Hits outside every section are passed through untouched — as are sections
-    too short to vote on, which are reported rather than silently mangled.
+    too short to vote on, which are reported rather than silently mangled. The
+    one exception there is a snare at the velocity floor, which in an unvoted
+    section is a phantom six times out of seven: see
+    :attr:`ConsolidateSettings.phantom_snare_velocity` and
+    :data:`PHANTOM_FLOOR_INSTRUMENTS`, which is one instrument long for reasons
+    that were measured.
 
     **This deliberately removes the fills**, which is why Stage 7 says to put
     them back by hand rather than repair them: a fill is by definition the bar
     that does not repeat, so no threshold can keep it and be doing its job.
+
+    **And it stops stamping where the band stopped**, which is the mirror of
+    that and was undocumented until it cost a third of Manlio's extra-hit
+    edits: the pattern was stamped into *every* repetition including the last,
+    where the band has already lifted off into the break. See
+    :attr:`ConsolidateSettings.stop_beats` for the measurement and the sweep,
+    and :func:`stopped_bars` for what counts as a stop. Withheld hits are named
+    per section in the report's ``stopped`` list, because a silent behaviour
+    change here reads as a bug six months later.
 
     **A slot's vote is per instrument, but the stamp is checked as a chord.**
     Codex's review (Aug 2026) named the risk precisely: voting independently
@@ -431,11 +627,51 @@ def consolidate(
 
         if best is None:
             entry["skipped"] = "too short to vote on"
+            # Nothing was voted on here, so nothing has agreement to stand on
+            # and every detection artefact in the section survives. The one
+            # thing level *can* settle is a snare at the floor -- see
+            # PHANTOM_FLOOR_INSTRUMENTS for why it is the snare and nothing
+            # else. Claiming the extents is what lets a hit be dropped: the
+            # pass-through at the bottom keeps whatever no section claimed.
+            floor = settings.phantom_snare_velocity
+            phantoms = [h for h in inside
+                        if floor > 0 and h.instrument in PHANTOM_FLOOR_INSTRUMENTS
+                        and h.velocity <= floor]
+            if phantoms:
+                entry["phantom_snares"] = len(phantoms)
+                entry["hits_after"] = len(inside) - len(phantoms)
+                claimed.extend(extents)
+                produced.extend(h for h in inside if h not in phantoms)
+                report["untouched"] += len(inside) - len(phantoms)
+            else:
+                report["untouched"] += len(inside)
             report["sections"].append(entry)
-            report["untouched"] += len(inside)
             continue
 
         _, unit, reps_used, hits, coverage, demoted, reps = best
+
+        # The stamp stops where the playing stopped. Only here, where the vote
+        # actually stamps something: a section reported as `skipped` is passed
+        # through untouched, so there is nothing to withhold.
+        stops = [stop for lo, hi in extents
+                 for stop in stopped_bars(timeline, inside, low=lo, high=hi,
+                                          stop_beats=settings.stop_beats)]
+        if stops:
+            withheld: dict[int, int] = {}
+            keep_hits: list[Hit] = []
+            for hit in hits:
+                blocking = next((s for s in stops if s.withholds(hit.time)), None)
+                if blocking is None:
+                    keep_hits.append(hit)
+                else:
+                    withheld[blocking.bar] = withheld.get(blocking.bar, 0) + 1
+            hits = keep_hits
+            reported = [{"bar": s.bar, "beat": s.beat,
+                         "withheld": withheld.get(s.bar, 0)}
+                        for s in stops if withheld.get(s.bar)]
+            if reported:
+                entry["stopped"] = reported
+
         claimed.extend(extents)
         produced.extend(hits)
         entry.update(unit_bars=unit, repeats=reps_used, hits_after=len(hits),

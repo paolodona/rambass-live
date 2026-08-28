@@ -477,6 +477,73 @@ moves nothing `rambass stale` watches. `BACKBEAT_ARTICULATIONS` stays a closed
 list of two and says of itself that it is not a general re-voicing facility —
 this is the general one, and the two do not merge.
 
+**A continuous hi-hat run is not recoverable from this audio, so it is
+declared.** 89 of Manlio's 207 review notes are a hat pattern the pipeline got
+wrong, 66 of them holes in a continuous run — the largest single cause. Three
+routes were measured and all fail: the threshold sweep (0.55/auto is the best of
+twenty `consolidate` settings), the hat-stem flux probe (2.5x separation on a
+median of 0.001 in `chorus-1`, against 20-50x everywhere else, because the
+crashes on beats 1 and 3 leave nothing in that stem to find), and occupancy,
+which cannot even rank the two cases correctly — `chorus-1` is a continuous
+triplet run reading **6 of 12** slots and `chorus-2` is a genuine shuffle reading
+**9**. So `sections[].hats` declares it (`run`, `shuffle`, or a mask of `x` and
+`.`), same register as `voicing:` and `backbeat:`, and `restore.fill_hat_runs`
+applies it before the re-voicing so a ride run is two lines. `backbeat_hat` was
+folded into it rather than shipped: verse-1's and verse-2's truth is a hat on all
+twelve triplet slots, so `hats: run` covers the side-stick holes as a side
+effect. It fills holes only — never moves, re-voices or overwrites a hit the
+transcriber found, because those carry the section's real velocities. Worth 81
+recovered holes and 140 → 78 errors on three sections; it also adds 19 hats the
+review pass lacks, almost all in the **partial bars at either end of a section**,
+which is a caution for filling the field in and not a reason to round the spans.
+`rambass sections --hats` proposes a mask and never writes one. Do not add
+another audio pass for this; see `docs/transcription-lessons.md`.
+
+**The last bar of a section is the one least likely to repeat, so `consolidate`
+stops at a stop.** Its docstring owns the fill problem; the mirror case was
+undocumented and cost a third of Manlio's extra-hit edits — the voted pattern was
+stamped into every repetition *including the last*, where the band has already
+lifted off into the break (bar 17 stops dead at beat 3 and six hits were stamped
+over the silence; bars 32 and 54 the same). `stop_beats` is **1.25** and the
+sweep is the argument: 0.5 → 163 errors, 1.0 → 161, **1.25 → 145**, 1.5 and 2.0
+→ 145 as well. Everything below 1.25 is *worse than not doing it at all*, finding
+the same ten phantoms and taking 17-19 real hits with them, because at that width
+the rule stops reading "the band stopped" and starts reading "this bar is missing
+a hit at the end" — the case the vote exists to repair. It is a plateau, not a
+peak. An **empty** bar is never a stop (there has to be playing for it to stop
+after) and the constant assumes a **dense** grid, so a sparse pattern wants
+`stop_beats=0` rather than a smaller number. `quantize.stopped_bars` is shared
+with the hat fill deliberately: a declared `run` that ignored the stop would put
+twelve hats straight back into bar 17.
+
+**A quiet snare is a phantom and a quiet anything else is not.** Of the
+velocity-floor hits in the six sections `consolidate` skipped on Manlio, **6 of
+7 snares are phantoms** while all 11 floor hi-hats, both toms and the kick are
+real — the snares Paolo kept run a median of v107. This is "a hi-hat is never
+loudness evidence" pointed the other way: a snare is the one instrument whose own
+quietness is evidence against it, because this drummer's soft strokes on that
+drum are side-sticks and ghost notes that land in other lanes. So
+`PHANTOM_FLOOR_INSTRUMENTS` is one entry long and a module constant rather than a
+setting. Generalising it to every instrument at the floor scores 155, worse than
+not having it; folding in `sidestick` — the obvious simplification, same drum —
+scores 141 against 140, because a rim click is 25-30 dB below the same drummer's
+snare and the floor is where a *real* side-stick lives. It applies **only** where
+the section was skipped (a voted section has agreement, a better instrument than
+level), and 50 is the floor plus slack rather than the best score: 55 would score
+139 on this song and is not taken, because one drummer and one kit means the
+number has to hold for the other ten.
+
+**A boundary hi-hat rule was measured and left out.** Ten notes are an open hat
+or foot splash near a section change, and copying `restore.crash_candidates`
+looks obvious — but two of the ten sit 16 and 26 beats from any change, and every
+formulation of the rest lands between 0% and 28% precise (best: 18 candidates for
+5 right, on a velocity gate fitted to five hits whose v83-97 overlaps the v45-121
+of the 38 that are not). `CRASH_CANDIDATE_VELOCITY` had a 23 dB decay separation
+behind it; there is no acoustic story here. And `NOTICEABLE` exists precisely
+because 170 single hi-hats once buried the crashes and toms in the ledger. The
+*observation* is real — eight of the ten are in the last bar before a change, so
+listen to it — but a hat somebody hears there is an ordinary `swap-hit` note.
+
 **Hand edits go in `song.yaml`, never into the Reaper MIDI item.**
 `drums.additions` and `drums.removals` are bar-anchored, reapplied by `rambass
 drums restore`, and ticked off by `rambass drums missing`. A crash drawn into the

@@ -192,9 +192,13 @@ PIPELINE: tuple[Step, ...] = (
         # is here because a section may declare a `voicing` map that
         # `restore.revoice_sections` applies at this step -- without it a
         # re-voicing changed nothing this report watches, so `rambass stale`
-        # said ok and the review screen said the candidate was current.
-        fields=("tempo", "bars", "sections", "drums/map", "drums/additions",
-                "drums/removals"),
+        # said ok and the review screen said the candidate was current. The
+        # same now goes for a `hats` pattern, which lives in the same list.
+        # `drums/subdivision` joins them because it is the grid
+        # `restore.fill_hat_runs` fills on: change 3 to 4 and every declared
+        # hat lands somewhere else.
+        fields=("tempo", "bars", "sections", "drums/map", "drums/subdivision",
+                "drums/additions", "drums/removals"),
         skip_origins=("a-cappella", "backing-track"),
     ),
     # The show chain past the drums. These skip only a-cappella songs: a

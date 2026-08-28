@@ -149,14 +149,31 @@ the count-in taken off for you.
 
 `consolidate` replaces each section with the pattern its own repetitions agree
 on. It **removes the fills and the crashes by design** — a fill is the bar that
-does not repeat, so no threshold keeps it — which is what step 6 is for.
+does not repeat, so no threshold keeps it — which is what step 6 is for. Two
+things it withholds rather than stamps, both measured on Manlio and both printed
+in its report: the pattern over a **bar whose own playing stopped** at least 1.25
+beats early (the last bar of a section is the one least likely to repeat, because
+it is where the band lifts off), and a **snare at the velocity floor in a section
+too short to vote on**, which is a phantom six times out of seven. `--stop-beats
+0` and `--phantom-snare-velocity 0` turn them off. See Stage 6 of
+docs/drums-rebuild.md and docs/transcription-lessons.md.
 
 ### 6. Put back what was removed, and record it
 
 ```
 rambass drums missing 04-titolo     # the checklist, in Reaper bar numbers
+rambass sections 04-titolo --hats   # propose a hi-hat pattern per section
 rambass drums restore 04-titolo     # apply drums.additions / drums.removals
 ```
+
+`restore` also applies the two **section-wide declarations**, before the
+per-position edits: `voicing:` (played drum → wanted drum) and `hats:` (the
+section's hi-hat pattern, `run` / `shuffle` / a mask of `x` and `.`). Both exist
+because the decision is one statement about a section rather than dozens of
+positions — on Manlio the finale's ride bell is 66 hits and the hat pattern is 89
+review notes — and because neither is recoverable from the audio. `sections
+--hats` proposes a mask from the part's own occupancy and never writes one:
+which slots are detection holes and which are the part is a question for an ear.
 
 `missing` writes `qa/missing-hits.md`: every accent and fill the vote dropped,
 plus the section starts whose crash is hiding inside an open hi-hat. Work down

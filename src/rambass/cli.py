@@ -1210,7 +1210,7 @@ def cmd_drums_restore(args: argparse.Namespace) -> int:
     whole pipeline reproduces the restored file rather than losing it.
     """
     from .midiio import read_drum_midi, write_drum_midi
-    from .restore import apply_edits, revoice_sections
+    from .restore import apply_edits, fill_hat_runs, revoice_sections
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
@@ -1219,19 +1219,32 @@ def cmd_drums_restore(args: argparse.Namespace) -> int:
             _say(f"{song.slug}: no {source.name} — consolidate it first")
             continue
         voiced = [s for s in song.sections if getattr(s, "voicing", None)]
-        # A section voicing is the third kind of declared Stage 7 edit, so it
-        # has to keep this command from bailing before it applies one.
-        if not song.drum_additions and not song.drum_removals and not voiced:
-            _say(f"{song.slug}: no drums.additions, drums.removals or section "
-                 f"voicing in song.yaml. `rambass drums missing {song.slug}` "
-                 f"lists what Stage 7 has to put back.")
+        hatted = [s for s in song.sections if getattr(s, "hats", "")]
+        # A section voicing is the third kind of declared Stage 7 edit, and a
+        # declared hi-hat pattern the fourth, so both have to keep this command
+        # from bailing before they are applied.
+        if (not song.drum_additions and not song.drum_removals
+                and not voiced and not hatted):
+            _say(f"{song.slug}: no drums.additions, drums.removals, section "
+                 f"voicing or section hats in song.yaml. `rambass drums missing "
+                 f"{song.slug}` lists what Stage 7 has to put back.")
             continue
         drum_map = load_drum_map(song.drum_map, project)
         performance = read_drum_midi(source, drum_map)
         performance.timeline = song.timeline()
-        # Before the edits, so a declaration wins: `drums.additions` is the last
-        # word everywhere else in Stage 7 (see restore.apply_edits), and a hi-hat
-        # deliberately declared inside a re-voiced section should stay one.
+        # Fill, then re-voice what was filled, then let the declared additions
+        # win over both. The order is the whole argument for one field rather
+        # than two: `hats` says where the hat plays and `voicing` says which hat
+        # it is, so a section can declare `hats: run` and `hihat_open: ride_bell`
+        # and get a ride run -- and a hat deliberately declared in
+        # `drums.additions` still overrides everything, because additions are
+        # the last word everywhere else in Stage 7 (see restore.apply_edits).
+        filling = {"added": 0, "sections": []}
+        if hatted:
+            performance, filling = fill_hat_runs(
+                performance, song.sections,
+                end_bar=(song.bars or song.total_bars()) + 1,
+                subdivision=song.drum_subdivision)
         revoicing = {"renamed": 0, "sections": []}
         if voiced:
             performance, revoicing = revoice_sections(
@@ -1241,6 +1254,14 @@ def cmd_drums_restore(args: argparse.Namespace) -> int:
             performance,
             additions=song.drum_additions, removals=song.drum_removals)
         _say(f"── {song.title}: {len(performance.hits)} hits from {source.name}")
+        for entry in filling["sections"]:
+            _say(f"   hats          {entry['name']:<18} "
+                 f"+{entry['added']} filled at v{entry['velocity']} "
+                 f"({entry['velocity_from']})")
+            for stop in entry.get("stopped", []):
+                _say(f"      · bar {stop['bar'] + song.count_in_bars} stops "
+                     f"playing at beat {stop['beat']:g}, so the pattern was not "
+                     f"filled past it")
         for entry in revoicing["sections"]:
             played = ", ".join(f"{a} → {b}" for a, b in entry["voicing"].items())
             _say(f"   voicing       {entry['name']:<18} "
@@ -1310,6 +1331,8 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
             subdivision=args.subdivision or song.drum_subdivision,
             threshold=args.threshold,
             unit_bars=args.unit_bars,
+            stop_beats=args.stop_beats,
+            phantom_snare_velocity=args.phantom_snare_velocity,
         ))
 
         _say(f"   {'section':<16}{'spans':>6}{'reps':>6}{'unit':>6}"
@@ -1318,10 +1341,24 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
             if "skipped" in entry:
                 _say(f"   {entry['name']:<16}{entry['spans']:>6}{'—':>6}{'—':>6}"
                      f"{entry['hits_before']:>6} kept{'':>7}   {entry['skipped']}")
+                if entry.get("phantom_snares"):
+                    _say(f"      · {entry['name']}: dropped "
+                         f"{entry['phantom_snares']} snare"
+                         f"{'s' if entry['phantom_snares'] != 1 else ''} at the "
+                         f"velocity floor — nothing was voted on here, and in an "
+                         f"unvoted section that is a phantom six times out of "
+                         f"seven. `--phantom-snare-velocity 0` keeps them")
                 continue
             _say(f"   {entry['name']:<16}{entry['spans']:>6}{entry['repeats']:>6}"
                  f"{entry['unit_bars']:>5}b{entry['hits_before']:>6} ->"
                  f"{entry['hits_after']:>4}{entry['coverage']:>7.0%}")
+            for item in entry.get("stopped", []):
+                _say(f"      · {entry['name']} bar "
+                     f"{item['bar'] + song.count_in_bars} stops playing at beat "
+                     f"{item['beat']:g}, so {item['withheld']} hit"
+                     f"{'s' if item['withheld'] != 1 else ''} of the pattern "
+                     f"were not stamped over the silence — the band lifted off "
+                     f"here. `--stop-beats 0` stamps it anyway")
             for item in entry.get("demoted", []):
                 _say(f"      ! {entry['name']} {item['bar'] + song.count_in_bars}."
                      f"{item['beat']:g}: {item['kept']} and "
@@ -2139,6 +2176,43 @@ def cmd_sections(args: argparse.Namespace) -> int:
         else:
             _say(f"   (no {path.name} — the pattern checks need it)")
 
+        if args.hats and performance is not None:
+            from .sections import propose_hats
+
+            _say()
+            _say(f"   hi-hat occupancy per section in {path.name} — which slots "
+                 f"the part plays in")
+            _say("   at least half the bars they could appear in. A "
+                 "**proposal**: occupancy cannot")
+            _say("   tell a continuous run from a shuffle (Manlio's chorus-1 "
+                 "reads 6 of 12 slots")
+            _say("   and is a run; chorus-2 reads 9 and is a shuffle), so this "
+                 "is for an ear.")
+            _say()
+            thin = False
+            for proposal in propose_hats(song, performance):
+                slots = "[" + ",".join(str(s) for s in proposal.slots) + "]"
+                declared = (f"  (declares hats: {proposal.declared})"
+                            if proposal.declared else "")
+                note = f"  ({proposal.note})" if proposal.note else ""
+                mark = " ?" if proposal.thin else "  "
+                thin = thin or proposal.thin
+                _say(f"  {mark}{proposal.section:<16}{slots:<30}"
+                     f"{proposal.mask}{note}{declared}")
+            if thin:
+                _say()
+                _say("   ? = too short for consolidate to vote on, so every slot "
+                     "is played in one bar")
+                _say("     or two and the share says very little. On Manlio these "
+                     "are the sections")
+                _say("     where the part has *more* than the review pass, not "
+                     "less — listen, do not")
+                _say("     take the mask.")
+            _say()
+            _say("   nothing was changed. Put the one you hear in `song.yaml` as")
+            _say("   `hats: run`, `hats: shuffle` or the mask, then `rambass "
+                 "drums restore`.")
+
         findings = check_sections(song, performance)
         if not findings:
             _say("   nothing to suggest.")
@@ -2397,6 +2471,16 @@ def build_parser() -> argparse.ArgumentParser:
                         "it (default 0.55; docs/drums-rebuild.md argues 0.5-0.6)")
     p.add_argument("--subdivision", type=int, default=None,
                    help="slot grid to vote on; default drums.subdivision")
+    p.add_argument("--phantom-snare-velocity", type=int, default=50,
+                   help="in a section too short to vote on, drop snares at or "
+                        "below this velocity (default 50; 0 keeps them — see "
+                        "quantize.PHANTOM_FLOOR_INSTRUMENTS for why it is the "
+                        "snare and nothing else)")
+    p.add_argument("--stop-beats", type=float, default=1.25,
+                   help="do not stamp the pattern over a bar whose own playing "
+                        "stops this many beats before its slots run out "
+                        "(default 1.25; 0 disables it — see "
+                        "ConsolidateSettings.stop_beats for the sweep)")
     p.add_argument("--unit-bars", type=int, default=0,
                    help="repeat length in bars; 0 works out 1 or 2 per section")
     p.add_argument("--dry-run", action="store_true",
@@ -2818,6 +2902,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--midi", default="quantized",
                    help="drum variant to review the sections against; the "
                         "pattern checks are skipped if it is missing")
+    p.add_argument("--hats", action="store_true",
+                   help="also propose a `hats:` pattern per section from the "
+                        "part's own hi-hat occupancy (suggests only — it never "
+                        "writes to song.yaml)")
     p.set_defaults(func=cmd_sections)
 
     _remember_group_parsers(parser)
