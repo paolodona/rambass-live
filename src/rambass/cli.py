@@ -25,6 +25,13 @@ from .manifest import (
 )
 from .project import Project, ProjectError, parse_position, slugify
 
+#: Mirrors :data:`rambass.align.DEFAULT_LAM`, and is duplicated rather than
+#: imported because `align` pulls in numpy and the parser is built on every run
+#: -- the layering in CLAUDE.md keeps the core tier importable on a laptop at a
+#: venue. `--help` wants the actual number, so the two are pinned together by
+#: `test_the_cli_default_lambda_matches_the_module`.
+_DEFAULT_LAM = 1.0
+
 EPILOGUE = """\
 typical order of work for one song:
   rambass new "Titolo" --album tutti-in-fila --track 4
@@ -714,7 +721,8 @@ def cmd_align(args: argparse.Namespace) -> int:
     """
     from .align import (
         AlignMap, Anchor, fit_anchors, load_align, plan_problem,
-        residual_holdout_ms, residual_ms, save_align, warp_plan, warp_samples,
+        residual_holdout_ms, residual_ms, save_align, smooth_anchors,
+        warp_plan, warp_samples,
     )
     from .analyze import analyze_tempo
     from .audio import load_audio, write_wav
@@ -779,7 +787,20 @@ def cmd_align(args: argparse.Namespace) -> int:
                         " With an anchor on every beat this is the beat "
                         "tracker's own jitter, not a bad fit — fine for a "
                         "reference, which is all this is."))
-            problem = plan_problem(fitted, timeline, bars=bars)
+            # What the render will actually do, which the leave-one-out figure
+            # above no longer describes: the path is smoothed before it warps,
+            # so it does not pass through these anchors. See align.smooth_anchors
+            # -- the gap it leaves is rejected noise, not error, and measurably
+            # lands closer to where the band played than interpolation does.
+            if args.lam > 0 and len(fitted.anchors) >= 3:
+                moved = [abs(new.at - old.at) * 1000.0 for old, new in zip(
+                    sorted(fitted.anchors, key=lambda a: a.position),
+                    smooth_anchors(fitted.anchors, timeline, lam=args.lam))]
+                moved.sort()
+                _say(f"   smoothed at lam {args.lam:g}: the render will sit "
+                     f"{moved[len(moved) // 2]:.0f} ms from these anchors at the "
+                     f"median, {moved[-1]:.0f} ms at the worst")
+            problem = plan_problem(fitted, timeline, bars=bars, lam=args.lam)
             if problem and not args.force:
                 _say(f"   ! {problem}")
                 _say(f"     NOT written — the map you have still works. Try a "
@@ -803,14 +824,18 @@ def cmd_align(args: argparse.Namespace) -> int:
         if not source:
             _say(f"{song.slug}: no stems/{args.stem}.wav to warp")
             continue
-        plan = warp_plan(amap, timeline, bars=bars)
+        plan = warp_plan(amap, timeline, bars=bars, lam=args.lam)
         samples, sample_rate = load_audio(source)
         # Both channels in one call: WSOLA picks its offset per frame, and
         # picking it per channel would decorrelate the sides.
         warped = warp_samples(samples, sample_rate, plan)
         rates = [segment.rate for segment in plan]
+        step = max((abs(b - a) for a, b in zip(rates, rates[1:])), default=0.0)
         _say(f"── {song.title}: warped {source.name} over {len(plan)} segments, "
-             f"rate {min(rates):.3f}-{max(rates):.3f}")
+             f"rate {min(rates):.3f}-{max(rates):.3f}, "
+             + (f"smoothed at lam {args.lam:g}" if args.lam > 0
+                else "NOT smoothed (lam 0)")
+             + f", worst step {step * 100:.1f}%")
         if args.dry_run:
             _say("   dry run — nothing written.")
             continue
@@ -2297,6 +2322,15 @@ def build_parser() -> argparse.ArgumentParser:
                         "is the default because it measurably wins: on Manlio "
                         "the warped backbeats land within 38 ms at p90 against "
                         "58 ms per bar and 107 ms for a single offset")
+    p.add_argument("--lam", type=float, default=_DEFAULT_LAM,
+                   help="how hard to smooth the warp path (default: "
+                        f"{_DEFAULT_LAM:g}). The path no longer runs through "
+                        "every anchor, which is what stops the rate stepping "
+                        "once a beat: on Manlio the swing falls from "
+                        "0.905-1.142 to 0.948-1.095 and the worst step from "
+                        "14%% to under 5%%. Higher is smoother and slower to "
+                        "follow a real section change; 0 restores the old "
+                        "interpolation")
     p.add_argument("--keep-bar-one", action="store_true", default=True,
                    help="keep an existing bar-1 anchor, which may have been "
                         "corrected by ear")

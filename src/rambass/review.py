@@ -317,6 +317,13 @@ def steps_for(song, stage: str) -> list[StepRow]:
 # reference is the original recording, which breathes; where a bar sits in it
 # is `practice/align.yaml`'s job (`AlignMap.source_at`), the same map the
 # practice warp uses, and nothing here re-derives it.
+#
+# The warp *renders* that map through `align.smooth_anchors` and this does not,
+# so the two differ by a few tens of milliseconds at a section start. Left that
+# way deliberately: smoothing is numpy, this module is duck-typed precisely to
+# stay out of the numpy tier, and a clip cue is a section boundary seconds long
+# rather than a hit position. If that ever stops being true, the fix is to pass
+# in an already-smoothed map, not to import align here.
 
 
 @dataclass(frozen=True)

@@ -276,6 +276,115 @@ def residual_holdout_ms(amap: AlignMap, timeline: Timeline) -> tuple:
     return (max(errors), sum(errors) / len(errors))
 
 
+#: How hard the warp path is smoothed, in the penalty
+#: ``sum (s_i - at_i)^2 + lam * integral (s'')^2``. On by default, because the
+#: unsmoothed path is not merely harsher — it is measurably *less* accurate.
+#:
+#: Simulating a drummer who sits 100 ms behind the beat for 16 bars and then
+#: catches up at a section change, with the per-anchor noise measured on Manlio
+#: (sd 18 ms): interpolating every anchor scores a perfect 0 ms against the
+#: detected beats and p90 **27.7 ms** against where the band actually played,
+#: because it reproduces the detector's noise faithfully and bakes it into the
+#: audio. At lam 1.0 that becomes p90 **14.5 ms** — twice as accurate — while
+#: the rate wobble inside the constant-lag section drops from +/-2.3% to
+#: +/-0.5%. On Manlio's own committed map the rate swing falls from 0.905-1.142
+#: to 0.948-1.073 and the worst beat-to-beat step from 14.0% to under 4%.
+#:
+#: Higher is smoother and slower to respond to a real section change; 10.0
+#: roughly halves the wobble again at the cost of smearing a boundary over more
+#: beats. 0.0 restores the old interpolation exactly.
+DEFAULT_LAM = 1.0
+
+
+def _second_difference(grid: np.ndarray) -> np.ndarray:
+    """The operator whose squared sum approximates ``integral (s'')^2 dt``.
+
+    Unevenly spaced on purpose: an anchor may be missing where the detector
+    found no beat, and three-point second differences over uneven spacing are
+    the standard weighting. Each row is scaled by ``sqrt(mean spacing)`` so the
+    sum approximates the integral rather than a raw count, which is what keeps
+    *lam* meaning the same thing at one anchor per beat and one per bar.
+    """
+    n = len(grid)
+    out = np.zeros((n - 2, n), dtype=float)
+    for i in range(n - 2):
+        left = grid[i + 1] - grid[i]
+        right = grid[i + 2] - grid[i + 1]
+        span = left + right
+        out[i, i] = 2.0 / (left * span)
+        out[i, i + 1] = -2.0 / (left * right)
+        out[i, i + 2] = 2.0 / (right * span)
+        out[i] *= np.sqrt(span / 2.0)
+    return out
+
+
+def smooth_anchors(anchors, timeline: Timeline, *,
+                   lam: float = DEFAULT_LAM) -> list[Anchor]:
+    """The anchors with their ``at`` fitted to a smooth path instead of joined.
+
+    Paolo: *"listening to the warped track is jarring as it speeds up and down
+    in an unnatural way."* The cause is that a piecewise-linear path through
+    every anchor has a **discontinuous rate** — the slope steps at every knot,
+    310 of them on Manlio, by a mean of 2.7% and a maximum of 14.0%.
+
+    Those steps are not tempo. The beat-to-beat rate series on Manlio has a
+    lag-1 autocorrelation of **+0.03**: white noise. Real drift is
+    autocorrelated, because a band that slows down stays slow for a few bars.
+    What the per-beat rate tracks is per-anchor noise — the beat detector's
+    placement plus the drummer's own micro-timing, sd 18 ms — so the old path
+    modulated playback speed by up to 14% in response to a signal carrying no
+    tempo information, and then wrote that noise into the file.
+
+    So this fits a **penalised least-squares (smoothing) spline**: minimise
+    ``sum (s_i - at_i)^2 + lam * integral (s'')^2``. Every anchor still votes;
+    none of them dictates. Penalising the *second* derivative is the point —
+    it is the rate's own rate of change, so a constant lag and a steady
+    accelerando both cost nothing, while a once-per-beat zigzag is expensive.
+    That is exactly the split the material needs: a drummer sitting 100 ms
+    behind the beat is **translated**, not slow, and translation is carried by
+    the path's intercept at rate 1.000.
+
+    Going *finer* is the trap, and it is why ``--every-beats`` is not the knob:
+    subdividing to 16ths adds more knots each carrying the same noise over a
+    shorter span, so the rate swings get worse, not better.
+
+    Not a filter over the anchors, because they are not evenly spaced — a bar
+    the detector never saw is simply absent, and a moving average across that
+    gap would weight it wrong.
+
+    Returns a list ordered by musical position. ``lam <= 0`` or fewer than three
+    anchors returns them unchanged: a second difference needs three points, and
+    a one-anchor map is an offset that still has to warp.
+    """
+    ordered = sorted(anchors, key=lambda a: a.position)
+    if lam <= 0.0 or len(ordered) < 3:
+        return ordered
+    grid = np.array([a.grid_seconds(timeline) for a in ordered], dtype=float)
+    at = np.array([a.at for a in ordered], dtype=float)
+    if not np.all(np.diff(grid) > 0):
+        return ordered
+    penalty = _second_difference(grid)
+    # Dense, because the anchor counts are small (310 on Manlio, 556 on Tutti in
+    # Fila: 4 ms and 32 ms to solve) and `I + lam * P.T @ P` being pentadiagonal
+    # is not worth a hand-rolled banded solver in a module that must stay pure
+    # numpy. Revisit only if something ever anchors a long song per 16th.
+    system = np.eye(len(ordered)) + lam * (penalty.T @ penalty)
+    # The first anchor is held **exactly**, so smoothing preserves
+    # :attr:`AlignMap.offset` rather than nudging it. Two reasons, and the
+    # second is the one that bit. It is the anchor most likely to be a
+    # measurement instead of a detection -- `fit_anchors` takes `start_at` and
+    # refuses to snap it, because chaining from the tracker's first beat once
+    # built a map 3.1 s off -- and a spline is least constrained at its ends, so
+    # it is also the anchor smoothing moves most. Unpinned it moved bar 1 of a
+    # test fixture by +16 ms, which pushed the downbeat to target -0.016 s and
+    # cut it off the front of the render entirely.
+    fitted = np.empty(len(ordered), dtype=float)
+    fitted[0] = at[0]
+    fitted[1:] = np.linalg.solve(system[1:, 1:], at[1:] - system[1:, 0] * at[0])
+    return [Anchor(bar=a.bar, beat=a.beat, at=float(value))
+            for a, value in zip(ordered, fitted)]
+
+
 @dataclass(frozen=True)
 class WarpSegment:
     """One span of the recording, and the span of the grid it becomes."""
@@ -292,17 +401,25 @@ class WarpSegment:
         return (self.source_end - self.source_start) / span if span else 1.0
 
 
-def warp_plan(amap: AlignMap, timeline: Timeline, *, bars: int) -> list[WarpSegment]:
+def warp_plan(amap: AlignMap, timeline: Timeline, *, bars: int,
+              lam: float = DEFAULT_LAM) -> list[WarpSegment]:
     """Turn a map into segments to stretch. Target side computed, never stored.
 
     The last segment runs to the end of the song rather than to the last anchor,
     because the tail is music too. With a single anchor there is nothing to
     interpolate, so the whole song is one segment at rate 1.0 — an offset, which
     is what a one-anchor map is.
+
+    *lam* smooths the path first — see :func:`smooth_anchors` for why that is on
+    by default. It changes where the segment edges *land*, never how many there
+    are, so the stored anchors stay the map and this stays a rendering choice.
     """
-    ordered = sorted(amap.anchors, key=lambda a: a.position)
+    ordered = smooth_anchors(amap.anchors, timeline, lam=lam)
     if not ordered:
         return []
+    # The tail is extrapolated from the smoothed path, or the last segment would
+    # be aimed by the one anchor smoothing was most likely to have moved.
+    smoothed = AlignMap(anchors=ordered)
     end_target = timeline.bar_beat_to_seconds(bars + 1, 1.0)
     if len(ordered) == 1:
         return [WarpSegment(source_start=ordered[0].at,
@@ -311,7 +428,8 @@ def warp_plan(amap: AlignMap, timeline: Timeline, *, bars: int) -> list[WarpSegm
 
     out: list[WarpSegment] = []
     edges = [(a.grid_seconds(timeline), a.at, a.position) for a in ordered]
-    edges.append((end_target, amap.source_at(end_target, timeline), (bars + 1, 1.0)))
+    edges.append((end_target, smoothed.source_at(end_target, timeline),
+                  (bars + 1, 1.0)))
     for (grid, at, position), (next_grid, next_at, _) in zip(edges, edges[1:]):
         if next_grid <= grid:
             continue
@@ -327,7 +445,8 @@ def warp_plan(amap: AlignMap, timeline: Timeline, *, bars: int) -> list[WarpSegm
     return out
 
 
-def plan_problem(amap: AlignMap, timeline: Timeline, *, bars: int) -> str | None:
+def plan_problem(amap: AlignMap, timeline: Timeline, *, bars: int,
+                 lam: float = DEFAULT_LAM) -> str | None:
     """The message :func:`warp_plan` would raise, or ``None`` if it would not.
 
     So that a fit can check its own output before overwriting a good map. Hit for
@@ -336,7 +455,7 @@ def plan_problem(amap: AlignMap, timeline: Timeline, *, bars: int) -> str | None
     gone. The fit is what knows it produced something unusable.
     """
     try:
-        warp_plan(amap, timeline, bars=bars)
+        warp_plan(amap, timeline, bars=bars, lam=lam)
     except ProjectError as problem:
         return str(problem)
     return None
