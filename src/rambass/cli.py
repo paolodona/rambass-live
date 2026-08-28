@@ -999,13 +999,20 @@ def cmd_review_clips(args: argparse.Namespace) -> int:
     """
     from .align import load_align
     from .review import (
-        candidate_path, clip_name, clip_spans, cut_clip, reference_path,
+        candidate_path, clip_name, clip_offsets, clip_sources, clip_spans,
+        cut_clip, reference_path,
     )
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
         candidate = candidate_path(song, args.candidate)
         reference = reference_path(song)
+        # The band beds are optional here, unlike the two drum sides: a song
+        # with no warped bed yet is still perfectly reviewable, and raising
+        # would take the A/B away over the layer under it.
+        beds = {side: source for side, source in
+                clip_sources(song, args.candidate).items()
+                if side.endswith("-band") and source.available}
         amap = load_align(song.path("practice", "align.yaml"))
         spans = clip_spans(song, amap)
         target_dir = song.path("qa", "clips")
@@ -1015,6 +1022,15 @@ def cmd_review_clips(args: argparse.Namespace) -> int:
             cut_clip(reference, target_dir / clip_name(span, "ref"),
                      start=span.reference_start,
                      duration=span.reference_duration)
+            for side, source in beds.items():
+                start, duration = clip_offsets(span, side)
+                cut_clip(source.path, target_dir / clip_name(span, side),
+                         start=start, duration=duration)
+        for side in ("cand-band", "ref-band"):
+            if side not in beds:
+                _say(f"   no {side} layer: "
+                     + clip_sources(song, args.candidate)[side].hint
+                       .splitlines()[-1].strip())
         _say(f"{song.title}: {len(spans)} section pairs -> {target_dir}"
              + ("  (reference timing is offset-only — fit "
                 "`rambass align --fit` for exact positions)"
@@ -1067,10 +1083,28 @@ def cmd_review_note(args: argparse.Namespace) -> int:
         raise ProjectError(
             f"--kind {args.kind!r}: expected one of {', '.join(NOTE_KINDS)}")
 
-    add_note(song, Note(
+    if args.swap_to and args.kind != "swap-hit":
+        raise ProjectError(
+            "--swap-to only means anything on --kind swap-hit: it names the "
+            "drum that should replace --instrument at that position")
+
+    filed = Note(
         bar=bar, beat=beat, kind=args.kind, instrument=args.instrument,
-        velocity=args.velocity, comment=args.comment,
-        created=date.today().isoformat()))
+        swap_to=args.swap_to, velocity=args.velocity, comment=args.comment,
+        created=date.today().isoformat())
+    # Silent in the console, where the chip is already on screen; said out
+    # loud here, where "noted" for a note that added nothing is a small lie.
+    from .review import load_review, observation_of
+
+    already = any(observation_of(one) == observation_of(filed)
+                  for one in load_review(song.path("qa", "review.yaml"))[1])
+    add_note(song, filed)
+    if already:
+        _say(f"{song.title}: already noted {args.kind} at bar {bar} beat "
+             f"{beat:g}"
+             + (f" on {args.instrument}" if args.instrument else "")
+             + " — left as it was")
+        return 0
     _say(f"{song.title}: noted {args.kind} at bar {bar} beat {beat:g}"
          + (f" (Reaper {quoted})" if args.reaper_bar else "")
          + f" -> {song.path('qa', 'review.yaml')}")
@@ -1084,7 +1118,7 @@ def cmd_review_promote(args: argparse.Namespace) -> int:
     split `drums missing --propose` already uses. Timing and velocity
     complaints stay in the ledger for a human.
     """
-    from .review import load_review, promote_notes, write_ledger
+    from .review import load_review, merge_notes, promote_notes, write_ledger
 
     project = _project()
     for song in _songs(project, args.song, args.album, args.all):
@@ -1094,6 +1128,10 @@ def cmd_review_promote(args: argparse.Namespace) -> int:
             continue
         promoted, skipped = promote_notes(song, notes)
         if promoted:
+            # Promoting the second half of a swap is what makes the pair
+            # mergeable: the declaration has just been rewritten, so the one
+            # note describing it is now exactly true. See review.merge_notes.
+            notes, _ = merge_notes(notes)
             song.validate()
             save_song(song)
             write_ledger(song, notes, version=version)
@@ -1103,6 +1141,46 @@ def cmd_review_promote(args: argparse.Namespace) -> int:
         else:
             _say(f"{song.title}: nothing confident enough to promote "
                  f"({skipped} left for your ears)")
+    return 0
+
+
+def cmd_review_demote(args: argparse.Namespace) -> int:
+    """Take a promoted note's edit back out of ``song.yaml`` and reopen it.
+
+    The other half of `review promote`, which was a one-way door: a note
+    promoted by mistake could only be undone by hand-editing the manifest.
+    Selects by musical bar (or a ruler reading with --reaper-bar), narrowed by
+    --instrument when two notes share a bar.
+    """
+    from .review import demote_note, load_review, note_key, write_ledger
+
+    project = _project()
+    song = load_song(project.find_song_dir(args.song))
+    bar, beat = parse_position(args.bar)
+    quoted = f"{bar}.{beat:g}"
+    if args.reaper_bar:
+        bar -= song.count_in_bars
+    version, notes = load_review(song.path("qa", "review.yaml"))
+    wanted = [note for note in notes
+              if note.bar == bar and note.status == "promoted"
+              and (args.beat_any or abs(note.beat - beat) < 1e-6)
+              and (not args.instrument or note.instrument == args.instrument)]
+    if not wanted:
+        raise ProjectError(
+            f"{song.slug}: no promoted note at bar {quoted}"
+            f"{f' on {args.instrument}' if args.instrument else ''}. "
+            f"`rambass review status {song.slug}` counts what is there.")
+
+    removed = 0
+    for note in wanted:
+        _, took = demote_note(song, notes, note_key(note))
+        removed += took
+    song.validate()
+    save_song(song)
+    write_ledger(song, notes, version=version)
+    _say(f"{song.title}: demoted {len(wanted)} note(s) at bar {quoted}, took "
+         f"{removed} edit(s) out of song.yaml — read the diff, then "
+         f"`rambass drums restore {song.slug}`")
     return 0
 
 
@@ -1157,6 +1235,12 @@ def cmd_drums_restore(args: argparse.Namespace) -> int:
              f"{report['already_there']} already there"
              + (f", {report['velocity_from_median']} took the instrument's "
                 f"median velocity" if report["velocity_from_median"] else ""))
+        for bar, beat, instrument in report.get("contradicted", []):
+            _say(f"   ! the removal at bar {bar} beat {beat:g}"
+                 f"{' for ' + instrument if instrument else ''} names a hit "
+                 f"drums.additions declares, and a removal cannot delete a "
+                 f"declared hit — the addition wins and the hit stays. Take "
+                 f"the addition out instead, or change its instrument")
         for bar, beat, instrument in report["stale_removals"]:
             _say(f"   ! stale removal at bar {bar} beat {beat:g}"
                  f"{' for ' + instrument if instrument else ''} matched nothing — "
@@ -2404,7 +2488,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_serve_args(p)
 
     p = review_sub.add_parser(
-        "clips", help="cut per-section A/B clips (candidate vs original drums)")
+        "clips", help="cut per-section A/B clips (candidate vs original "
+                      "drums, plus the band bed under each when it exists)")
     _add_song_args(p)
     p.add_argument("--candidate",
                    help="the rendered-MIDI wav (default: qa/candidate.wav, "
@@ -2434,11 +2519,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("bar", help="musical bar.beat (22.3); --reaper-bar converts")
     p.add_argument("comment")
     p.add_argument("--kind", default="other",
-                   help="missing-hit | extra-hit | wrong-instrument | timing "
-                        "| velocity | other")
+                   help="missing-hit | extra-hit | swap-hit | wrong-instrument "
+                        "| timing | velocity | other")
     p.add_argument("--instrument", default="",
                    help="canonical name (crash, kick, ...) when the note is "
-                        "about one hit")
+                        "about one hit; on a swap this is the drum that is "
+                        "playing now")
+    p.add_argument("--swap-to", default="",
+                   help="on --kind swap-hit, the drum it should be. Promotes "
+                        "to a removal and an addition at the one position — "
+                        "the open hat that should have been a crash")
     p.add_argument("--velocity", type=int, default=0)
     p.add_argument("--reaper-bar", action="store_true",
                    help="the bar is a ruler reading; subtract the count-in")
@@ -2449,6 +2539,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="turn confident open notes into drums.additions / removals")
     _add_song_args(p)
     p.set_defaults(func=cmd_review_promote)
+
+    p = review_sub.add_parser(
+        "demote",
+        help="undo a promotion: take the edit back out of song.yaml and "
+             "reopen the note")
+    p.add_argument("song")
+    p.add_argument("bar", help="musical bar.beat (9.3); --reaper-bar converts")
+    p.add_argument("--instrument", default="",
+                   help="only the note about this drum, when two share a bar")
+    p.add_argument("--beat-any", action="store_true",
+                   help="every promoted note in the bar, whatever the beat")
+    p.add_argument("--reaper-bar", action="store_true",
+                   help="the bar is a ruler reading; subtract the count-in")
+    p.set_defaults(func=cmd_review_demote)
 
     p = review_sub.add_parser(
         "status", help="open-note counts per song")

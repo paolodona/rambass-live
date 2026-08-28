@@ -128,7 +128,14 @@
   .lane { margin-bottom:6px; }
   .lane .who { font-size:12px; color:var(--text-dim); }
   .lane .who b { color:var(--text); font-weight:500; }
-  .lane canvas { height:52px; background:var(--raised);
+  /* 104 CSS px, so 208 device px at DPR 2 -- twice what it was. Paolo:
+     *"make the lane canvases twice as tall so I can better see the waveforms,
+     even the fainter hits"*. The peak drawing is linear in amplitude
+     (`peak * (height - 8)`), so a quiet ghost note gets exactly twice the
+     pixels it had; nothing else in the stack moves, because the ruler and the
+     instrument rows have their own heights and the playhead is drawn over the
+     whole stack rather than sized to a lane. */
+  .lane canvas { height:104px; background:var(--raised);
                  border-color:var(--border-soft); }
   .lane.active canvas { border-color:var(--accent); }
   .ruler .who { font-family:var(--mono); font-size:10px;
@@ -156,6 +163,29 @@
               will-change:transform; }
   .transport { display:flex; align-items:center; justify-content:center;
                gap:14px; margin-top:14px; font-size:12px; color:var(--text-faint); }
+  /* Every readout in the transport is a FIXED width, because the row is
+     centre-justified: a readout that grows a character pushes half the row
+     left and the other half right. Paolo: *"this makes the whole transport
+     section shift left and right slightly and looks jittery"* -- and the
+     playhead readout changes on every animation frame while playing, so the
+     jitter is continuous. 9ch holds `100.1.895`, the widest a Reaper bar.beat
+     gets here; the band switch is sized for its longest label. */
+  .transport #at { display:inline-block; width:9ch; text-align:left; }
+  .transport #loopstate { display:inline-block; width:9ch; }
+  .transport #which { display:inline-block; width:20ch; }
+  .transport #band { width:15ch; text-align:center; }
+  .transport #snap { display:inline-block; width:11ch; }
+  /* Which sections have been listened to. One pip per section, in order, so
+     "what can I skip when I come back" is answered without stepping through
+     them -- and a pip is also how you jump to one. */
+  #progress { display:flex; justify-content:center; gap:5px; margin-top:10px;
+              flex-wrap:wrap; }
+  .pip { width:22px; height:6px; border-radius:3px; background:var(--border);
+         cursor:pointer; border:1px solid transparent; }
+  .pip.done { background:var(--green); }
+  .pip.at { border-color:var(--text); }
+  .badge.done { color:var(--green); border-color:rgba(63,207,142,.4); }
+  #done.on { border-color:var(--green); color:var(--green); }
   /* the sections editor */
   .sectionsbox { border:1px solid var(--border); border-radius:12px;
                  background:var(--panel); margin-top:16px; overflow:hidden; }
@@ -237,6 +267,21 @@
           align-items:center; justify-content:center; z-index:10; }
   #help .card { background:var(--panel); border:1px solid var(--border);
                 border-radius:12px; padding:26px 30px; max-width:520px; }
+  /* The grid's right-click menu. Fixed, because it is positioned from the
+     pointer's viewport coordinates and the stack scrolls under it. */
+  #gridmenu { position:fixed; z-index:60; display:none; min-width:230px;
+              background:var(--raised); border:1px solid var(--border);
+              border-radius:8px; padding:6px; font-size:12.5px;
+              box-shadow:0 10px 30px rgba(0,0,0,.45); }
+  #gridmenu .head { font-family:var(--mono); font-size:11px;
+                    color:var(--text-faint); padding:4px 8px 7px; }
+  #gridmenu .item { display:block; width:100%; text-align:left; padding:6px 8px;
+                    border:0; border-radius:6px; background:none; cursor:pointer;
+                    color:var(--text); font-family:var(--sans); font-size:12.5px; }
+  #gridmenu .item:hover:not(:disabled) { background:var(--accent-soft); }
+  #gridmenu .item:disabled { color:var(--text-faint); cursor:default; }
+  #gridmenu .swap { display:flex; align-items:center; gap:6px; padding:4px 8px 2px; }
+  #gridmenu .swap select { flex:1; min-width:0; }
   #help table { border-collapse:collapse; font-size:13px; }
   #help td { padding:5px 14px 5px 0; color:var(--text-dim); }
   .error { color:var(--red); font-size:13px; padding:14px 4px; }
@@ -246,11 +291,16 @@
 <body>
 <main id="app"></main>
 <div id="running"></div>
+<div id="gridmenu"></div>
 <div id="help"><div class="card">
   <div class="kicker" style="margin-bottom:12px">keyboard</div>
   <table>
     <tr><td><span class="kbd">space</span></td><td>start / stop</td></tr>
+    <tr><td><span class="kbd">shift</span>+<span class="kbd">space</span></td><td>play the section again from the top</td></tr>
     <tr><td><span class="kbd">s</span></td><td>switch which sample is audible (candidate &harr; reference)</td></tr>
+    <tr><td><span class="kbd">b</span></td><td>lay the rest of the band under it &mdash; the warped
+      bed under the candidate, the album mix under the reference, following
+      whichever one is audible. Never stops the audio</td></tr>
     <tr><td><span class="kbd">n</span> / <span class="kbd">p</span></td><td>next / previous section</td></tr>
     <tr><td><span class="kbd">,</span> / <span class="kbd">.</span></td><td>previous / next bar inside the section</td></tr>
     <tr><td><span class="kbd">click</span></td><td>put the playhead there &mdash; on either
@@ -258,6 +308,16 @@
       song's grid; hold <span class="kbd">alt</span> to place it exactly.
       Clicking an <b>instrument row</b> also files the next note against that
       instrument</td></tr>
+    <tr><td><span class="kbd">shift</span>+<span class="kbd">D</span></td><td>mark this section
+      done, or reopen it &mdash; the pips under the header are every section,
+      green for the ones already listened to</td></tr>
+    <tr><td><span class="kbd">g</span></td><td>divide the snap grid &mdash;
+      the song's own subdivision, then halves and quarters of it, for a note
+      about a place between two hits. <span class="kbd">alt</span>+click is
+      still no snap at all</td></tr>
+    <tr><td><span class="kbd">shift</span>+<span class="kbd">R</span></td><td>promote every
+      confident note, rebuild what that makes stale, re-render the candidate,
+      and come back to this section</td></tr>
     <tr><td><span class="kbd">l</span></td><td>toggle loop</td></tr>
     <tr><td><span class="kbd">m</span> / <span class="kbd">x</span></td><td>log a missing-hit / extra-hit note at the playhead</td></tr>
     <tr><td><span class="kbd">Enter</span> / <span class="kbd">Esc</span></td><td>commit / discard the open note</td></tr>
@@ -343,12 +403,51 @@ function showProblem(what, bad) {
 let lastLog = {slug: "", text: ""};
 
 /* ── routing ─────────────────────────────────────────────────────────── */
+/* Whatever is playing belongs to the view that is on screen, and only to it.
+   `renderReview` builds a NEW ReviewView on every rebuild and re-render (and
+   the router builds one per navigation), while the four audio elements belong
+   to the old instance and are not in the DOM -- so nothing stopped them. They
+   went on playing under the new screen, answering to no transport, which is
+   what Paolo heard as *"band keeps playing when I stop playing
+   candidate/reference tracks"*: the new view's space bar stops the new view's
+   elements, and the orphan plays on. It was true of the candidate and the
+   reference all along; the band layer is just the half you cannot miss. */
+function stopReview() {
+  if (!window._review) return;
+  window._review.pause();
+  window._review.closeMenu();
+  window._review = null;
+}
+
+/* Which section a name means, and the address that names it. Paolo: *"if I am
+   in verse-2 and reload the page to check the re-rendered candidate drums, it
+   goes back to the first section"* -- the section is part of what you are
+   looking at, so it belongs in the URL.
+
+   By NAME rather than by index: it is readable in the address and it survives a
+   section being inserted before it. The cost is that a repeated name resolves
+   to the first of them, which is fine here -- this is navigation, not a stored
+   record, so it does not need the position-keyed identity the done marks use
+   (review.load_done). A name that no longer exists opens the first section
+   rather than failing: a stale bookmark should still open the song. */
+function sectionIndex(sections, want) {
+  if (!want) return 0;
+  const at = (sections || []).findIndex((one) => one.name === want);
+  return at < 0 ? 0 : at;
+}
+
+function sectionHash(slug, name) {
+  return `#/review/${encodeURIComponent(slug)}/${encodeURIComponent(name)}`;
+}
+
 function route() {
+  stopReview();
   const hash = location.hash || "#/";
   const song = hash.match(/^#\/song\/(.+)$/);
-  const review = hash.match(/^#\/review\/(.+)$/);
+  const review = hash.match(/^#\/review\/([^/]+)(?:\/([^/]+))?$/);
   const sections = hash.match(/^#\/sections\/(.+)$/);
-  if (review) return renderReview(decodeURIComponent(review[1]));
+  if (review) return renderReview(decodeURIComponent(review[1]),
+                                  review[2] && decodeURIComponent(review[2]));
   if (sections) return renderSections(decodeURIComponent(sections[1]));
   if (song) return renderSong(decodeURIComponent(song[1]));
   return renderDashboard();
@@ -755,7 +854,8 @@ async function renderSections(slug) {
 }
 
 /* ── the drums review tool ───────────────────────────────────────────── */
-async function renderReview(slug) {
+async function renderReview(slug, at) {
+  stopReview();
   app.innerHTML = `<div class="crumb" onclick="history.back()">&larr; back</div>`;
   let data;
   try { data = await api(`/api/review/${encodeURIComponent(slug)}`); }
@@ -765,6 +865,11 @@ async function renderReview(slug) {
   }
   window._currentSong = slug;
   const view = new ReviewView(slug, data);
+  /* Back where the ear was, whether *at* came from the address on a reload or
+     from the view that asked for the refresh. A rebuild used to drop you on
+     section 1, so every promote-rebuild-listen loop ended with stepping back to
+     where you were. */
+  view.index = sectionIndex(data.sections, at);
   view.mount();
 }
 
@@ -781,6 +886,16 @@ const DPR = 2;
    resize -- the whole point of caching is not decoding 12 seconds of audio to
    answer a window drag. */
 const BUCKETS = 600;
+/* How loud the band bed sits under the drums. Paolo: *"a little lower (20%) so
+   I can hear the drums better"* -- the bed is a full band mix and the candidate
+   is a bare kit, so at equal gain the part being judged is the quieter of the
+   two. It is a gain on the BED, never a cut on the drums: attenuating those
+   would change what a velocity sounds like, which is one of the things a review
+   pass is listening for. Lower this number to push the band further back.
+   0.8 first, then *"reduce the band audio by another 10%"*, then *"reduce the
+   band volume by a further 10%"* -- each tenth is off the full mix, not off the
+   number before it, so 40% down in total. */
+const BAND_VOLUME = 0.6;
 
 function peaksOf(buffer) {
   const samples = buffer.getChannelData(0);
@@ -800,8 +915,28 @@ class ReviewView {
     this.slug = slug; this.data = data;
     this.index = 0; this.loop = true; this.active = "cand"; this.playing = false;
     this.noteKind = "missing-hit";
+    /* How finely the playhead snaps: the song's own grid divided by this.
+       Paolo: *"I need to add a hit between 4.4.333 and 4.4.667 (this song is
+       in triplets) and I cannot snap at the correct point"*. The song's
+       subdivision is where the *hits* are and stays the default, but a note is
+       sometimes about a place between two of its lines -- and the only
+       alternative was alt, which is no snap at all and files whatever decimal
+       the pixel happened to be. */
+    this.snapMultiple = 1;
+    /* Four elements, and every one of them plays the whole time -- what a
+       switch on this screen changes is `muted`, never who is running. That is
+       how `s` has always worked between the two takes, and Paolo asked for the
+       same of the band layer: "need to keep playing when toggling other
+       instruments on or off". A paused element restarted on unmute comes back
+       a frame or two late, which is a flam in a tool built to judge flams. */
     this.cand = new Audio(); this.ref = new Audio();
-    this.cand.preload = this.ref.preload = "auto";
+    /* The rest of the band under each take, on that take's own clock: the
+       warped bed under the candidate (both start at musical bar 1), the album
+       mix under the reference (both are the recording). Crossing them drifts
+       by up to a quarter second on Manlio -- see review.BAND_OF. */
+    this.candBand = new Audio(); this.refBand = new Audio();
+    this.band = false;
+    for (const element of Object.values(this.tracks())) element.preload = "auto";
     /* Decoded peaks per clip URL. A repaint is an ordinary event now -- a
        resize, a section change, peaks landing -- and re-fetching and
        re-decoding the wav for each one is what made a redraw expensive enough
@@ -815,7 +950,7 @@ class ReviewView {
   get section() { return this.data.sections[this.index]; }
 
   mount() {
-    const pills = ["missing-hit","extra-hit","timing","other"].map((kind) =>
+    const pills = ["missing-hit","extra-hit","swap-hit","timing","other"].map((kind) =>
       `<span class="pill" data-kind="${kind}">${kind.replace("-", " ")}</span>`).join(" ");
     /* The whole kit, from `drummap.CANONICAL` via the payload -- which is where
        `crash_2`, `china` and `splash` have been all along. Blank first: a note
@@ -829,10 +964,12 @@ class ReviewView {
         &larr; ${esc(this.data.title)} / Drums</div>
       <div style="display:flex;align-items:center;justify-content:center;gap:20px">
         <button class="btn" id="prev">&larr;</button>
-        <div style="text-align:center;min-width:220px">
+        <div style="text-align:center;min-width:260px">
           <div style="font-size:17px;font-weight:500" id="sect-name"></div>
-          <div class="muted" style="font-family:var(--mono);font-size:12px" id="sect-bars"></div></div>
+          <div class="muted" style="font-family:var(--mono);font-size:12px" id="sect-bars"></div>
+          <button class="btn" id="done" style="margin-top:7px">mark done</button></div>
         <button class="btn" id="next">&rarr;</button></div>
+      <div id="progress"></div>
       <div style="display:flex;justify-content:center;gap:26px;font-family:var(--mono);font-size:11px;color:var(--text-faint);margin-top:6px">
         <span><span class="kbd">p</span> previous section</span>
         <span><span class="kbd">n</span> next section</span></div>
@@ -856,6 +993,10 @@ class ReviewView {
           <span class="kbd">space</span> play / pause
           <span class="muted">·</span> <span class="kbd">s</span>
           <span id="which">candidate is audible</span>
+          <span class="muted">·</span> <span class="kbd">b</span>
+          <button class="btn" id="band">band: off</button>
+          <span class="muted">·</span> <span class="kbd">g</span>
+          <span id="snap">snap: 1/3</span>
           <span class="muted">·</span> <span class="kbd">l</span>
           <span id="loopstate">loop: on</span>
           <span class="muted">·</span> <span>click a lane to move here:</span>
@@ -870,6 +1011,8 @@ class ReviewView {
           <b id="note-at" style="color:var(--text);font-family:var(--mono)"></b>
           <span>on</span>
           <select id="instrument">${instruments}</select>
+          <span id="swap-arrow" style="display:none">&rarr;</span>
+          <select id="swap-to" style="display:none">${instruments}</select>
           <span class="muted">click an instrument row to pick it, or the ruler
             to move the bar</span>
           <button class="btn primary" id="save-note"
@@ -880,7 +1023,8 @@ class ReviewView {
         A note on its own changes nothing — it goes in
         <span style="font-family:var(--mono)">qa/review.yaml</span> to be
         decided later. <b style="color:var(--text-dim)">Promote</b> turns the
-        confident ones (missing- and extra-hit, with an instrument named) into
+        confident ones (missing-hit, extra-hit, and a swap with both drums
+        named) into
         <span style="font-family:var(--mono)">drums.additions</span> /
         <span style="font-family:var(--mono)">removals</span> in
         <span style="font-family:var(--mono)">song.yaml</span> — read the
@@ -891,23 +1035,29 @@ class ReviewView {
         <b style="color:var(--text-dim)">re-rendered</b> before you can hear the
         change here.</div>
       <div style="margin-top:12px;display:flex;gap:10px">
+        <button class="btn primary" id="promote-render"
+          title="promote every confident note, rebuild what that made stale, re-render the candidate, and come back to this section">
+          Promote &rarr; rebuild &rarr; re-render &middot; shift+R</button>
         <button class="btn" id="promote">Promote confident notes &rarr; song.yaml</button>
         <button class="btn" id="export">Send section to EZdrummer</button>
         <button class="btn" id="rebuild">Rebuild · r</button>
         <button class="btn" id="rerender">Re-render candidate</button></div>
       <div class="log" id="log"></div>
       <div class="hintstrip">
-        <span class="kbd">space</span><span class="kbd">s</span><span class="kbd">n</span>
-        <span class="kbd">p</span><span class="kbd">m</span><span class="kbd">x</span>
-        <span class="kbd">r</span><span class="muted" style="font-size:11px">? for all</span></div>`;
+        <span class="kbd">space</span><span class="kbd">s</span><span class="kbd">b</span>
+        <span class="kbd">n</span><span class="kbd">p</span><span class="kbd">m</span>
+        <span class="kbd">x</span><span class="kbd">r</span><span class="muted" style="font-size:11px">? for all</span></div>`;
 
+    $("#done").addEventListener("click", () => this.toggleDone());
     $("#prev").addEventListener("click", () => this.move(-1));
     $("#next").addEventListener("click", () => this.move(1));
     $("#play").addEventListener("click", () => this.toggle());
+    $("#band").addEventListener("click", () => this.toggleBand());
     app.querySelectorAll(".pill").forEach((el) =>
       el.addEventListener("click", () => this.setKind(el.dataset.kind)));
     $("#save-note").addEventListener("click", () => this.saveNote());
     $("#promote").addEventListener("click", () => this.promote());
+    $("#promote-render").addEventListener("click", () => this.promoteRender());
     $("#export").addEventListener("click", () => this.exportSection());
     $("#rebuild").addEventListener("click", () => this.rebuild());
     $("#make-ref").addEventListener("click", () => this.makeReference());
@@ -925,6 +1075,7 @@ class ReviewView {
     const stack = $("#stack");
     stack.addEventListener("pointerdown", (event) => this.scrubFrom(event, true));
     stack.addEventListener("pointermove", (event) => this.scrubFrom(event, false));
+    stack.addEventListener("contextmenu", (event) => this.openMenu(event));
     stack.addEventListener("pointerup", () => { this.scrubbing = false; });
     stack.addEventListener("pointercancel", () => { this.scrubbing = false; });
     this.setKind(this.noteKind);
@@ -937,19 +1088,42 @@ class ReviewView {
     this.noteKind = kind;
     app.querySelectorAll(".pill").forEach((el) =>
       el.classList.toggle("on", el.dataset.kind === kind));
+    /* A swap is the one note with two instruments in it: the drum that is
+       playing and the drum it should be. Shown only for that kind, because on
+       every other kind a second select is a field with no meaning -- and a
+       swap with nothing in it is exactly a `wrong-instrument` observation,
+       which `promote` leaves for a human on purpose. */
+    const swap = kind === "swap-hit";
+    ["#swap-arrow", "#swap-to"].forEach((selector) => {
+      const el = $(selector);
+      if (el) el.style.display = swap ? "" : "none";
+    });
   }
 
   show() {
     const section = this.section;
     if (!section) return;
+    this.closeMenu();
     this.pause();
     $("#sect-name").textContent = section.name;
     /* Musical bars here, because that is what song.yaml says and this line is
        about the manifest. The ruler underneath is Reaper's -- see drawRuler. */
     $("#sect-bars").textContent =
       `bar ${section.start_bar}.${section.start_beat} – ${section.end_bar}.${section.end_beat}`;
+    /* `replaceState`, never `location.hash = …`: assigning the hash fires
+       hashchange, which re-enters `route()` and rebuilds the whole screen --
+       stopping the audio mid-listen to render the section it was already on.
+       This moves the address and nothing else, so a reload lands here. */
+    if (window.history && history.replaceState)
+      history.replaceState(null, "", sectionHash(this.slug, section.name));
+    this.showDone();
     this.cand.src = section.cand_url;
     this.ref.src = section.ref_url;
+    /* Only when the bed exists: a src that 409s would log an error per section
+       change on every song whose warp has not been run, and the switch already
+       says why it is unavailable. */
+    if (this.bandSource("cand").available) this.candBand.src = section.cand_band_url;
+    if (this.bandSource("ref").available) this.refBand.src = section.ref_band_url;
     this.applyMute();
     this._label = "";   // the readouts are change-guarded; this is a new section
     this.buildGridRows(section);
@@ -975,6 +1149,60 @@ class ReviewView {
     this.updatePlayhead();
   }
 
+  /* Paolo: *"mark a section as Done so that when I reopen the project I know I
+     can skip it (with ability to reopen it if needed)"*, with *"a clear visual
+     cue on the status"*. Three of them, because the question is asked in two
+     different ways: a badge on the section in front of you, a control that
+     says which way it will move, and a pip per section for "what is left" --
+     which doubles as the way to jump to one.
+
+     It is a review record, not a musical fact, so it lives in qa/review.yaml
+     beside the notes and is keyed by position: two sections can share a name,
+     and a name would tick both from one listen (review.load_done). */
+  showDone() {
+    const section = this.section;
+    const name = $("#sect-name");
+    if (name) name.innerHTML = esc(section.name) + (section.done
+      ? ` <span class="badge done">done</span>` : "");
+    const button = $("#done");
+    if (button) {
+      button.textContent = section.done ? "done ✓ — reopen" : "mark done";
+      button.classList.toggle("on", !!section.done);
+    }
+    const strip = $("#progress");
+    if (!strip) return;
+    const total = this.data.sections.length;
+    const left = this.data.sections.filter((one) => !one.done).length;
+    strip.innerHTML = this.data.sections.map((one, index) =>
+      `<div class="pip${one.done ? " done" : ""}${index === this.index ? " at" : ""}"
+        data-index="${index}"
+        title="${esc(one.name)} — ${one.done ? "done" : "not reviewed"}"></div>`
+      ).join("") + `<span class="muted" style="font-size:11px;margin-left:8px"
+        >${total - left} / ${total} done</span>`;
+    strip.querySelectorAll(".pip").forEach((pip) =>
+      pip.addEventListener("click", () => {
+        this.index = Number(pip.dataset.index);
+        this.show();
+      }));
+  }
+  async toggleDone() {
+    const section = this.section;
+    try {
+      const result = await api("/api/section/done", {
+        song: this.slug, bar: section.start_bar, beat: section.start_beat,
+        done: !section.done});
+      /* Redrawn from the server's answer, not from what this assumed it had
+         just done -- the same rule the notes follow. */
+      const done = {};
+      result.sections.forEach((one) => {
+        done[`${one.start_bar}.${one.start_beat}`] = one.done;
+      });
+      this.data.sections.forEach((one) => {
+        one.done = !!done[`${one.start_bar}.${one.start_beat}`];
+      });
+      this.showDone();
+    } catch (error) { alert(error.message); }
+  }
   move(direction) {
     this.index = Math.min(this.data.sections.length - 1,
                           Math.max(0, this.index + direction));
@@ -1049,7 +1277,7 @@ class ReviewView {
   drawBeatGrid(context, section, palette) {
     const width = context.canvas.width, height = context.canvas.height;
     const top = palette.top || 0;
-    const subdivision = Math.max(1, this.data.subdivision || 1);
+    const subdivision = this.snapSubdivision();
     const perBeat = width / this.sectionBeats(section);
     const subs = perBeat / subdivision >= 7 * DPR ? subdivision : 1;
     this.marks.forEach((mark, i) => {
@@ -1243,6 +1471,10 @@ class ReviewView {
      false for a move, which only scrubs while a drag is already under way --
      otherwise merely crossing the canvas would drag the playhead about. */
   scrubFrom(event, start) {
+    /* Left button only. Right-clicking to file a note while a section loops
+       would otherwise seek the audio out from under the ear -- and the menu is
+       about where the *pointer* is, which its own header says. */
+    if (event.button && event.button !== 0) return;
     if (!start && !this.scrubbing) return;
     const canvas = event.target.closest && event.target.closest("canvas");
     if (!canvas) return;
@@ -1283,8 +1515,23 @@ class ReviewView {
      anybody was aiming for. Alt places it exactly. Walks the marks rather than
      dividing the section, so it is still right for a section that starts off
      the beat, where the marks are not evenly spaced. */
+  /* The grid everything on this screen snaps to, draws and files against:
+     the song's own subdivision divided by 1, 2 or 4. One number, used by
+     `snapFraction`, `playheadBeat`, `drawBeatGrid` and the grid menu, so the
+     line you see, the position you land on and the beat that reaches
+     `drums.additions` cannot disagree. */
+  snapSubdivision() {
+    return Math.max(1, this.data.subdivision || 1) * this.snapMultiple;
+  }
+  cycleSnap() {
+    this.snapMultiple = this.snapMultiple >= 4 ? 1 : this.snapMultiple * 2;
+    const readout = $("#snap");
+    if (readout) readout.textContent =
+      `snap: 1/${this.snapSubdivision()}`;
+    this.repaint();
+  }
   snapFraction(fraction) {
-    const subdivision = Math.max(1, this.data.subdivision || 1);
+    const subdivision = this.snapSubdivision();
     let best = 0, distance = Infinity;
     this.marks.forEach((mark, i) => {
       const next = i + 1 < this.marks.length ? this.marks[i + 1].frac : mark.frac;
@@ -1324,40 +1571,113 @@ class ReviewView {
        from the beginning instead of parking there. */
     const at = (element) =>
       Math.max(0, Math.min(clamped * element.duration, element.duration - 0.01));
-    if (this.cand.duration) this.cand.currentTime = at(this.cand);
-    if (this.ref.duration) this.ref.currentTime = at(this.ref);
+    for (const element of Object.values(this.tracks()))
+      if (element.duration) element.currentTime = at(element);
     this.updatePlayhead();
   }
 
-  /* both elements always play together; s only moves which one is audible,
-     so switching never restarts playback — the whole point of the tool. */
+  /* every element always plays together; s and b only move which ones are
+     audible, so no switch on this screen ever restarts playback — the whole
+     point of the tool. */
+  tracks() {
+    return {cand: this.cand, ref: this.ref,
+            candBand: this.candBand, refBand: this.refBand};
+  }
+  /* The one rule, in one place: you hear one take's drums, and under them
+     that same take's own band or nothing. Never the other take's band --
+     which would drift against the drums by up to a quarter second, and read
+     as a fault in the part this screen exists to judge. */
+  audible() {
+    return {cand: this.active === "cand", ref: this.active === "ref",
+            candBand: this.band && this.active === "cand",
+            refBand: this.band && this.active === "ref"};
+  }
+  bandSource(side) {
+    return (this.data.sources || {})[side + "-band"] || {available: false};
+  }
   applyMute() {
-    this.cand.muted = this.active !== "cand";
-    this.ref.muted = this.active !== "ref";
-    $("#lane-cand").classList.toggle("active", this.active === "cand");
-    $("#lane-ref").classList.toggle("active", this.active === "ref");
-    $("#which").textContent = this.active === "cand"
+    const on = this.audible();
+    for (const [name, element] of Object.entries(this.tracks())) {
+      element.muted = !on[name];
+      // Set here rather than once in the constructor so it cannot be lost to
+      // a src change or an element the browser re-creates under us.
+      element.volume = name.endsWith("Band") ? BAND_VOLUME : 1;
+    }
+    /* Guarded, because the transport is exercised in node with no DOM --
+       which is where the mute matrix above is actually pinned down. */
+    const lane = (side) => $("#lane-" + side);
+    if (lane("cand")) lane("cand").classList.toggle("active", this.active === "cand");
+    if (lane("ref")) lane("ref").classList.toggle("active", this.active === "ref");
+    const which = $("#which");
+    if (which) which.textContent = this.active === "cand"
       ? "candidate is audible" : "reference is audible";
+    const control = $("#band");
+    if (!control) return;
+    const source = this.bandSource(this.active);
+    /* Named, not just on/off: *which* bed is under the drums is the thing a
+       reviewer has to be able to trust, and it changes with `s`. */
+    /* Short, and all of a length: the switch sits in a centre-justified row
+       and a longer label would shove the transport sideways. The full story is
+       in the tooltip and, when there is nothing to play, in the log. */
+    control.textContent = !this.band ? "band: off"
+      : source.available
+        ? (this.active === "cand" ? "band: warped" : "band: album mix")
+        : "band: none yet";
+    control.classList.toggle("primary", this.band && source.available);
+    control.title = source.available
+      ? (this.active === "cand"
+         ? "practice/no_drums-aligned.wav — the album minus drums, warped onto the grid"
+         : "stems/no_drums.wav — the album minus drums, as recorded")
+      : (source.hint || "no bed for this side yet");
+  }
+  toggleBand() {
+    this.band = !this.band;
+    this.applyMute();
+    const source = this.bandSource(this.active);
+    /* A switch with nothing to switch to says why, in the same log every
+       other answer on this screen lands in -- and stays switched on, so it
+       comes up the moment the file is made. */
+    if (this.band && !source.available) this.say(source.hint || "");
+  }
+  say(message) {
+    const log = $("#log");
+    if (!log || !message) return;
+    log.style.display = "block";
+    log.textContent = message;
   }
   switchSide() {
     /* keep the musical position: scale by relative duration, since the
-       reference clip breathes and is not the same length. */
+       reference clip breathes and is not the same length. Every element
+       moves, so the bed under the side being switched to is already where
+       the ear is. */
     const from = this.active === "cand" ? this.cand : this.ref;
-    const to = this.active === "cand" ? this.ref : this.cand;
-    if (from.duration && to.duration)
-      to.currentTime = from.currentTime * (to.duration / from.duration);
+    const fraction = from.duration ? from.currentTime / from.duration : 0;
     this.active = this.active === "cand" ? "ref" : "cand";
+    for (const element of Object.values(this.tracks()))
+      if (element.duration)
+        element.currentTime = Math.max(
+          0, Math.min(fraction * element.duration, element.duration - 0.01));
     this.applyMute();
   }
   toggle() { this.playing ? this.pause() : this.play(); }
+  /* Shift+space: "again, from the top", which is most of what a review pass
+     does. Plays whether or not it was already playing, and leaves the layer
+     and the side exactly as they were — it is a transport control, not a
+     reset of what is audible. */
+  restart() { this.seek(0); this.play(); }
   play() {
-    this.playing = true; $("#play").innerHTML = "&#10073;&#10073;";
-    this.cand.play().catch(() => {}); this.ref.play().catch(() => {});
+    this.playing = true;
+    const button = $("#play");
+    if (button) button.innerHTML = "&#10073;&#10073;";
+    for (const element of Object.values(this.tracks()))
+      element.play().catch(() => {});
     this.startFrames();
   }
   pause() {
-    this.playing = false; $("#play").innerHTML = "&#9654;";
-    this.cand.pause(); this.ref.pause();
+    this.playing = false;
+    const button = $("#play");
+    if (button) button.innerHTML = "&#9654;";
+    for (const element of Object.values(this.tracks())) element.pause();
     this.stopFrames();
   }
   onEnded() {
@@ -1368,8 +1688,10 @@ class ReviewView {
     if (this._restarting) return;
     this._restarting = true;
     setTimeout(() => { this._restarting = false; }, 150);
-    this.cand.currentTime = 0; this.ref.currentTime = 0;
-    this.cand.play().catch(() => {}); this.ref.play().catch(() => {});
+    for (const element of Object.values(this.tracks())) {
+      element.currentTime = 0;
+      element.play().catch(() => {});
+    }
     this.updatePlayhead();
   }
   nudgeBar(direction) {
@@ -1386,29 +1708,180 @@ class ReviewView {
   }
   playheadBar() { return this.positionAt(Math.min(this.fraction(), 0.999999)).bar; }
   playheadBeat() {
-    /* Snapped to the song's own subdivision. The ledger stores fractional
-       beats and `review promote` can turn a note into a `drums.additions`
-       entry, so beat 1.0 for everything was a guess the playhead makes
-       unnecessary -- the instrument is still the one left to correct. */
-    const subdivision = Math.max(1, this.data.subdivision || 1);
+    /* Snapped to the grid in force, which is the song's own subdivision
+       unless `g` has divided it. The ledger stores fractional beats and
+       `review promote` can turn a note into a `drums.additions` entry, so beat
+       1.0 for everything was a guess the playhead makes unnecessary -- the
+       instrument is still the one left to correct. */
+    const subdivision = this.snapSubdivision();
     const beat = this.positionAt(Math.min(this.fraction(), 0.999999)).beat;
     return Math.round((beat - 1) * subdivision) / subdivision + 1;
   }
 
+  /* ── the grid's right-click menu ─────────────────────────────
+     Paolo: *"if the playhead is at 16.2 and the hihat_closed grid lane is
+     selected I should be able to right-click on that specific hit and get add
+     "xxx" here, remove, or swap with "xxx" ... the same as using the notes
+     section below, but quicker and in context"*.
+
+     Quicker, and nothing more: it files the same three notes the panel files,
+     into the same ledger, for the same `promote` to turn into song.yaml. The
+     row names the instrument and the pointer names the position, which is the
+     whole saving -- two controls nobody has to touch.
+
+     `menuModel` is pure so node can check it, because the one thing a menu
+     like this must never do is offer "remove" where there is no hit: it reads
+     the same `ticks` the row was drawn from, so what it offers and what the
+     eye sees cannot disagree. */
+  hitNear(row, bar, beat) {
+    /* Half a subdivision step: the widest window that cannot reach the next
+       line of the song's own grid, which is where the neighbouring hit is. */
+    const window = 0.5 / this.snapSubdivision();
+    return (row.ticks || []).find(
+      (tick) => tick.bar === bar && Math.abs(tick.beat - beat) < window) || null;
+  }
+  menuModel(rowIndex, fraction) {
+    const section = this.section;
+    const row = (this.data.grid[section.name] || [])[rowIndex];
+    if (!row) return null;
+    const snapped = this.snapFraction(fraction);
+    const where = this.positionAt(Math.min(snapped, 0.999999));
+    const subdivision = this.snapSubdivision();
+    const beat = Math.round((where.beat - 1) * subdivision) / subdivision + 1;
+    const hit = this.hitNear(row, where.bar, beat);
+    const name = row.instrument;
+    return {
+      instrument: name, bar: where.bar, beat: beat, fraction: snapped,
+      reaper: this.reaperAt(where.bar, beat), hit: hit,
+      items: [
+        {kind: "missing-hit", label: `add ${name} here`, enabled: !hit,
+         why: hit ? "there is already one here" : ""},
+        {kind: "extra-hit", label: `remove this ${name}`, enabled: !!hit,
+         why: hit ? "" : "nothing here to remove"},
+        {kind: "swap-hit", label: `swap this ${name} for`, enabled: !!hit,
+         swap: true, why: hit ? "" : "nothing here to swap"},
+      ]};
+  }
+  openMenu(event) {
+    const canvas = event.target.closest && event.target.closest("canvas");
+    const row = canvas && canvas.closest(".gridrow");
+    /* Only the instrument rows: a right-click on a waveform or the ruler is
+       not about a hit, and the browser's own menu is more use there. */
+    if (!row || !canvas.dataset.row) return;
+    event.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const inset = (rect.width - canvas.clientWidth) / 2;
+    const at = (event.clientX - rect.left - inset) / (canvas.clientWidth || 1);
+    const model = this.menuModel(Number(canvas.dataset.row),
+                                 Math.min(1, Math.max(0, at)));
+    if (!model) return;
+    this.menu = model;
+    const swap = model.items.find((item) => item.swap);
+    const instruments = [`<option value="">— pick a drum —</option>`].concat(
+      (this.data.instruments || []).filter((name) => name !== model.instrument)
+        .map((name) => `<option value="${esc(name)}">${esc(name)}</option>`)
+      ).join("");
+    const panel = $("#gridmenu");
+    panel.innerHTML = `
+      <div class="head">${esc(model.instrument)} · ${model.reaper}${
+        model.hit ? ` · v${model.hit.velocity}` : " · empty"}</div>
+      ${model.items.filter((item) => !item.swap).map((item) =>
+        `<button class="item" data-kind="${item.kind}" ${
+          item.enabled ? "" : "disabled"} title="${esc(item.why)}"
+          >${esc(item.label)}</button>`).join("")}
+      <div class="swap">
+        <span class="${swap.enabled ? "" : "muted"}">${esc(swap.label)}</span>
+        <select id="menu-swap-to" ${swap.enabled ? "" : "disabled"}
+          >${instruments}</select>
+        <button class="btn" id="menu-go" disabled>go</button>
+      </div>`;
+    /* Clamped to the viewport, so a right-click near the bottom of a long
+       grid does not open a menu half off the screen. */
+    panel.style.display = "block";
+    const width = panel.offsetWidth || 230, height = panel.offsetHeight || 120;
+    panel.style.left =
+      Math.min(event.clientX, window.innerWidth - width - 8) + "px";
+    panel.style.top =
+      Math.min(event.clientY, window.innerHeight - height - 8) + "px";
+    panel.querySelectorAll(".item").forEach((button) =>
+      button.addEventListener("click", () => this.fileFromMenu(button.dataset.kind)));
+    const target = $("#menu-swap-to"), go = $("#menu-go");
+    /* [go] stays dead until a drum is named: a swap filed to whatever happened
+       to be first in the list is worse than no shortcut at all. */
+    target.addEventListener("change", () => { go.disabled = !target.value; });
+    go.addEventListener("click", () => this.fileFromMenu("swap-hit"));
+  }
+  closeMenu() {
+    this.menu = null;
+    const box = $("#gridmenu");
+    if (box) { box.style.display = "none"; box.innerHTML = ""; }
+  }
+  async fileFromMenu(kind) {
+    const model = this.menu;
+    if (!model) return;
+    const target = $("#menu-swap-to");
+    const swapTo = kind === "swap-hit" && target ? target.value : "";
+    if (kind === "swap-hit" && !swapTo) return;
+    this.closeMenu();
+    const before = this.data.notes.length;
+    try {
+      const result = await api("/api/note", {
+        song: this.slug, bar: model.bar, beat: model.beat, kind: kind,
+        instrument: model.instrument, swap_to: swapTo,
+        /* Where it came from, because a note with no comment reads as a blank
+           line in qa/review.md and this one has a story: it was filed against
+           a hit somebody could see. */
+        comment: kind === "swap-hit"
+          ? `from the grid: ${model.instrument} → ${swapTo}`
+          : `from the grid at ${model.reaper}`,
+        /* The hit's own velocity whenever there is one, on a removal too:
+           promoting an extra-hit against a *declared* hit retracts the
+           declaration, and a demote can only put it back with what the note
+           knows about it. Nothing there means the median, which is right for
+           an addition to a place with no hit. */
+        velocity: model.hit ? model.hit.velocity : 0,
+      });
+      const added = result.notes.length !== before;
+      this.data.notes = result.notes;
+      this.renderChips();
+      this.say(added
+        ? `filed ${kind} on ${model.instrument} at ${model.reaper}`
+        : `already noted: ${kind} on ${model.instrument} at ${model.reaper}`);
+    } catch (error) { alert(error.message); }
+  }
+
+  /* Whether a note is inside a section, in BEATS -- the same arithmetic every
+     line, hit and playhead on this screen uses, and for the same reason.
+     `note.bar >= start_bar && note.bar < end_bar` looks equivalent and is not:
+     Manlio's verse-2 runs 20.3 to 28.3, so a note at bar 28 failed `28 < 28`
+     and disappeared from the section it was filed in, while turning up under
+     verse-2-lift, which starts at 28.3 and never contained it. Paolo, filing
+     the same tom three times: *"it won't let me"*. Sections here rarely start
+     on a bar line, so this is the common case rather than a corner. */
+  inSection(note, section) {
+    const at = this.fracFor(section, note.bar, note.beat || 1);
+    return at >= 0 && at < 1;
+  }
   renderChips() {
     const section = this.section;
     const chips = this.data.notes
-      .filter((note) => note.bar >= section.start_bar && note.bar < section.end_bar)
+      .filter((note) => this.inSection(note, section))
       .map((note) => {
         /* `open` gets no badge: it is the default and every note starts there,
            so printing it on every row was a word that said nothing -- and read
            as a control, which it was not. */
         const badge = note.status === "open" ? ""
           : `<span class="badge ${esc(note.status)}">${esc(note.status)}</span>`;
-        /* A promoted note's edit is in song.yaml and `drums restore` applies it
-           blindly, so neither act is offered here -- `remove_note` refuses it
-           too, and says which addition to take out instead. */
-        const acts = note.status === "promoted" ? "" : `
+        /* A promoted note's edit is in song.yaml and `drums restore` applies
+           it blindly, so dismissing or deleting it here would leave the edit
+           behind with nothing on record. Demote is the act that makes sense:
+           it takes the edit back out and reopens the note. Paolo: *"ability to
+           demote promoted notes in case I have by mistake promoted a wrong
+           one"* -- before this, the only way back was editing song.yaml. */
+        const acts = note.status === "promoted" ? `
+          <button class="act" data-key="${esc(note.key)}" data-demote
+            title="take the edit back out of song.yaml and reopen this note"
+            >demote</button>` : `
           <button class="act" data-key="${esc(note.key)}"
             data-status="${note.status === "dismissed" ? "open" : "dismissed"}"
             >${note.status === "dismissed" ? "reopen" : "dismiss"}</button>
@@ -1418,7 +1891,9 @@ class ReviewView {
           <span class="at">${this.chipPosition(note)}</span>
           <span class="kind">${esc(note.kind)}</span>
           <span class="inst ${note.instrument ? "" : "none"}"
-            >${esc(note.instrument || "unnamed")}</span>
+            >${esc(note.swap_to
+                   ? `${note.instrument || "?"} → ${note.swap_to}`
+                   : (note.instrument || "unnamed"))}</span>
           <span class="said">${esc(note.comment || "")}</span>
           ${badge}<span class="acts">${acts}</span></div>`;
       }).join("");
@@ -1426,9 +1901,11 @@ class ReviewView {
       ? `<div class="notelist">${chips}</div>`
       : `<div class="muted" style="font-size:12px;margin-top:10px">no notes on this section yet</div>`;
     $("#chips").querySelectorAll(".act").forEach((el) =>
-      el.addEventListener("click", () => el.dataset.drop !== undefined
-        ? this.dropNote(el.dataset.key)
-        : this.restatus(el.dataset.key, el.dataset.status)));
+      el.addEventListener("click", () => {
+        if (el.dataset.demote !== undefined) return this.demote(el.dataset.key);
+        if (el.dataset.drop !== undefined) return this.dropNote(el.dataset.key);
+        this.restatus(el.dataset.key, el.dataset.status);
+      }));
   }
 
   /* Two different acts, kept apart. Dismissing is a judgement worth keeping --
@@ -1465,22 +1942,67 @@ class ReviewView {
   async saveNote() {
     const comment = $("#comment").value.trim();
     const chosen = $("#instrument");
+    const target = $("#swap-to");
     const payload = {
       song: this.slug, bar: this.playheadBar(), beat: this.playheadBeat(),
       kind: this.noteKind, comment: comment,
       instrument: chosen ? chosen.value : "",
+      /* Only on a swap: filed anywhere else it would be a field the ledger
+         carries and nothing reads. */
+      swap_to: this.noteKind === "swap-hit" && target ? target.value : "",
     };
     /* Whatever the select says, and nothing if it says nothing. It used to
        hard-code "crash" for a missing/extra hit with nothing on screen saying
        so, so a note about a splash was filed against a crash and `promote`
        would have written the wrong instrument into `drums.additions`. */
     try {
+      const before = this.data.notes.length;
       const result = await api("/api/note", payload);
       this.data.notes = result.notes;
       $("#comment").value = "";
       $("#comment").blur();
       this.renderChips();
+      /* De-duping is silent by request -- but silence and an invisible chip
+         read the same as a refusal, which is exactly how the section-boundary
+         bug above was met. One line, naming the position, in the log this
+         screen already answers in. */
+      if (result.notes.length === before)
+        this.say(`already noted at ${this.reaperAt(payload.bar, payload.beat)}`
+          + ` — the note is on the list below, unchanged`);
     } catch (error) { alert(error.message); }
+  }
+  async demote(key) {
+    try {
+      const result = await api("/api/note/demote", {song: this.slug, key: key});
+      this.data.notes = result.notes;
+      this.renderChips();
+      /* The rebuilt MIDI still has the edit in it until `drums restore` runs
+         again, which is the same thing promote has to say. */
+      this.say(`demoted — ${result.removed} edit(s) out of song.yaml. `
+        + `Rebuild (r) and re-render before listening again.`);
+    } catch (error) { alert(error.message); }
+  }
+  /* The three steps that are always one act, as one control. They are still
+     there separately -- promote alone is how you read the git diff before
+     anything touches the MIDI -- but this is the one a review pass runs every
+     time, and it comes back to the section you were listening to. */
+  async promoteRender() {
+    const log = $("#log"); log.style.display = "block";
+    log.textContent = "promoting, rebuilding, re-rendering… (the plugin takes "
+      + "about a quarter of a minute to load; progress is in the terminal)";
+    showRunning(`promote + rebuild + render ${this.slug}`);
+    try {
+      const result = await api("/api/promote-render", {song: this.slug});
+      log.textContent = [
+        `promoted ${result.promoted} (${result.skipped} left for your ears)`,
+        ...result.commands.map((c, i) => (i < result.ran ? "ok    " : "      ") + c),
+        result.failed ? "failed: " + result.failed : (result.why || ""),
+      ].filter(Boolean).join("\n");
+      /* Back to the same section, with the clips re-cut under it: the whole
+         point is to hear the edit you just made, where you made it. */
+      if (!result.failed) renderReview(this.slug, (this.section || {}).name);
+    } catch (error) { log.textContent = "error: " + error.message; }
+    finally { showRunning(""); }
   }
   async promote() {
     const log = $("#log"); log.style.display = "block";
@@ -1521,7 +2043,7 @@ class ReviewView {
       log.textContent = result.failed
         ? "failed: " + result.failed
         : "ok    " + command;
-      if (!result.failed) renderReview(this.slug);
+      if (!result.failed) renderReview(this.slug, (this.section || {}).name);
     } catch (error) { log.textContent = "error: " + error.message; }
     finally { showRunning(""); }
   }
@@ -1562,7 +2084,7 @@ class ReviewView {
       log.textContent = result.commands.length
         ? result.commands.map((c, i) => (i < result.ran ? "ok    " : "      ") + c).join("\n")
         : "nothing stale or missing";
-      if (!result.failed) renderReview(this.slug);
+      if (!result.failed) renderReview(this.slug, (this.section || {}).name);
     } catch (error) { log.textContent = "error: " + error.message; }
   }
 }
@@ -1579,9 +2101,18 @@ window.addEventListener("resize", () => {
 });
 
 /* ── keyboard ────────────────────────────────────────────────────────── */
+/* Anywhere else, including on the stack: a menu that outlives the click that
+   opened it is a menu about the wrong hit. Bound once, on the document, rather
+   than per mount -- the review screen is re-entered on every section change of
+   the hash route, and a listener per entry keeps the old view alive with it. */
+document.addEventListener("pointerdown", (event) => {
+  const inside = event.target.closest && event.target.closest("#gridmenu");
+  if (!inside && window._review) window._review.closeMenu();
+});
 document.addEventListener("keydown", (event) => {
   const typing = event.target.tagName === "INPUT";
   const review = window._review && location.hash.startsWith("#/review/");
+  if (event.key === "Escape" && review) window._review.closeMenu();
   if (event.key === "Escape" && typing) { event.target.value = ""; event.target.blur(); return; }
   if (event.key === "Enter" && typing && review) { window._review.saveNote(); return; }
   if (typing) return;
@@ -1598,8 +2129,12 @@ document.addEventListener("keydown", (event) => {
   }
   if (!review) return;
   const view = window._review;
-  if (event.key === " ") { event.preventDefault(); view.toggle(); }
+  if (event.key === " ") { event.preventDefault(); event.shiftKey ? view.restart() : view.toggle(); }
   else if (event.key === "s") view.switchSide();
+  else if (event.key === "b") view.toggleBand();
+  else if (event.key === "D") view.toggleDone();
+  else if (event.key === "g") view.cycleSnap();
+  else if (event.key === "R") view.promoteRender();
   else if (event.key === "n") view.move(1);
   else if (event.key === "p") view.move(-1);
   else if (event.key === ",") view.nudgeBar(-1);

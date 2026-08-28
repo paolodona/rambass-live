@@ -144,7 +144,8 @@ def test_nothing_declared_is_a_no_op():
     out, report = apply_edits(performance)
     assert out.hits == performance.hits
     assert report == {"added": 0, "removed": 0, "already_there": 0,
-                      "velocity_from_median": 0, "stale_removals": []}
+                      "velocity_from_median": 0, "stale_removals": [],
+                      "contradicted": []}
 
 
 def test_the_output_stays_sorted():

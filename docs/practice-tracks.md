@@ -21,6 +21,14 @@ fixed grid at its own pitch so the new drums can be judged against it. `reaper b
 **REF aligned** track at the count-in with no anchor shift, because the file is
 already on the grid.
 
+It has a second consumer now: the console's review screen lays it under the
+candidate drums on `b` (docs/review-ui.md, "Hearing it in context"). Same file,
+same reason, and the same rule — it goes under the *candidate* only, because it
+is the only bed on the candidate's clock; the reference gets `stems/no_drums.wav`
+untouched. That makes a re-warp visible in a second place, so `--lam` changes
+what the review tool plays: `review.py` cuts a bed clip again whenever the file
+under it moves.
+
 Three things that were measured rather than assumed, so nobody re-litigates them:
 
 * **A single offset is not enough.** Manlio drifts -88 to +258 ms across the

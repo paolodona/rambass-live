@@ -303,6 +303,22 @@ so no guitar reconstruction and no time-warping happen on that album at all; and
 for those songs will be new drums plus guitar layers Paolo re-records. Don't
 reintroduce guitar-layer preservation as a problem to solve.
 
+**The console's band layer pairs each take with its own bed, and there is no
+fallback.** `b` on the review screen lays the rest of the band under whichever
+side is audible: `practice/no_drums-aligned.wav` under the candidate (both put
+musical bar 1 at sample 0) and `stems/no_drums.wav` under the reference (both
+are the recording, as played). Crossing them is the whole bug it avoids —
+Manlio sits -88..+258 ms off the fixed grid, so the *unwarped* mix under
+programmed drums flams by a quarter second by the end, and a reviewer hearing
+that files it against the part they are judging. So a song with no warp yet gets
+a switch that says so and names `rambass align <song> --fit --warp`; it does
+**not** get the album mix instead. The pairing is one table (`review.CLOCK_OF`)
+and the page cannot express any other (`audible()` in `console.html`). And every
+switch on that screen — side, band layer — is a **mute** on elements that are
+all already playing: Paolo asked for it directly ("need to keep playing when
+toggling other instruments on or off"), and a paused element restarted on unmute
+returns a frame or two late, which is a flam in a tool built to judge flams.
+
 The rules that scope carries:
 no practice command writes to `render/` or edits a musical field in `song.yaml`;
 practice stages are **not** added to `manifest.STAGES`, because the board's
@@ -359,6 +375,55 @@ position**: the ten cymbal hits within 0.6 beat of a section start decay at a
 median +3.4 dB against −19.2 dB for the other 233, and nine of ten are v83+. So
 `restore.crash_candidates` reports boundary crashes and everything else goes on
 the checklist. Do not propose another spectral test.
+
+**A `swap-hit` note is one decision, and it promotes to two edits.** Right
+place, wrong drum — the open hat that should be a crash, the crash that should
+be `crash_2` — carries both instruments (`instrument` is what is playing,
+`swap_to` what it should be) and `review promote` writes a removal *and* an
+addition at the one position. That is the shape `restore.apply_edits` was built
+for: removals run first, so the swapped-in hit cannot be deleted by its own
+swap. A swap with no target is skipped rather than guessed at, because that is
+precisely a `wrong-instrument` note — the kind that means "not that drum, and I
+do not know which one yet" — and the two must not collapse into each other.
+
+**A removal cannot delete a hit `drums.additions` declares.** `restore.
+apply_edits` applies removals to the performance it was handed and adds the
+additions *afterwards*, so a removal naming a declared hit matches nothing and
+the addition puts the hit in regardless. This is not a quirk to work around in
+one place: it is why `review promote` edits the **declaration** when the hit is
+a declared one — a swap rewrites that addition's instrument in place, an
+extra-hit retracts it — and only writes a removal for a hit the transcription
+found. It cost a whole review pass on Manlio, where `drums missing --propose`
+had declared the crash at bar 9 beat 4.667 and the promoted swap produced a part
+with the crash *and* the hi-hat while every screen said it had worked. A pair
+written by hand still resolves the old way (it is how a transcribed hit's
+velocity gets re-voiced) but `apply_edits` reports it as `contradicted` and
+`drums restore` says so out loud. Don't "simplify" this by making removals win
+over additions in `apply_edits`: that silently breaks the re-voicing idiom, and
+the declaration is the thing the edit is actually about.
+
+**The notes ledger holds one entry per thing heard.** `add_note` de-dupes on
+`observation_of` (bar, beat, phase, kind, instrument, swap target — never the
+comment, never the status), and `merge_notes` folds a note that only *corrects*
+an earlier one: a `swap-hit(X→Y)` collapses into a `missing-hit(X)` at the same
+position, and chains do too, because "I added a tom_mid then swapped it for a
+tom_high" is one missing tom_high. Both are silent in the console (the chip is
+already on screen) and both refuse to guess: a merge only happens when the two
+halves are in the same promotion state, or the ledger would claim something
+`song.yaml` does not say. An `extra-hit` is never merged away.
+
+**Promote has an inverse, and the review loop is one act.** `review demote`
+takes a promoted note's edit back out of `song.yaml` and reopens the note,
+matching on the same `(bar, beat, instrument)` triple `promote` keyed on — so
+the console never has to tell somebody to go and hand-edit the manifest, which
+was the one place the loop leaked. And promote → rebuild → re-render is one
+button (`shift`+`R`), because it is what a review pass runs every time: the
+promotion is saved to disk *before* the rebuild (which runs `drums restore` as a
+subprocess and reads `song.yaml`), the render is *last* (or it renders the part
+from before the rebuild), a failed rebuild does not go on to render, and a run
+with nothing rebuilt and a fresh candidate renders nothing at all. The three
+commands stay separate as well — promote alone is how the `git diff` gets read
+before anything touches the MIDI.
 
 **Hand edits go in `song.yaml`, never into the Reaper MIDI item.**
 `drums.additions` and `drums.removals` are bar-anchored, reapplied by `rambass

@@ -1321,7 +1321,12 @@ def _keyed(base, song):
 def test_every_note_comes_back_with_the_key_that_names_it(reviewable):
     """The ledger has no ids, so the key is how the browser says *this* note --
     an index into a list that re-sorts on every write would eventually delete
-    the wrong one."""
+    the wrong one.
+
+    The empty field is the swap target: every field a human filed is in the
+    key, and a note that is not a swap filed nothing there. The format is free
+    to grow -- a key is handed back within one page load and is never stored --
+    but it has to stay derived from the fields, which is what this pins."""
     base, song = reviewable
     _post(base, "/api/note", {"song": song.slug, "bar": 9, "beat": 3.0,
                               "kind": "missing-hit", "instrument": "splash",
@@ -1329,7 +1334,7 @@ def test_every_note_comes_back_with_the_key_that_names_it(reviewable):
     notes = _keyed(base, song)
 
     assert len(notes) == 1
-    assert notes[0]["key"] == "9|3|missing-hit|splash|different sound from 3.1"
+    assert notes[0]["key"] == "9|3|missing-hit|splash||different sound from 3.1"
 
 
 def test_a_note_can_be_removed_from_the_browser(reviewable):
@@ -1845,3 +1850,872 @@ def test_the_page_keeps_its_log_across_the_refresh():
     assert "showProblem" in page, "a failure never reaches the fixed bar"
     assert "result.ran" in page, "the page re-renders even when nothing ran"
     assert "result.held" in page, "an empty selection never says what is held"
+
+
+# ── the band layer: hearing either side in context ──────────────────────────
+#
+# Paolo: *"I would like to listen to the candidate drums in context (use the
+# ref aligned time warped section on top of the candidate drums), and the
+# reference in context too ... a switch that layers all the other instruments
+# on top that uses the most appropriate version (ref aligned or original)"*,
+# and *"need to keep playing when toggling other instruments on or off"*.
+#
+# So: four elements, all playing all the time, and every switch on this screen
+# is a mute. That is already how `s` works between candidate and reference, and
+# it is the only way a toggle can be instant -- a `play()` on an element that
+# was paused starts at whatever `currentTime` it was left at, a frame or two
+# late, which reads as a flam in a tool built to judge flams.
+
+
+@pytest.fixture
+def with_beds(reviewable, monkeypatch):
+    """Both beds on disk, and ffmpeg replaced by a recorder of what was cut."""
+    base, song = reviewable
+    for relative in (("stems", "drums.wav"), ("qa", "candidate.wav"),
+                     ("stems", "no_drums.wav"),
+                     ("practice", "no_drums-aligned.wav")):
+        path = song.path(*relative)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("not-really-audio", encoding="utf-8")
+
+    from rambass import review as review_module
+
+    cut: list[tuple] = []
+
+    def fake_cut(source, target, *, start, duration):
+        cut.append((Path(source).name, round(float(start), 3),
+                    round(float(duration), 3)))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"RIFF....WAVE")
+
+    monkeypatch.setattr(review_module, "cut_clip", fake_cut)
+    return base, song, cut
+
+
+def test_the_review_payload_offers_a_bed_url_per_side(with_beds):
+    base, song, _ = with_beds
+    data = _get(base, f"/api/review/{song.slug}")
+    verse = next(s for s in data["sections"] if s["name"] == "verse")
+
+    assert verse["cand_band_url"].endswith("-cand-band.wav")
+    assert verse["ref_band_url"].endswith("-ref-band.wav")
+    assert data["sources"]["cand-band"]["available"] is True
+    assert data["sources"]["ref-band"]["available"] is True
+
+
+def test_each_bed_clip_is_cut_from_its_own_file_on_its_own_clock(with_beds):
+    """The trap this pins: the warped bed is on the candidate's clock and the
+    album mix is on the recording's. Cutting either one on the other clock
+    gives a bed that drifts against the drums it is under -- which reads as a
+    fault in the programmed part, and is the reason the file exists."""
+    base, song, cut = with_beds
+    data = _get(base, f"/api/review/{song.slug}")
+    verse = next(s for s in data["sections"] if s["name"] == "verse")
+    from rambass.align import load_align
+    from rambass.review import clip_spans
+
+    span = next(s for s in clip_spans(
+        song, load_align(song.path("practice", "align.yaml")))
+        if s.name == "verse")
+
+    for url in (verse["cand_band_url"], verse["ref_band_url"]):
+        with urllib.request.urlopen(base + url) as response:
+            assert response.status == 200
+    by_source = {name: (start, duration) for name, start, duration in cut}
+
+    assert by_source["no_drums-aligned.wav"] == (
+        round(span.candidate_start, 3), round(span.duration, 3))
+    assert by_source["no_drums.wav"] == (
+        round(span.reference_start, 3), round(span.reference_duration, 3))
+
+
+def test_a_bed_that_has_not_been_warped_yet_is_409_naming_the_warp(reviewable):
+    """409, not 404: the clip exists and its source does not. Same distinction
+    the candidate bounce already makes, and the message is the one the CLI
+    prints so the two cannot drift."""
+    base, song = reviewable
+    data = _get(base, f"/api/review/{song.slug}")
+    verse = next(s for s in data["sections"] if s["name"] == "verse")
+
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        urllib.request.urlopen(base + verse["cand_band_url"])
+    assert caught.value.code == 409
+    assert "--warp" in json.loads(
+        caught.value.read().decode("utf-8"))["error"]
+
+
+def test_the_bed_is_cut_again_when_the_warp_is_rebuilt(with_beds):
+    """`--lam` changes the warped file without moving anything else, so a bed
+    clip cached from the previous algorithm would be the one thing on the
+    screen still playing the old render."""
+    base, song, cut = with_beds
+    data = _get(base, f"/api/review/{song.slug}")
+    verse = next(s for s in data["sections"] if s["name"] == "verse")
+
+    with urllib.request.urlopen(base + verse["cand_band_url"]) as response:
+        response.read()
+    bed = song.path("practice", "no_drums-aligned.wav")
+    os.utime(bed, (bed.stat().st_atime, bed.stat().st_mtime + 120))
+    cut.clear()
+    with urllib.request.urlopen(base + verse["cand_band_url"]) as response:
+        response.read()
+
+    assert [name for name, _, _ in cut] == ["no_drums-aligned.wav"]
+
+
+def test_the_page_has_a_band_switch_and_a_key_for_it():
+    """No browser here, so the wiring is pinned on the page's own text."""
+    page = _page()
+
+    assert 'id="band"' in page, "no switch for the band layer"
+    assert 'event.key === "b"' in page, "no keyboard toggle for the band layer"
+    assert "cand_band_url" in page and "ref_band_url" in page
+
+
+def test_the_page_never_pauses_to_change_what_is_audible():
+    """Every switch on this screen is a mute, and that has to stay true: the
+    band elements are started by `play()` alongside the drums and the toggle
+    only moves `muted`."""
+    page = _page()
+    body = page[page.index("  toggleBand()"):]
+    body = body[:body.index("\n  }")]
+
+    assert ".play()" not in body and ".pause()" not in body
+    assert "applyMute" in body
+
+
+TRANSPORT_PROBE = """
+/* Enough DOM for the transport, which touches lane classes and the readouts.
+   Nothing here is asserted on -- what is under test is the four elements. */
+globalThis.requestAnimationFrame = () => 0;
+globalThis.cancelAnimationFrame = () => {};
+const el = () => ({classList: {toggle: () => {}, add: () => {}, remove: () => {}},
+                   style: {}, textContent: "", innerHTML: "", clientWidth: 300,
+                   addEventListener: () => {}});
+globalThis.document = {querySelector: () => el(), addEventListener: () => {}};
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2, title: "Manlio",
+  grid: {}, notes: [], instruments: ["crash"], sections: [
+    {name: "verse-2", start_bar: 20, start_beat: 3, end_bar: 28, end_beat: 3,
+     cand_url: "c", ref_url: "r", cand_band_url: "cb", ref_band_url: "rb"}],
+  sources: {cand: {available: true}, ref: {available: true},
+            "cand-band": {available: true}, "ref-band": {available: true}}};
+const view = new ReviewView("manlio", data);
+const fake = () => ({muted: false, volume: 1, currentTime: 0, duration: 12,
+                     plays: 0, pauses: 0,
+                     play() { this.plays++; return Promise.resolve(); },
+                     pause() { this.pauses++; },
+                     addEventListener() {}});
+view.cand = fake(); view.ref = fake();
+view.candBand = fake(); view.refBand = fake();
+const state = () => ({
+  cand: view.cand.muted, ref: view.ref.muted,
+  candBand: view.candBand.muted, refBand: view.refBand.muted,
+  playing: view.playing,
+  plays: [view.cand.plays, view.ref.plays, view.candBand.plays,
+          view.refBand.plays],
+  volumes: [view.cand.volume, view.ref.volume, view.candBand.volume,
+            view.refBand.volume],
+  pauses: [view.cand.pauses, view.ref.pauses, view.candBand.pauses,
+           view.refBand.pauses],
+  at: [view.cand.currentTime, view.candBand.currentTime,
+       view.ref.currentTime, view.refBand.currentTime]});
+const out = {};
+view.applyMute();
+out.drumsOnly = state();
+view.play();
+[view.cand, view.ref, view.candBand, view.refBand].forEach(
+  (element) => { element.currentTime = 4.2; });
+out.playing = state();
+view.toggleBand();
+out.bandOn = state();
+view.switchSide();
+out.switched = state();
+view.toggleBand();
+out.bandOff = state();
+view.toggleBand();
+[view.cand, view.ref, view.candBand, view.refBand].forEach(
+  (element) => { element.currentTime = 7.5; });
+view.pause();
+view.restart();
+out.restarted = state();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_the_band_layer_is_a_mute_and_never_a_restart(tmp_path):
+    """The requirement in one test: toggling the layer must not stop, restart
+    or move the audio. Everything plays from `play()`; the switch is `muted`.
+
+    Exercised in node against the page's own ReviewView, the same way the
+    geometry is -- there is no browser in this suite and the alternative is
+    checking it by ear and writing nothing down."""
+    out = _run_geometry_probe(tmp_path, TRANSPORT_PROBE)
+
+    assert out["drumsOnly"] == {**out["drumsOnly"],
+                                "candBand": True, "refBand": True}
+    # All four start together, so an unmute is instant and in phase.
+    assert out["playing"]["plays"] == [1, 1, 1, 1]
+    assert out["bandOn"]["candBand"] is False and out["bandOn"]["refBand"] is True
+    assert out["bandOn"]["playing"] is True
+    assert out["bandOn"]["pauses"] == [0, 0, 0, 0]
+    assert out["bandOn"]["plays"] == [1, 1, 1, 1], "the toggle restarted playback"
+    assert out["bandOn"]["at"] == [4.2, 4.2, 4.2, 4.2], "the toggle moved the playhead"
+    assert out["bandOff"]["candBand"] is True and out["bandOff"]["refBand"] is True
+    assert out["bandOff"]["pauses"] == [0, 0, 0, 0]
+
+
+def test_the_bed_follows_whichever_side_is_audible(tmp_path):
+    """"The most appropriate version": pressing `s` with the layer on moves
+    both the drums and the bed under them, so what is heard is always one
+    take's drums with that take's own band."""
+    out = _run_geometry_probe(tmp_path, TRANSPORT_PROBE)
+
+    assert out["bandOn"]["cand"] is False and out["bandOn"]["candBand"] is False
+    assert out["switched"]["ref"] is False and out["switched"]["refBand"] is False
+    assert out["switched"]["cand"] is True and out["switched"]["candBand"] is True
+    assert out["switched"]["pauses"] == [0, 0, 0, 0]
+
+
+def test_shift_space_plays_the_section_from_its_start(tmp_path):
+    """Paolo: *"add a Shift+space keyboard shortcut to start playing from the
+    beginning of the section"*. Space toggles where you are; this one is the
+    "again, from the top" that a review pass does over and over -- so it seeks
+    every element, including the band beds, and plays whether or not it was
+    already playing."""
+    out = _run_geometry_probe(tmp_path, TRANSPORT_PROBE)
+
+    assert out["restarted"]["at"] == [0, 0, 0, 0]
+    assert out["restarted"]["playing"] is True
+    # The side and the layer it was left on stay as they were: this is a
+    # transport control, not a reset of what is audible. The probe leaves it on
+    # the reference with the band switched back on, so that is what comes back.
+    assert out["restarted"]["ref"] is False
+    assert out["restarted"]["refBand"] is False
+    assert out["restarted"]["candBand"] is True
+
+
+def test_the_page_binds_shift_space_to_the_section_start():
+    page = _page()
+    space = page[page.index('event.key === " "'):]
+    space = space[:space.index("\n")]
+
+    assert "shiftKey" in space, "shift+space is not distinguished from space"
+    assert "restart" in space
+    assert "shift" in page.lower() and "from the top" in page
+
+
+# ── swap-hit: the note that says "right place, wrong drum" ───────────────────
+
+
+def test_a_swap_posted_from_the_browser_keeps_both_instruments(reviewable):
+    base, song = reviewable
+    from rambass.review import load_review
+
+    data = _post(base, "/api/note", {
+        "song": song.slug, "bar": 9, "beat": 3.0, "kind": "swap-hit",
+        "instrument": "hihat_open", "swap_to": "crash",
+        "comment": "section start"})
+
+    assert data["notes"][0]["swap_to"] == "crash"
+    _, notes = load_review(song.path("qa", "review.yaml"))
+    assert notes[0].instrument == "hihat_open" and notes[0].swap_to == "crash"
+
+
+def test_a_swap_promoted_over_http_writes_both_edits(reviewable):
+    base, song = reviewable
+    from rambass.manifest import load_song
+
+    _post(base, "/api/note", {
+        "song": song.slug, "bar": 9, "beat": 3.0, "kind": "swap-hit",
+        "instrument": "hihat_open", "swap_to": "crash"})
+    _post(base, "/api/promote", {"song": song.slug})
+
+    saved = load_song(song.directory)
+    assert [r.instrument for r in saved.drum_removals] == ["hihat_open"]
+    assert [a.instrument for a in saved.drum_additions] == ["crash"]
+
+
+def test_the_page_offers_the_swap_and_asks_what_to_swap_it_for():
+    """A swap needs two instruments, so the panel has to grow a second select
+    -- and it only makes sense for this kind, which is why it is revealed
+    rather than always shown."""
+    page = _page()
+
+    assert "swap-hit" in page, "the swap kind is not offered on the screen"
+    assert 'id="swap-to"' in page, "nothing on the page names the new drum"
+    assert "swap_to" in page, "the swap target never reaches the server"
+
+
+def test_the_waveform_lanes_are_tall_enough_to_show_a_ghost_note():
+    """Paolo, using it: *"make the lane canvases twice as tall (200 instead of
+    100) so I can better see the waveforms, even the fainter hits"*. 52 CSS px
+    was 104 device pixels at DPR 2, which is the 100 he read off the screen;
+    104 CSS px is the 200 he asked for. Pinned because it is the kind of number
+    a later tidy-up rounds back to something "sensible"."""
+    page = _page()
+    lane = page[page.index(".lane canvas {"):]
+
+    assert "height:104px" in lane[:lane.index("}")]
+
+
+# ── the grid's right-click menu: file the edit where you heard it ────────────
+#
+# Paolo: *"if the playhead is for example at 16.2 and the hihat_closed grid lane
+# is selected I should be able to right-click with the mouse in that specific
+# hit and a small contextual popup menu should appear with add "xxx" here [go],
+# remove, or swap with "xxx" [go]. this is the same as using the notes section
+# below, but quicker and in context."*
+#
+# So it files the same three notes the panel files -- nothing here writes to
+# song.yaml, `promote` still does that -- but the row names the instrument and
+# the click names the position, which is the whole saving. What the menu offers
+# depends on whether there is a hit under the pointer, and that decision is
+# `menuModel`: pure, so node can check it, which is the only way to be sure the
+# menu never offers "remove" where there is nothing to remove.
+
+MENU_PROBE = """
+globalThis.requestAnimationFrame = () => 0;
+globalThis.cancelAnimationFrame = () => {};
+const el = () => ({classList: {toggle: () => {}, add: () => {}, remove: () => {}},
+                   style: {}, textContent: "", innerHTML: "", clientWidth: 300,
+                   addEventListener: () => {}, value: ""});
+globalThis.document = {querySelector: () => el(), addEventListener: () => {}};
+/* Manlio's verse-2: starts at bar 20 beat 3, subdivision 3 (a shuffle), two
+   bars of count-in -- so musical bar 21 is Reaper's 23. */
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2, title: "Manlio",
+  notes: [], instruments: ["kick", "hihat_closed", "hihat_open", "crash"],
+  sources: {}, sections: [
+    {name: "verse-2", start_bar: 20, start_beat: 3, end_bar: 28, end_beat: 3,
+     cand_url: "c", ref_url: "r", cand_band_url: "cb", ref_band_url: "rb"}],
+  grid: {"verse-2": [
+    {instrument: "hihat_closed", ticks: [
+      {bar: 21, beat: 1, velocity: 80}, {bar: 21, beat: 2.333, velocity: 70}]},
+    {instrument: "kick", ticks: [{bar: 21, beat: 1, velocity: 100}]}]}};
+const view = new ReviewView("manlio", data);
+view.marks = view.beatMarks(data.sections[0]);
+const out = {};
+/* Beats through the section: bar 21 beat 1 is 2 beats in, beat 2 is 3. */
+out.onHit = view.menuModel(0, 2 / 32);
+out.betweenHits = view.menuModel(0, 3 / 32);
+out.otherRow = view.menuModel(1, 2 / 32);
+out.shuffled = view.menuModel(0, 3.333 / 32);
+console.log(JSON.stringify(out));
+"""
+
+
+def test_the_grid_menu_offers_what_the_position_actually_allows(tmp_path):
+    """Under a hit: remove it, or swap it. On an empty grid line: add one. The
+    menu is built from the same `ticks` the row is drawn from, so what it
+    offers and what the eye sees cannot disagree."""
+    out = _run_geometry_probe(tmp_path, MENU_PROBE)
+
+    def kinds(model):
+        return {item["kind"]: item["enabled"] for item in model["items"]}
+
+    assert out["onHit"]["instrument"] == "hihat_closed"
+    assert out["onHit"]["hit"]["velocity"] == 80
+    assert kinds(out["onHit"]) == {"missing-hit": False, "extra-hit": True,
+                                   "swap-hit": True}
+
+    assert out["betweenHits"]["hit"] is None
+    assert kinds(out["betweenHits"]) == {"missing-hit": True, "extra-hit": False,
+                                         "swap-hit": False}
+
+
+def test_the_grid_menu_is_about_the_row_it_was_opened_on(tmp_path):
+    """One position, two rows, two different answers -- the row is what names
+    the instrument, which is the whole reason this is quicker than the panel."""
+    out = _run_geometry_probe(tmp_path, MENU_PROBE)
+
+    assert out["otherRow"]["instrument"] == "kick"
+    assert out["otherRow"]["hit"]["velocity"] == 100
+
+
+def test_the_grid_menu_speaks_reaper_numbers_and_the_songs_own_grid(tmp_path):
+    """Every bar number a human reads on this screen goes through `reaperAt`,
+    and the position snaps to `drums.subdivision` like every other click --
+    a menu that filed at an unsnapped beat would put the note between two
+    triplet lines, where no hit can be."""
+    out = _run_geometry_probe(tmp_path, MENU_PROBE)
+
+    assert out["onHit"]["reaper"] == "23.1"
+    assert out["betweenHits"]["reaper"] == "23.2"
+    assert out["onHit"]["bar"] == 21 and out["onHit"]["beat"] == 1
+    # The shuffle's second triplet, kept as thirds rather than rounded to a
+    # half or a decimal that `promote` would file off the grid.
+    assert out["shuffled"]["hit"]["velocity"] == 70
+    assert round(out["shuffled"]["beat"], 3) == 2.333
+
+
+def test_the_grid_menu_files_the_same_notes_the_panel_does():
+    """Not a second write path: it posts to /api/note like everything else, so
+    a menu edit lands in the ledger, shows as a chip, and waits for `promote`
+    exactly as a typed note does."""
+    page = _page()
+    menu = page[page.index("  menuModel("):page.index("  renderChips()")]
+
+    assert "missing-hit" in menu and "extra-hit" in menu and "swap-hit" in menu
+    assert "/api/note" in page
+    # The hit's own velocity rides along on every kind that names one: a
+    # promoted extra-hit can retract a declared hit, and `review demote` can
+    # only restore that declaration from what the note carries.
+    file_from_menu = page[page.index("  async fileFromMenu("):]
+    file_from_menu = file_from_menu[:file_from_menu.index("\n  }")]
+    assert "velocity: model.hit ? model.hit.velocity : 0" in file_from_menu
+
+
+def test_the_grid_takes_a_right_click_and_the_page_does_not():
+    page = _page()
+
+    assert '"contextmenu"' in page, "nothing opens a menu on right-click"
+    assert 'id="gridmenu"' in page, "no menu element"
+    assert "closeMenu" in page
+    # The swap needs somewhere to say what to swap for, and a go button, so a
+    # mis-click cannot file a swap to whatever happened to be first in a list.
+    assert 'id="menu-swap-to"' in page
+
+
+def test_a_right_click_does_not_move_the_playhead(tmp_path):
+    """Scrubbing is button 0. Right-clicking to file a note while a section is
+    looping would otherwise seek the audio out from under the ear -- the menu
+    is about where the pointer is, and says so in its own header."""
+    page = _page()
+    scrub = page[page.index("  scrubFrom(event, start) {"):]
+    scrub = scrub[:scrub.index("\n  }")]
+
+    assert "event.button" in scrub
+
+
+def test_the_transport_readouts_do_not_move_the_row_as_they_change():
+    """Paolo: *"the [playhead readout] is by nature of variable width ... this
+    makes the whole transport section shift left and right slightly and looks
+    jittery"*. The row is centre-justified, so a readout that grows a character
+    pushes half of it left and half right -- and that one is rewritten on every
+    animation frame while playing. Fixed widths, not a re-layout."""
+    page = _page()
+    rules = page[page.index(".transport {"):page.index("/* the sections editor */")]
+
+    for readout in ("#at", "#loopstate", "#which", "#band"):
+        assert f".transport {readout} {{" in rules, f"{readout} can still resize"
+        rule = rules[rules.index(f".transport {readout} {{"):]
+        assert "width:" in rule[:rule.index("}")], f"{readout} has no fixed width"
+
+
+# ── done marks and demote, over HTTP and on the screen ──────────────────────
+
+
+def test_the_review_payload_says_which_sections_are_done(reviewable):
+    base, song = reviewable
+
+    before = _get(base, f"/api/review/{song.slug}")["sections"]
+    assert [s["done"] for s in before] == [False] * len(before)
+
+    verse = next(s for s in before if s["name"] == "verse")
+    _post(base, "/api/section/done", {
+        "song": song.slug, "bar": verse["start_bar"],
+        "beat": verse["start_beat"], "done": True})
+    after = _get(base, f"/api/review/{song.slug}")["sections"]
+
+    assert {s["name"]: s["done"] for s in after} == {
+        "intro": False, "verse": True, "chorus": False}
+
+
+def test_a_section_can_be_reopened_over_http(reviewable):
+    base, song = reviewable
+    for state in (True, False):
+        data = _post(base, "/api/section/done", {
+            "song": song.slug, "bar": 9, "beat": 1.0, "done": state})
+    assert [s["done"] for s in data["sections"]] == [False, False, False]
+
+
+def test_the_done_response_carries_the_whole_list_back(reviewable):
+    """So the screen redraws its progress strip from the server's answer rather
+    than from what it guessed it had just done."""
+    base, song = reviewable
+    data = _post(base, "/api/section/done", {
+        "song": song.slug, "bar": 9, "beat": 1.0, "done": True})
+
+    assert [s["name"] for s in data["sections"]] == ["intro", "verse", "chorus"]
+    assert [s["done"] for s in data["sections"]] == [False, True, False]
+
+
+def test_demoting_over_http_takes_the_edit_out_of_the_manifest(reviewable):
+    base, song = reviewable
+    from rambass.manifest import load_song
+
+    _post(base, "/api/note", {"song": song.slug, "bar": 9, "beat": 3.0,
+                              "kind": "missing-hit", "instrument": "crash"})
+    _post(base, "/api/promote", {"song": song.slug})
+    assert load_song(song.directory).drum_additions
+
+    notes = _get(base, f"/api/review/{song.slug}")["notes"]
+    data = _post(base, "/api/note/demote",
+                 {"song": song.slug, "key": notes[0]["key"]})
+
+    assert data["notes"][0]["status"] == "open"
+    assert not load_song(song.directory).drum_additions
+
+
+def test_demoting_something_that_was_not_promoted_is_a_400(reviewable):
+    base, song = reviewable
+    _post(base, "/api/note", {"song": song.slug, "bar": 9, "kind": "timing",
+                              "comment": "late"})
+    notes = _get(base, f"/api/review/{song.slug}")["notes"]
+
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        _post(base, "/api/note/demote",
+              {"song": song.slug, "key": notes[0]["key"]})
+    assert caught.value.code == 400
+
+
+def test_the_screen_marks_a_section_done_and_shows_which_are():
+    """Paolo: *"a clear visual cue on the status"*, and *"so that when I reopen
+    the project I know I can skip it"* -- which is a question about the whole
+    song, not about the section you happen to be on. So: a control on the
+    header, a badge on the section you are looking at, and a dot per section
+    that doubles as the way to jump to one."""
+    page = _page()
+
+    assert 'id="done"' in page, "no control to mark the section done"
+    assert 'id="progress"' in page, "no per-section progress strip"
+    assert "/api/section/done" in page
+    assert ".dot.done" in page or ".pip.done" in page, "done has no colour of its own"
+
+
+def test_shift_d_marks_done_and_plain_d_still_leaves_the_screen():
+    page = _page()
+
+    assert 'event.key === "D"' in page, "shift+D does not mark the section done"
+    keys = page[page.index('if (event.key === "d")'):]
+    assert "location.hash" in keys[:keys.index("\n")], "d stopped going home"
+
+
+def test_a_promoted_chip_offers_a_demote_and_nothing_else():
+    """It used to offer nothing at all, and `remove_note` told you to go and
+    edit song.yaml. Dismiss and delete still make no sense for a promoted note
+    -- its edit is live -- but taking the edit back does."""
+    page = _page()
+    chips = page[page.index("  renderChips() {"):]
+    chips = chips[:chips.index("\n  }")]
+
+    assert "demote" in chips
+    assert 'data-demote' in chips
+
+
+# ── the orphaned player: a rebuilt screen left its audio running ────────────
+
+STOP_PROBE = """
+globalThis.window._review = {
+  paused: false, closed: false,
+  pause() { this.paused = true; }, closeMenu() { this.closed = true; }};
+const before = window._review;
+stopReview();
+console.log(JSON.stringify({paused: before.paused, closed: before.closed,
+                            cleared: window._review === null}));
+"""
+
+
+def test_leaving_a_review_screen_stops_the_audio_it_started(tmp_path):
+    """Paolo: *"band keeps playing when I stop playing candidate/reference
+    tracks"*.
+
+    `renderReview` builds a **new** ReviewView on every rebuild and re-render,
+    and the router builds one per navigation — while the four audio elements
+    belong to the old instance and are not in the DOM, so nothing ever stopped
+    them. They went on playing under the new screen, answering to no transport:
+    the new view's space bar stops the new view's elements and the orphan plays
+    on. It was true of the candidate and the reference from the start; the band
+    layer is only the half you cannot miss."""
+    out = _run_geometry_probe(tmp_path, STOP_PROBE)
+
+    assert out == {"paused": True, "closed": True, "cleared": True}
+
+
+def test_every_way_into_the_review_screen_stops_the_previous_one():
+    """Both doors, because the leak was through the one nobody thinks about:
+    not navigation, but a rebuild refreshing the screen you are already on."""
+    page = _page()
+    route = page[page.index("function route() {"):]
+    render = page[page.index("async function renderReview(slug"):]
+
+    assert "stopReview();" in route[:route.index("\n}")]
+    assert "stopReview();" in render[:render.index("app.innerHTML")]
+
+
+# ── one button for the sequence, and a finer snap ───────────────────────────
+
+
+def test_promote_rebuild_render_over_http_is_one_call(reviewable, monkeypatch):
+    from rambass import review as review_module
+    from rambass.manifest import load_song
+
+    ran: list[str] = []
+    monkeypatch.setattr(
+        review_module, "subprocess_runner",
+        lambda cwd: lambda command: (ran.append(command), (0, "ok"))[1])
+    base, song = reviewable
+    _post(base, "/api/note", {"song": song.slug, "bar": 9, "beat": 3.0,
+                              "kind": "missing-hit", "instrument": "crash"})
+    result = _post(base, "/api/promote-render", {"song": song.slug})
+
+    assert result["promoted"] == 1
+    assert load_song(song.directory).drum_additions
+    assert ran[-1] == f"rambass review render {song.slug}"
+    assert result["notes"][0]["status"] == "promoted"
+
+
+def test_the_screen_has_one_control_for_the_whole_sequence():
+    """Paolo: *"three actions that are always in sequence ... one button that
+    does everything and reloads the page on the same section"*."""
+    page = _page()
+
+    assert 'id="promote-render"' in page
+    assert "/api/promote-render" in page
+    assert 'event.key === "R"' in page, "no key for the sequence"
+
+
+def test_a_refreshed_review_screen_comes_back_to_the_same_section():
+    """It used to land on section 1 after every rebuild, so the loop was
+    "rebuild, then step back to where I was listening" every single time."""
+    page = _page()
+    render = page[page.index("async function renderReview(slug"):]
+    header = render[:render.index("\n")]
+
+    assert "," in header, "renderReview cannot be told which section to open"
+    # By name, which is also what the address carries -- so a refresh from the
+    # screen and a refresh from the browser land the same way.
+    assert "renderReview(this.slug, (this.section || {}).name)" in page
+
+
+SNAP_PROBE = """
+globalThis.requestAnimationFrame = () => 0;
+globalThis.cancelAnimationFrame = () => {};
+const el = () => ({classList: {toggle: () => {}, add: () => {}, remove: () => {}},
+                   style: {}, textContent: "", innerHTML: "", clientWidth: 300,
+                   addEventListener: () => {}, value: ""});
+globalThis.document = {querySelector: () => el(), addEventListener: () => {}};
+/* Manlio: 4/4, shuffle triplets, verse-2 from bar 20 beat 3 (32 beats long).
+   Bar 21 beat 4.5 is 5.5 beats into the section -- exactly between the two
+   triplet lines at 4.333 and 4.667, which is where Paolo could not put a
+   hit. */
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2, title: "Manlio",
+  grid: {}, notes: [], instruments: [], sources: {}, sections: [
+    {name: "verse-2", start_bar: 20, start_beat: 3, end_bar: 28, end_beat: 3,
+     cand_url: "c", ref_url: "r"}]};
+const view = new ReviewView("manlio", data);
+view.marks = view.beatMarks(data.sections[0]);
+/* The arithmetic is what is under test; the repaint is canvas work, pinned
+   where the canvases are. */
+view.repaint = () => {};
+view.cand = {duration: 32, currentTime: 5.5, muted: false};
+const out = {};
+out.base = view.snapSubdivision();
+out.coarseBeat = view.playheadBeat();
+out.coarseSnap = view.positionAt(view.snapFraction(5.5 / 32)).beat;
+view.cycleSnap();
+out.multiple = view.snapMultiple;
+out.fine = view.snapSubdivision();
+out.fineBeat = view.playheadBeat();
+out.fineSnap = view.positionAt(view.snapFraction(5.5 / 32)).beat;
+view.cycleSnap();
+out.finer = view.snapSubdivision();
+view.cycleSnap();
+out.wrapped = view.snapSubdivision();
+console.log(JSON.stringify(out));
+"""
+
+
+def test_the_snap_grid_can_be_divided_further(tmp_path):
+    """Paolo: *"I need to add a hit between 4.4.333 and 4.4.667 (this song is
+    in triplets) and I cannot snap at the correct point"*.
+
+    `drums.subdivision` is the song's own grid and stays the default -- it is
+    where the hits are. But a note is sometimes about a place between two of
+    its lines, and the only alternative was alt (no snap at all), which lands
+    on an arbitrary decimal that `promote` then writes into `drums.additions`.
+    So the snap divides the song's grid by 1, 2 or 4, and cycles."""
+    out = _run_geometry_probe(tmp_path, SNAP_PROBE)
+
+    assert out["base"] == 3 and out["fine"] == 6 and out["finer"] == 12
+    assert out["wrapped"] == 3, "the snap does not cycle back"
+    # On the song's own grid, 4.5 is not reachable: it lands on a triplet.
+    assert round(out["coarseBeat"], 3) in (4.333, 4.667)
+    assert round(out["coarseSnap"], 3) in (4.333, 4.667)
+    # Divided once, it is exactly reachable -- and that is what a note files.
+    assert out["fineBeat"] == 4.5
+    assert round(out["fineSnap"], 3) == 4.5
+
+
+def test_the_snap_resolution_is_on_screen_and_has_a_key():
+    """A grid you cannot see the resolution of is a grid that files notes at
+    positions you did not mean."""
+    page = _page()
+
+    assert 'id="snap"' in page
+    assert 'event.key === "g"' in page
+    # The drawn grid follows it, or the finer lines are invisible and the
+    # playhead snaps to somewhere there is nothing to see.
+    assert "snapSubdivision()" in page[page.index("drawBeatGrid("):]
+
+
+def test_the_band_sits_under_the_drums_rather_than_over_them(tmp_path):
+    """Paolo: *"when the band is on, can we have the band volume a little lower
+    (20%) so I can hear the drums better"*. The bed is a full band mix and the
+    candidate is a bare kit, so at equal gain the thing being judged is the
+    quieter of the two. A gain on the bed, not a cut on the drums: the drums
+    are the signal, and attenuating them would change what a velocity sounds
+    like, which is one of the things a review pass is listening for."""
+    out = _run_geometry_probe(tmp_path, TRANSPORT_PROBE)
+
+    assert out["bandOn"]["volumes"] == [1, 1, 0.6, 0.6]
+    # And it survives the switch, so both sides sit the same way under the kit.
+    assert out["switched"]["volumes"] == [1, 1, 0.6, 0.6]
+
+
+def test_the_same_note_posted_twice_from_the_browser_is_one_chip(reviewable):
+    """The grid menu files a note with two clicks and no typing, so the same
+    hit gets clicked twice -- and a second copy says nothing the first did not.
+    Silent, because the chip is already on screen: the ledger is right and
+    there is nothing for a reader to do."""
+    base, song = reviewable
+    payload = {"song": song.slug, "bar": 9, "beat": 2.667, "kind": "extra-hit",
+               "instrument": "snare", "comment": "from the grid at 20.2.667"}
+
+    _post(base, "/api/note", payload)
+    data = _post(base, "/api/note", payload)
+
+    assert len(data["notes"]) == 1
+
+
+# ── a note filed in a section's last part-bar was invisible ─────────────────
+
+CHIPS_PROBE = """
+globalThis.document = {querySelector: () => null, addEventListener: () => {}};
+/* Manlio's real boundaries: verse-2 runs 20.3 - 28.3 and verse-2-lift takes
+   over from 28.3. Bar 28 belongs to BOTH by bar number and to exactly one of
+   them by position. */
+const data = {
+  beats_per_bar: 4, subdivision: 3, count_in_bars: 2, title: "Manlio",
+  grid: {}, notes: [], instruments: [], sources: {}, sections: [
+    {name: "verse-2", start_bar: 20, start_beat: 3, end_bar: 28, end_beat: 3},
+    {name: "verse-2-lift", start_bar: 28, start_beat: 3, end_bar: 32,
+     end_beat: 3}]};
+const view = new ReviewView("manlio", data);
+const at = (bar, beat) => ({bar: bar, beat: beat});
+const out = {};
+out.tomInVerse2 = view.inSection(at(28, 2.667), data.sections[0]);
+out.tomInLift = view.inSection(at(28, 2.667), data.sections[1]);
+out.liftStartInVerse2 = view.inSection(at(28, 3), data.sections[0]);
+out.liftStartInLift = view.inSection(at(28, 3), data.sections[1]);
+out.beforeVerse2 = view.inSection(at(20, 1), data.sections[0]);
+out.middle = view.inSection(at(24, 1), data.sections[0]);
+console.log(JSON.stringify(out));
+"""
+
+
+def test_a_note_in_a_sections_last_part_bar_belongs_to_that_section(tmp_path):
+    """Paolo: *"I'm trying to add a missing tom_mid at 30.2.667 in manlio, but
+    it won't let me"*. It let him — three times. The chips were filtered with
+    `note.bar >= start_bar && note.bar < end_bar`, and Manlio's verse-2 runs
+    20.3 to **28.3**, so a note at bar 28 failed `28 < 28` and vanished from
+    the section it was filed in — while showing up under verse-2-lift, which
+    starts at 28.3 and never contained it. Sections here rarely start on a bar
+    line (CLAUDE.md), so this is the common case, not the corner one: the same
+    beats-not-bars arithmetic the whole screen uses."""
+    out = _run_geometry_probe(tmp_path, CHIPS_PROBE)
+
+    assert out["tomInVerse2"] is True, "the note vanished from its own section"
+    assert out["tomInLift"] is False, "and turned up in the next one"
+    assert out["liftStartInVerse2"] is False and out["liftStartInLift"] is True
+    assert out["beforeVerse2"] is False and out["middle"] is True
+
+
+def test_the_screen_says_when_a_filing_added_nothing():
+    """De-duping is silent by request, but silence plus an invisible chip is
+    indistinguishable from a refusal -- which is exactly how Paolo read it.
+    One line in the log the screen already uses, naming the position."""
+    page = _page()
+    save = page[page.index("  async saveNote() {"):]
+    save = save[:save.index("\n  }")]
+
+    assert "already noted" in save
+
+
+# ── the section is part of the address ──────────────────────────────────────
+
+URL_PROBE = """
+globalThis.document = {querySelector: () => null, addEventListener: () => {}};
+const sections = [{name: "theme-intro"}, {name: "verse-2"},
+                  {name: "chorus-1"}, {name: "verse-2"}];
+const out = {
+  found: sectionIndex(sections, "verse-2"),
+  duplicate: sectionIndex(sections, "verse-2"),
+  missing: sectionIndex(sections, "no-such-section"),
+  blank: sectionIndex(sections, ""),
+  undef: sectionIndex(sections, undefined),
+  empty: sectionIndex([], "verse-2"),
+  hash: sectionHash("manlio", "verse-2"),
+  encoded: sectionHash("manlio", "a section/2"),
+};
+console.log(JSON.stringify(out));
+"""
+
+
+def test_a_section_resolves_from_the_url_and_never_throws(tmp_path):
+    """Paolo: *"if I am in verse-2 and reload the page to check the re-rendered
+    candidate drums, it goes back to the first section"*. The section is part of
+    what you are looking at, so it belongs in the address.
+
+    By **name**, not by index: a name is readable in the URL and survives a
+    section being added before it, and the only cost is that a repeated name
+    resolves to the first of them -- which is navigation, not a stored record,
+    so it does not need the position-keyed identity the done marks use. A name
+    that no longer exists falls back to the first section rather than failing:
+    a stale bookmark should open the song, not an error."""
+    out = _run_geometry_probe(tmp_path, URL_PROBE)
+
+    assert out["found"] == 1 and out["duplicate"] == 1
+    assert out["missing"] == 0 and out["blank"] == 0 and out["undef"] == 0
+    assert out["empty"] == 0
+    assert out["hash"] == "#/review/manlio/verse-2"
+    assert "%2F" in out["encoded"], "a name with a slash would break the route"
+
+
+def test_stepping_sections_rewrites_the_address_without_reloading():
+    """`location.hash = …` would fire hashchange, which re-enters `route()` and
+    rebuilds the whole screen -- stopping the audio mid-listen to render the
+    section you were already on. `replaceState` moves the address only."""
+    page = _page()
+
+    show = page[page.index("  show() {"):]
+    show = show[:show.index("\n  }")]
+    assert "history.replaceState(" in show, "stepping does not move the address"
+    # And it must not re-enter the router, which would rebuild the screen and
+    # stop the audio to render the section it was already on. Comments
+    # stripped: this file explains itself, and the prose says `route()` too.
+    code = re.sub(r"/\*.*?\*/", "", show, flags=re.S)
+    assert "renderReview(" not in code and "route()" not in code
+    assert "location.hash =" not in code
+
+
+def test_the_review_route_accepts_a_section_and_still_works_without_one():
+    page = _page()
+    route = page[page.index("function route() {"):]
+    route = route[:route.index("\n}")]
+
+    assert "review" in route and "renderReview(" in route
+    # Two capture groups: the slug, and an optional section after it.
+    assert "?" in route or "(?:" in route
+
+
+def test_a_refresh_lands_on_the_section_the_address_names():
+    """The chain that makes a reload work: the route hands the name to
+    renderReview, which resolves it with sectionIndex."""
+    page = _page()
+    render = page[page.index("async function renderReview(slug"):]
+    render = render[:render.index("view.mount();")]
+
+    assert "sectionIndex(" in render

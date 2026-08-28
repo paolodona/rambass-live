@@ -158,6 +158,13 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         self.send_response(206 if wanted else 200)
         self.send_header("Content-Type", content_type)
         self.send_header("Accept-Ranges", "bytes")
+        # Never cached. A clip is cut lazily and re-cut whenever its source
+        # moves, but the URL does not change when it does -- so a browser
+        # holding the old bytes would go on playing the part from before the
+        # re-render, which is the one lie this screen must not tell. There is
+        # no validator to revalidate against, so no-store rather than no-cache;
+        # the file is on the same machine and re-reading it costs nothing.
+        self.send_header("Cache-Control", "no-store")
         if wanted:
             self.send_header("Content-Range", f"bytes {start}-{stop - 1}/{size}")
         self.send_header("Content-Length", str(len(body)))
@@ -249,6 +256,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             clip_sources,
             clip_spans,
             grid_rows,
+            is_done,
+            load_done,
             load_review,
             notes_payload,
         )
@@ -269,6 +278,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             grid = {span.name: grid_rows(performance, span) for span in spans}
 
         _, notes = load_review(song.path("qa", "review.yaml"))
+        done = load_done(song.path("qa", "review.yaml"))
         self._json({
             "slug": song.slug,
             "title": song.title,
@@ -296,6 +306,16 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 "end_bar": span.end_bar, "end_beat": span.end_beat,
                 "cand_url": f"/clips/{song.slug}/{clip_name(span, 'cand')}",
                 "ref_url": f"/clips/{song.slug}/{clip_name(span, 'ref')}",
+                # The rest of the band under each take, so the screen can lay
+                # one over the other without asking the server again -- and
+                # each side gets the bed on its own clock. See review.BAND_OF.
+                "cand_band_url":
+                    f"/clips/{song.slug}/{clip_name(span, 'cand-band')}",
+                "ref_band_url":
+                    f"/clips/{song.slug}/{clip_name(span, 'ref-band')}",
+                # Ticked off by position, so a repeated section name cannot
+                # tick a section nobody listened to. See review.load_done.
+                "done": is_done(done, span.start_bar, span.start_beat),
             } for span in spans],
             "notes": notes_payload(notes),
             "grid": grid,
@@ -336,7 +356,13 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         """``/clips/<slug>/<clip-name>.wav`` — cut lazily on first request."""
         from . import review as review_module
         from .align import load_align
-        from .review import clip_name, clip_sources, clip_spans
+        from .review import (
+            clip_name,
+            clip_offsets,
+            clip_sources,
+            clip_spans,
+            side_of_clip,
+        )
 
         slug, _, name = rest.partition("/")
         song = _find_song(self.project, slug)
@@ -344,18 +370,20 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._error(404, f"no such clip: {rest}")
             return
         target = song.path("qa", "clips", name)
-        side = "cand" if name.endswith("-cand.wav") else "ref"
+        side = side_of_clip(name)
+        if side is None:
+            self._error(404, f"no such clip: {rest}")
+            return
         if self._clip_is_stale(song, target, side):
             amap = load_align(song.path("practice", "align.yaml"))
             wanted = None
             for span in clip_spans(song, amap):
-                for side in ("cand", "ref"):
-                    if clip_name(span, side) == name:
-                        wanted = (span, side)
+                if clip_name(span, side) == name:
+                    wanted = span
             if wanted is None:
                 self._error(404, f"no such clip: {name}")
                 return
-            span, side = wanted
+            span = wanted
             # Resolved here and per side: building both sources up front meant
             # a missing candidate raised for a *reference* request too, and
             # blanked a canvas whose stem was already on disk.
@@ -365,9 +393,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 # yet, which is a different thing to tell the reader.
                 self._error(409, source.hint)
                 return
-            start, duration = ((span.candidate_start, span.duration)
-                               if side == "cand" else
-                               (span.reference_start, span.reference_duration))
+            start, duration = clip_offsets(span, side)
             review_module.cut_clip(source.path, target,
                                    start=start, duration=duration)
         self._send_file(target, "audio/wav")
@@ -426,10 +452,16 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 self._note(song, body)
             elif path == "/api/note/remove":
                 self._remove_note(song, body)
+            elif path == "/api/note/demote":
+                self._demote(song, body)
+            elif path == "/api/section/done":
+                self._section_done(song, body)
             elif path == "/api/note/status":
                 self._note_status(song, body)
             elif path == "/api/promote":
                 self._promote(song)
+            elif path == "/api/promote-render":
+                self._promote_render(song)
             elif path == "/api/export-section":
                 self._export_section(song, body)
             else:
@@ -555,6 +587,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             section=str(body.get("section", "")),
             kind=kind,
             instrument=str(body.get("instrument", "")),
+            swap_to=str(body.get("swap_to", "")),
             velocity=int(body.get("velocity", 0) or 0),
             comment=str(body.get("comment", "")),
             created=date.today().isoformat(),
@@ -569,6 +602,47 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         self._json({"notes": notes_payload(
             remove_note(song, str(body.get("key", ""))))})
 
+    def _demote(self, song, body: dict) -> None:
+        """Undo one promotion: the edit leaves song.yaml, the note reopens.
+
+        Both files or neither -- `demote_note` mutates the song in memory, so
+        the manifest is validated and saved before the ledger is rewritten, and
+        a validation failure leaves both as they were.
+        """
+        from .manifest import save_song
+        from .review import (
+            demote_note,
+            load_review,
+            notes_payload,
+            write_ledger,
+        )
+
+        version, notes = load_review(song.path("qa", "review.yaml"))
+        _, removed = demote_note(song, notes, str(body.get("key", "")))
+        song.validate()
+        save_song(song)
+        write_ledger(song, notes, version=version)
+        self._json({"removed": removed, "notes": notes_payload(notes)})
+
+    def _section_done(self, song, body: dict) -> None:
+        """Tick a section off, or reopen it, and hand the whole list back.
+
+        The screen redraws its progress strip from this answer rather than from
+        what it assumed it had just done -- the same rule the notes follow.
+        """
+        from .align import load_align
+        from .review import clip_spans, is_done, set_section_done
+
+        marks = set_section_done(
+            song, int(body["bar"]), float(body.get("beat", 1.0)),
+            bool(body.get("done", True)))
+        spans = clip_spans(song, load_align(song.path("practice", "align.yaml")))
+        self._json({"sections": [
+            {"name": span.name, "start_bar": span.start_bar,
+             "start_beat": span.start_beat,
+             "done": is_done(marks, span.start_bar, span.start_beat)}
+            for span in spans]})
+
     def _note_status(self, song, body: dict) -> None:
         from .review import notes_payload, set_note_status
 
@@ -579,6 +653,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         from .manifest import save_song
         from .review import (
             load_review,
+            merge_notes,
             notes_payload,
             promote_notes,
             write_ledger,
@@ -587,11 +662,28 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         version, notes = load_review(song.path("qa", "review.yaml"))
         promoted, skipped = promote_notes(song, notes)
         if promoted:
+            # See review.merge_notes: promoting the second half of a swap is
+            # what makes the pair collapsible.
+            notes, _ = merge_notes(notes)
             song.validate()
             save_song(song)
             write_ledger(song, notes, version=version)
         self._json({"promoted": promoted, "skipped": skipped,
                     "notes": notes_payload(notes)})
+
+    def _promote_render(self, song) -> None:
+        """Promote, rebuild, re-render: the sequence a review pass runs every
+        time. Under the same one-at-a-time claim as a plain rebuild, because
+        that is what it mostly is."""
+        from . import review
+
+        if not self._claim(song):
+            return
+        try:
+            self._json(review.promote_rebuild_render(
+                song, project_root=self.project.root))
+        finally:
+            self._release(song)
 
     def _export_section(self, song, body: dict) -> None:
         """Write one section's MIDI slice where EZdrummer's browser can see it.

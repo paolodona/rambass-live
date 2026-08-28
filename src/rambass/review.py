@@ -397,8 +397,16 @@ def clip_spans(song, align_map) -> list[ClipSpan]:
 # reason CLAUDE.md gives everywhere: a stored ruler number slides the day
 # `count_in.bars` changes.
 
-NOTE_KINDS = ("missing-hit", "extra-hit", "wrong-instrument", "timing",
-              "velocity", "other")
+#: `swap-hit` is the pair `wrong-instrument` could never be: right place,
+#: wrong drum, *and here is the drum it should be*. Paolo asked for it because
+#: it is the commonest correction there is on this material -- an open hat that
+#: should be a crash, a crash that should be crash_2 -- and
+#: :func:`rambass.restore.apply_edits` already runs removals before additions
+#: precisely so that replacement is one edit. `wrong-instrument` stays for the
+#: half of it a listener can hear without deciding: this is not that drum, and
+#: I do not yet know which one it is.
+NOTE_KINDS = ("missing-hit", "extra-hit", "swap-hit", "wrong-instrument",
+              "timing", "velocity", "other")
 NOTE_STATUSES = ("open", "promoted", "dismissed")
 
 
@@ -412,6 +420,9 @@ class Note:
     section: str = ""
     kind: str = "other"
     instrument: str = ""
+    #: On a ``swap-hit``, the drum it should be — ``instrument`` stays the one
+    #: that is playing, so the note reads the same way the removal does.
+    swap_to: str = ""
     velocity: int = 0
     comment: str = ""
     status: str = "open"
@@ -426,6 +437,7 @@ class Note:
             section=str(data.get("section", "")),
             kind=str(data.get("kind", "other")),
             instrument=str(data.get("instrument", "")),
+            swap_to=str(data.get("swap_to", "")),
             velocity=int(data.get("velocity", 0) or 0),
             comment=str(data.get("comment", "")),
             status=str(data.get("status", "open")),
@@ -443,6 +455,8 @@ class Note:
         out["kind"] = self.kind
         if self.instrument:
             out["instrument"] = self.instrument
+        if self.swap_to:
+            out["swap_to"] = self.swap_to
         if self.velocity:
             out["velocity"] = self.velocity
         if self.comment:
@@ -467,7 +481,44 @@ def load_review(path) -> tuple[str, list[Note]]:
             [Note.from_dict(item) for item in data.get("notes") or []])
 
 
-def save_review(path, notes, *, version: str) -> None:
+def load_done(path) -> list[dict]:
+    """Which sections have been listened to, as ``{bar, beat, section, at}``.
+
+    Paolo: *"mark a section as Done so that when I reopen the project I know I
+    can skip it"*. It lives here rather than in ``song.yaml`` for the reason the
+    notes do: it is a record of what a human did during a review pass, not a
+    musical fact about the song, and nothing `drums restore` reads should have
+    to step over it.
+
+    Keyed by **position**, never by name. Two sections may share a name
+    (CLAUDE.md: identical names are one part), so a name would tick both from
+    one listen; and a section that moves is a section whose clips were re-cut,
+    which is exactly when the mark should stop following it.
+    """
+    from pathlib import Path
+
+    import yaml
+
+    path = Path(path)
+    if not path.is_file():
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    out = []
+    for item in data.get("done") or []:
+        out.append({"bar": int(item["bar"]),
+                    "beat": float(item.get("beat", 1.0)),
+                    "section": str(item.get("section", "")),
+                    "at": str(item.get("at", ""))})
+    return sorted(out, key=lambda item: (item["bar"], item["beat"]))
+
+
+def is_done(done, bar: int, beat: float) -> bool:
+    """Whether the section starting at *bar*.*beat* is ticked off."""
+    return any(item["bar"] == bar and abs(item["beat"] - beat) < 1e-6
+               for item in done)
+
+
+def save_review(path, notes, *, version: str, done=()) -> None:
     from pathlib import Path
 
     import yaml
@@ -477,20 +528,27 @@ def save_review(path, notes, *, version: str) -> None:
     header = (
         "# What a review pass heard, bar by bar. Musical bars (no count-in).\n"
         "# Promote a note into drums.additions / drums.removals with\n"
-        "# `rambass review promote`; qa/review.md is this file for reading\n"
-        "# next to the Reaper ruler.\n"
+        "# `rambass review promote` (and back out again with `review\n"
+        "# demote`); qa/review.md is this file for reading next to the\n"
+        "# Reaper ruler. `done:` is which sections have been listened to,\n"
+        "# by position -- two sections can share a name.\n"
     )
     payload = {
         "version": version,
         "notes": [note.to_dict() for note in
                   sorted(notes, key=lambda n: (n.bar, n.beat))],
     }
+    # Only when there are any, so a song nobody has stepped through does not
+    # carry an empty key explaining itself.
+    if done:
+        payload["done"] = [dict(item) for item in
+                           sorted(done, key=lambda d: (d["bar"], d["beat"]))]
     path.write_text(
         header + yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
         encoding="utf-8")
 
 
-def review_markdown(title: str, notes, *, count_in_bars: int) -> str:
+def review_markdown(title: str, notes, *, count_in_bars: int, done=()) -> str:
     """The ledger for reading next to the ruler — Reaper numbers, made once here.
 
     Same split as :func:`rambass.restore.checklist`: the stored data is
@@ -498,6 +556,11 @@ def review_markdown(title: str, notes, *, count_in_bars: int) -> str:
     the edge and nowhere else.
     """
     lines = [f"# {title} — review notes", ""]
+    if done:
+        lines += ["**Reviewed** (Reaper bars): " + ", ".join(
+            f"{item['section'] or 'section'} "
+            f"`{item['bar'] + count_in_bars}.{item['beat']:g}`"
+            for item in sorted(done, key=lambda d: (d["bar"], d["beat"]))), ""]
     if not notes:
         lines += ["No notes. Either the part is right, or nobody has listened "
                   "yet — the ledger cannot tell those apart.", ""]
@@ -511,6 +574,10 @@ def review_markdown(title: str, notes, *, count_in_bars: int) -> str:
             section = note.section
             lines += ["", f"## {section or '(outside every section)'}", ""]
         what = note.instrument or note.kind
+        if note.swap_to:
+            # Both ends, in the order the edit happens: this one comes out,
+            # that one goes in.
+            what = f"{note.instrument or '?'} → {note.swap_to}"
         lines.append(
             f"- [{marks.get(note.status, ' ')}] "
             f"`{note.bar + count_in_bars}.{note.beat:g}` **{what}** "
@@ -523,7 +590,21 @@ def review_markdown(title: str, notes, *, count_in_bars: int) -> str:
 #: :data:`rambass.restore.PROPOSABLE`: a named hit at a named position is one
 #: decision already made; a timing or velocity complaint is a judgement still
 #: to make, and stays a human's.
-PROMOTABLE = ("missing-hit", "extra-hit")
+PROMOTABLE = ("missing-hit", "extra-hit", "swap-hit")
+
+
+def _declared_hit(song, bar: int, beat: float, instrument: str):
+    """The ``drums.additions`` entry that puts *instrument* at this position.
+
+    The difference between a hit the transcription found and one this repo
+    declares, which is the difference between an edit a removal can make and
+    one it cannot. ``None`` when the hit is not ours.
+    """
+    for addition in song.drum_additions:
+        if (addition.bar == bar and abs(addition.beat - beat) < 1e-6
+                and addition.instrument == instrument):
+            return addition
+    return None
 
 
 def promote_notes(song, notes) -> tuple[int, int]:
@@ -533,6 +614,24 @@ def promote_notes(song, notes) -> tuple[int, int]:
     :func:`rambass.restore.propose_additions`'s split, applied to the ledger.
     Mutates *song* and the notes' ``status``; the caller saves both. Returns
     ``(promoted, skipped)``.
+
+    A ``swap-hit`` becomes **both**: the drum that is there comes out and the
+    drum that should be there goes in, at the one position. That is the shape
+    :func:`rambass.restore.apply_edits` was built for — removals run first, so
+    the swapped-in hit cannot be deleted by its own swap — and writing it as
+    one note rather than two is what lets `promote` tell that it is one
+    decision, and `git diff` show it as one.
+
+    **Unless the hit it is about is a declared one.** A removal cannot delete
+    a hit that ``drums.additions`` puts there: `apply_edits` applies removals
+    to the performance it was handed, and the addition goes in afterwards. So
+    a swap of a proposed crash wrote a removal that matched nothing and an
+    addition beside it, and the part came out with *both* — which is what Paolo
+    hit on Manlio bar 9 beat 4.667, where `drums missing --propose` had put the
+    crash in the first place. When an addition already declares the hit, the
+    swap **rewrites that declaration** and the removal is not written at all,
+    and an ``extra-hit`` **retracts** it. One line moves in the diff instead of
+    a removal contradicting an addition three screens up the file.
     """
     from .drummap import CANONICAL
 
@@ -543,11 +642,48 @@ def promote_notes(song, notes) -> tuple[int, int]:
     promoted = skipped = 0
     for note in notes:
         key = (note.bar, round(note.beat, 3), note.instrument)
+        target = (note.bar, round(note.beat, 3), note.swap_to)
         if (note.status != "open" or note.kind not in PROMOTABLE
                 or note.instrument not in CANONICAL):
             skipped += 1
             continue
-        if note.kind == "missing-hit":
+        if note.kind == "swap-hit":
+            # Both ends named, both ends real, and actually a change. Without
+            # the target it is a `wrong-instrument` observation and promoting
+            # it would mean guessing which drum the listener meant.
+            if (note.swap_to not in CANONICAL or note.swap_to == note.instrument
+                    or key in removals or target in additions):
+                skipped += 1
+                continue
+            from .manifest import Addition, Removal
+
+            why = note.comment or "promoted from qa/review.yaml"
+            declared = _declared_hit(song, note.bar, note.beat, note.instrument)
+            if declared is not None:
+                # The hit is ours, so move it rather than fighting it: a
+                # removal here could never match (see the docstring). The
+                # entries are frozen, so this is a replacement in place -- the
+                # position and the velocity ride along unchanged.
+                from dataclasses import replace
+
+                song.drum_additions = [
+                    replace(a, instrument=note.swap_to,
+                            note=f"{why} (was {note.instrument})")
+                    if a is declared else a
+                    for a in song.drum_additions]
+                additions.discard(key)
+                additions.add(target)
+            else:
+                song.drum_removals = list(song.drum_removals) + [Removal(
+                    bar=note.bar, beat=note.beat, instrument=note.instrument,
+                    note=f"{why} (swapped for {note.swap_to})")]
+                song.drum_additions = list(song.drum_additions) + [Addition(
+                    bar=note.bar, beat=note.beat, instrument=note.swap_to,
+                    velocity=note.velocity,
+                    note=f"{why} (swapped in for {note.instrument})")]
+                removals.add(key)
+                additions.add(target)
+        elif note.kind == "missing-hit":
             if key in additions:
                 skipped += 1
                 continue
@@ -562,15 +698,41 @@ def promote_notes(song, notes) -> tuple[int, int]:
             if key in removals:
                 skipped += 1
                 continue
-            from .manifest import Removal
+            declared = _declared_hit(song, note.bar, note.beat, note.instrument)
+            if declared is not None:
+                # You cannot remove a hit you declared -- you retract it.
+                song.drum_additions = [a for a in song.drum_additions
+                                       if a is not declared]
+                additions.discard(key)
+            else:
+                from .manifest import Removal
 
-            song.drum_removals = list(song.drum_removals) + [Removal(
-                bar=note.bar, beat=note.beat, instrument=note.instrument,
-                note=note.comment or "promoted from qa/review.yaml")]
-            removals.add(key)
+                song.drum_removals = list(song.drum_removals) + [Removal(
+                    bar=note.bar, beat=note.beat, instrument=note.instrument,
+                    note=note.comment or "promoted from qa/review.yaml")]
+                removals.add(key)
         note.status = "promoted"
         promoted += 1
     return promoted, skipped
+
+
+# ── the four sides of one section ────────────────────────────────────────────
+#
+# Two takes, and under each of them the rest of the band as *that* take heard
+# it. Paolo: "a switch that layers all the other instruments on top ... using
+# the most appropriate version (ref aligned or original)". Which bed is
+# appropriate is not a preference, it is the clock: the candidate is on the
+# fixed grid, so its bed is the warped one; the reference is the take that
+# breathes, so its bed is the album mix, untouched. Crossing them puts a band
+# under the drums that drifts away from them by up to a quarter second on
+# Manlio -- and a reviewer hearing that flam would file it against the
+# programmed part, which is the one thing this screen exists to judge.
+
+#: Every side of one section, and the bed that belongs to each take.
+SIDES = ("cand", "ref", "cand-band", "ref-band")
+BAND_OF = {"cand": "cand-band", "ref": "ref-band"}
+#: Whose clock a side is cut on. A band layer never gets a clock of its own.
+CLOCK_OF = {"cand": "cand", "ref": "ref", "cand-band": "cand", "ref-band": "ref"}
 
 
 def clip_name(span: ClipSpan, side: str) -> str:
@@ -579,6 +741,28 @@ def clip_name(span: ClipSpan, side: str) -> str:
 
     return (f"{span.start_bar:03d}-{int(span.start_beat)}-"
             f"{slugify(span.name) or 'span'}-{side}.wav")
+
+
+def side_of_clip(name: str) -> str | None:
+    """Which of :data:`SIDES` cut *name*, or ``None`` if it is not a clip.
+
+    Longest suffix first, or ``-cand-band.wav`` reads as ``-band.wav`` on a
+    section called "cand" and the clip gets cut on the wrong clock. The side is
+    the file name's last word by construction; the section slug in front of it
+    is free to contain any of these words and must not be able to change the
+    answer.
+    """
+    for side in sorted(SIDES, key=len, reverse=True):
+        if name.endswith(f"-{side}.wav"):
+            return side
+    return None
+
+
+def clip_offsets(span: ClipSpan, side: str) -> tuple[float, float]:
+    """``(start, duration)`` for one side of *span*, on that side's own clock."""
+    if CLOCK_OF.get(side, "cand") == "cand":
+        return (span.candidate_start, span.duration)
+    return (span.reference_start, span.reference_duration)
 
 
 def cut_clip(source, target, *, start: float, duration: float) -> None:
@@ -652,27 +836,41 @@ class ClipSource:
 
 
 def clip_sources(song, candidate_override=None) -> dict[str, ClipSource]:
-    """Both clip sources, resolved independently and without raising.
+    """Every clip source, resolved independently and without raising.
 
-    The hints are :func:`candidate_path`/:func:`reference_path`'s own messages
-    rather than a second wording, so the console and the CLI cannot drift on
-    what to do next.
+    The hints are :func:`candidate_path`/:func:`reference_path`/
+    :func:`aligned_bed_path`/:func:`recorded_bed_path`'s own messages rather
+    than a second wording, so the console and the CLI cannot drift on what to
+    do next.
     """
+    def resolve(side, label, finder, command=""):
+        try:
+            return ClipSource(side, label, finder(song), command=command)
+        except ProjectError as exc:
+            return ClipSource(side, label, hint=str(exc), command=command)
+
     try:
         candidate = ClipSource("cand", "candidate",
                                candidate_path(song, candidate_override))
     except ProjectError as exc:
         candidate = ClipSource("cand", "candidate", hint=str(exc))
-    try:
-        reference = ClipSource("ref", "reference", reference_path(song))
-    except ProjectError as exc:
-        # The one side a button can make. It is the stems step row's own
-        # command string, which is what `run_step_command` whitelists -- a
-        # button offering anything else would be refused by the console.
-        reference = ClipSource(
-            "ref", "reference", hint=str(exc),
-            command=f"rambass stems {song.slug} --drums-only")
-    return {"cand": candidate, "ref": reference}
+    # The one command a button can offer: it is the stems step row's own
+    # string, which is what `run_step_command` whitelists -- a button offering
+    # anything else would be refused by the console. It makes both of these
+    # files, which is why the recorded bed carries it too.
+    stems = f"rambass stems {song.slug} --drums-only"
+    return {
+        "cand": candidate,
+        "ref": resolve("ref", "reference", reference_path, stems),
+        # No command on the warped bed, and that is deliberate: the warp is a
+        # practice step and practice is kept off the stage screens
+        # (`STAGE_OF_STEP`), so the console has nothing whitelisted to run.
+        # The hint names the two commands that make it.
+        "cand-band": resolve("cand-band", "band, warped onto the grid",
+                             aligned_bed_path),
+        "ref-band": resolve("ref-band", "band, as recorded",
+                            recorded_bed_path, stems),
+    }
 
 
 def reference_path(song):
@@ -685,28 +883,184 @@ def reference_path(song):
     return path
 
 
-def write_ledger(song, notes, *, version: str = "") -> None:
-    """Persist the ledger both ways: YAML source of truth, markdown for eyes."""
-    save_review(song.path("qa", "review.yaml"), notes,
-                version=version or song.drum_midi_path().name)
+def aligned_bed_path(song):
+    """The band under the **candidate**: the bed time-warped onto the grid.
+
+    Never ``stems/no_drums.wav`` as a fallback, however tempting a file that is
+    already on disk looks. That one is the take as played, and the candidate is
+    on the fixed grid: Manlio's own map has the band -88 to +258 ms away from
+    it, so the unwarped bed under programmed drums flams by a quarter second by
+    the end of the song. Missing is the honest answer; the hint makes it.
+    """
+    path = song.path("practice", "no_drums-aligned.wav")
+    if not path.is_file():
+        raise ProjectError(
+            f"{song.slug}: no practice/no_drums-aligned.wav to lay under the "
+            f"candidate — the album bed has to be warped onto the grid first, "
+            f"or it drifts against the click.\n"
+            f"  make it with:  rambass align {song.slug} --fit --warp")
+    return path
+
+
+def recorded_bed_path(song):
+    """The band under the **reference**: the album mix minus its drums.
+
+    No warping here and none wanted — this bed plays under the original take,
+    on the original take's clock, which is the clock it was recorded on.
+    """
+    path = song.path("stems", "no_drums.wav")
+    if not path.is_file():
+        raise ProjectError(
+            f"{song.slug}: no stems/no_drums.wav to lay under the reference — "
+            f"run `rambass stems {song.slug} --drums-only` first (it writes "
+            f"the band-minus-drums bed as well as the drum stem)")
+    return path
+
+
+def write_ledger(song, notes, *, version: str = "", done=None) -> None:
+    """Persist the ledger both ways: YAML source of truth, markdown for eyes.
+
+    *done* defaults to whatever is already on disk, and that default is the
+    important half: this rewrites the whole file, so a note saved after a
+    section was ticked would otherwise wipe every tick. One file, two halves,
+    and a write to either has to keep the other.
+    """
+    path = song.path("qa", "review.yaml")
+    if done is None:
+        done = load_done(path)
+    save_review(path, notes,
+                version=version or song.drum_midi_path().name, done=done)
     song.path("qa", "review.md").write_text(
-        review_markdown(song.title, notes, count_in_bars=song.count_in_bars),
+        review_markdown(song.title, notes, count_in_bars=song.count_in_bars,
+                        done=done),
         encoding="utf-8")
 
 
+def set_section_done(song, bar: int, beat: float, done: bool) -> list[dict]:
+    """Tick a section off, or reopen it. Returns the whole list.
+
+    The section name is looked up from the manifest and stored beside the
+    position for readability only -- :func:`is_done` matches on the position,
+    so a rename does not lose the mark and a repeated name cannot tick a
+    section nobody listened to.
+    """
+    from datetime import date
+
+    path = song.path("qa", "review.yaml")
+    version, notes = load_review(path)
+    marks = [item for item in load_done(path)
+             if not (item["bar"] == bar and abs(item["beat"] - beat) < 1e-6)]
+    if done:
+        name = next((section.name for section in song.sections
+                     if section.bar == bar and abs(section.beat - beat) < 1e-6),
+                    "song" if not song.sections else "")
+        marks.append({"bar": bar, "beat": beat, "section": name,
+                      "at": date.today().isoformat()})
+    marks.sort(key=lambda item: (item["bar"], item["beat"]))
+    write_ledger(song, notes, version=version, done=marks)
+    return marks
+
+
+def observation_of(note: Note) -> tuple:
+    """What makes two notes the *same* observation: position, kind, drums.
+
+    Deliberately not the comment. Paolo: *"trying to remove the same hit twice
+    should not yield a duplication"* -- and two passes over one missing crash
+    write two different sentences about it, which is still one missing crash.
+    Deliberately not the status either: the ledger holds one entry per thing
+    heard, whatever has since been decided about it.
+    """
+    return (note.bar, round(note.beat, 3), note.phase, note.kind,
+            note.instrument, note.swap_to)
+
+
+def merge_notes(notes) -> tuple[list[Note], int]:
+    """Collapse a note that only corrects an earlier one. ``(kept, merged)``.
+
+    Paolo: *"First I have added a tom_mid, then swapped with tom_high, those two
+    notes can be replaced with missing-hit tom_high"*. Right — that pair is not
+    two observations, it is one observation and a correction to it, and the
+    ledger should say what the part needs: one hit, of the drum it ended up
+    being. A chain of swaps folds the same way, and swaps of a *transcribed*
+    hit fold into a single swap naming where it ended up.
+
+    Order in the file is not the signal: the ledger is sorted by position, so
+    two notes at one position keep whatever order they were written in — on
+    Manlio the swap came out first. It folds by matching instruments instead.
+
+    **Only when both halves are in the same state.** A promoted ``missing-hit``
+    whose swap is still open describes a manifest that says the *old* drum;
+    merging then would have the ledger claim the new one was promoted. Once the
+    swap is promoted too, :func:`promote_notes` has rewritten that declaration
+    in place, so the merged note is exactly what ``song.yaml`` says.
+
+    An ``extra-hit`` is never merged away: "there is a hit here that should not
+    be" is its own observation, and folding it would silently drop a decision.
+    """
+    kept = list(notes)
+    merged = 0
+    folding = True
+    while folding:
+        folding = False
+        for base in kept:
+            if base.kind not in ("missing-hit", "swap-hit"):
+                continue
+            ends_as = base.swap_to if base.kind == "swap-hit" else base.instrument
+            correction = next(
+                (one for one in kept
+                 if one is not base and one.kind == "swap-hit"
+                 and one.bar == base.bar and abs(one.beat - base.beat) < 1e-6
+                 and one.phase == base.phase and one.status == base.status
+                 and one.instrument == ends_as), None)
+            if correction is None:
+                continue
+            if base.kind == "swap-hit":
+                base.swap_to = correction.swap_to
+            else:
+                base.instrument = correction.swap_to
+            if correction.comment and not base.comment:
+                base.comment = correction.comment
+            kept.remove(correction)
+            merged += 1
+            folding = True
+            break
+    return kept, merged
+
+
 def add_note(song, note: Note) -> list[Note]:
-    """Append one note to the song's ledger and rewrite both files.
+    """Add one note to the song's ledger and rewrite both files.
 
     The CLI and the console both land here, so a note typed over SSH and a
     note clicked in the browser are indistinguishable on disk. Fills in the
     covering section when the caller left it blank.
+
+    **One observation, one note.** Filing the same thing again is not an
+    error and does not add a second entry — it is two clicks in the grid, and
+    `promote` would skip the copy as already done while the ledger read as two
+    problems. Two things do carry over from the second filing, because both
+    are information the ledger did not have: a **dismissed** note comes back
+    open (filing it again is asserting it again, and swallowing that leaves a
+    chip the eye reads as struck out), and a **comment** fills in where there
+    was none. A promoted note stays promoted: its edit is in `song.yaml`
+    already, so re-filing it is genuinely a no-op.
     """
     if not note.section:
         from .restore import _section_at
 
         note.section = _section_at(song.sections, note.bar, note.beat)
     version, notes = load_review(song.path("qa", "review.yaml"))
-    notes.append(note)
+    same = next((one for one in notes
+                 if observation_of(one) == observation_of(note)), None)
+    if same is None:
+        notes.append(note)
+    else:
+        if same.status == "dismissed":
+            same.status = "open"
+        if note.comment and not same.comment:
+            same.comment = note.comment
+    # And a note that only corrects one already here is folded into it: add a
+    # tom_mid, hear it, swap it for a tom_high -- that is one missing hit.
+    notes, _ = merge_notes(notes)
     write_ledger(song, notes, version=version)
     return notes
 
@@ -752,7 +1106,7 @@ def note_key(note: Note) -> str:
     list that re-sorts on every write.
     """
     return "|".join([str(note.bar), f"{note.beat:g}", note.kind,
-                     note.instrument, note.comment])
+                     note.instrument, note.swap_to, note.comment])
 
 
 def _one_note(notes, key: str) -> int:
@@ -780,18 +1134,108 @@ def remove_note(song, key: str) -> list[Note]:
     index = _one_note(notes, key)
     note = notes[index]
     if note.status == "promoted":
-        where = "drums.removals" if note.kind == "extra-hit" else "drums.additions"
+        # A swap went to *both* lists, and naming one of them sends the reader
+        # off to delete half an edit -- which leaves the part with neither the
+        # old drum nor a note saying where the new one came from.
+        where = {"extra-hit": "drums.removals",
+                 "swap-hit": "drums.removals and drums.additions",
+                 }.get(note.kind, "drums.additions")
         raise ProjectError(
             f"{song.slug}: the note at {note.bar}.{note.beat:g} is promoted, so "
             f"its edit is in song.yaml. Removing the note would leave the edit "
             f"behind.\n"
-            f"  take it out of {where} first (bar {note.bar}"
+            f"  demote it first:  rambass review demote {song.slug} "
+            f"{note.bar}.{note.beat:g}\n"
+            f"  or take it out of {where} by hand (bar {note.bar}"
             f"{f', beat {note.beat:g}' if note.beat != 1.0 else ''}"
-            f"{f', {note.instrument}' if note.instrument else ''}), then "
+            f"{f', {note.instrument}' if note.instrument else ''}"
+            f"{f' → {note.swap_to}' if note.swap_to else ''}), then "
             f"rebuild.")
     del notes[index]
     write_ledger(song, notes, version=version)
     return notes
+
+
+def demote_note(song, notes, key: str) -> tuple[Note, int]:
+    """Undo one promotion: take the edit back out and reopen the note.
+
+    Paolo: *"ability to demote promoted notes in case I have by mistake
+    promoted a wrong one"*. Until this existed, `promote` was a one-way door
+    from inside the tool — the chip lost its controls and `remove_note` told
+    you to go and edit `song.yaml` by hand, which is the one thing the console
+    is for avoiding.
+
+    Matches an edit on **(bar, beat, instrument)**, the same triple `promote`
+    keyed on, so a crash somebody added by hand at the same bar is not swept
+    up with it. A swap takes both of its edits. An edit that has already gone
+    is not an error: it can be gone for a good reason, and refusing then would
+    leave the note stuck in `promoted` with nothing behind it, which is the
+    state that is actually wrong. Mutates *song* and the note; the caller
+    saves both. Returns ``(note, edits_removed)``.
+    """
+    note = notes[_one_note(notes, key)]
+    if note.status != "promoted":
+        raise ProjectError(
+            f"{song.slug}: the note at {note.bar}.{note.beat:g} is not "
+            f"promoted, so there is no edit in song.yaml to take back. "
+            f"Dismiss it, or remove it from the ledger.")
+
+    def without(edits, instrument):
+        """*edits* minus the one this note put there, and how many went."""
+        if not instrument:
+            return list(edits), 0
+        kept, dropped = [], 0
+        for edit in edits:
+            if (not dropped and edit.bar == note.bar
+                    and abs(edit.beat - note.beat) < 1e-6
+                    and edit.instrument == instrument):
+                dropped += 1
+                continue
+            kept.append(edit)
+        return kept, dropped
+
+    removed = 0
+    if note.kind == "missing-hit":
+        song.drum_additions, removed = without(song.drum_additions,
+                                               note.instrument)
+    elif note.kind == "extra-hit":
+        song.drum_removals, removed = without(song.drum_removals,
+                                              note.instrument)
+        if not removed:
+            # Nothing to un-remove, so the promotion retracted a declared hit
+            # instead (see promote_notes): put the declaration back, with what
+            # the note knows about it.
+            from .manifest import Addition
+
+            song.drum_additions = list(song.drum_additions) + [Addition(
+                bar=note.bar, beat=note.beat, instrument=note.instrument,
+                velocity=note.velocity,
+                note="restored by review demote")]
+            removed = 1
+    elif note.kind == "swap-hit":
+        declared = _declared_hit(song, note.bar, note.beat, note.swap_to)
+        matching_removal = any(
+            r.bar == note.bar and abs(r.beat - note.beat) < 1e-6
+            and r.instrument == note.instrument for r in song.drum_removals)
+        if declared is not None and not matching_removal:
+            # The swap moved one field of one addition; move it back.
+            from dataclasses import replace
+
+            song.drum_additions = [
+                replace(a, instrument=note.instrument,
+                        note="restored by review demote")
+                if a is declared else a
+                for a in song.drum_additions]
+            removed = 1
+        else:
+            song.drum_removals, took = without(song.drum_removals,
+                                               note.instrument)
+            removed += took
+            song.drum_additions, took = without(song.drum_additions,
+                                                note.swap_to)
+            removed += took
+    note.status = "open"
+    return note, removed
 
 
 def set_note_status(song, key: str, status: str) -> list[Note]:
@@ -876,6 +1320,68 @@ def rebuild_song(song, *, project_root, dry_run: bool = False,
         result["ran"] = report["ran"]
         result["failed"] = report["failed"]
         result["outputs"] = report["outputs"]
+    return result
+
+
+def promote_rebuild_render(song, *, project_root) -> dict:
+    """Promote, rebuild, re-render — the three steps that are always one act.
+
+    Paolo: *"when I make changes in the review tool I generally add/remove/swap
+    hits. Then I need to promote them, rebuild and re-render. It's three
+    actions that are always in sequence."* They stay available separately,
+    because each is the right thing on its own sometimes — promote alone is how
+    you read the `git diff` before anything touches the MIDI, rebuild alone is
+    for a change that came from somewhere else (a section edit, a
+    re-transcription), and re-render alone is for a candidate stale against a
+    MIDI nobody needs to rebuild. What was missing is the sequence, which is
+    what a review pass runs every single time.
+
+    Order matters in both directions. The promotion is **saved to disk first**,
+    because the rebuild runs `rambass drums restore` as a subprocess and that
+    reads `song.yaml`: an addition still only in memory would be rebuilt away.
+    And the render is **last**, or it renders the part from before the rebuild
+    — the exact failure `candidate_state` exists to report.
+
+    Two ways it stops early, both deliberate. A failed rebuild does not go on
+    to render: audio that looks current and is not is worse than no audio. And
+    a run where nothing was rebuilt and the candidate is already fresh renders
+    nothing at all — a quarter of an hour of VST time for a click that changed
+    nothing is not a no-op. The report says which happened.
+    """
+    from .manifest import save_song
+    from .provenance import stale_report
+
+    path = song.path("qa", "review.yaml")
+    version, notes = load_review(path)
+    promoted, skipped = promote_notes(song, notes)
+    if promoted:
+        notes, _ = merge_notes(notes)
+        song.validate()
+        save_song(song)
+        write_ledger(song, notes, version=version)
+
+    result = dict(rebuild_song(song, project_root=project_root))
+    result.update({"promoted": promoted, "skipped": skipped,
+                   "notes": notes_payload(notes), "rendered": False, "why": ""})
+    if result["failed"]:
+        result["why"] = ("the rebuild failed, so nothing was rendered — the "
+                         "candidate is still the part from before this")
+        return result
+
+    state = candidate_state(song)
+    if not result["ran"] and state["fresh"]:
+        result["why"] = ("nothing to rebuild and the candidate is already "
+                         "current, so there was nothing to render")
+        return result
+
+    render = run_step_command(song, state["command"],
+                              project_root=project_root,
+                              report=stale_report(song))
+    result["commands"] = list(result["commands"]) + [state["command"]]
+    result["ran"] += render["ran"]
+    result["failed"] = render["failed"]
+    result["outputs"] = {**result["outputs"], **render["outputs"]}
+    result["rendered"] = not render["failed"]
     return result
 
 

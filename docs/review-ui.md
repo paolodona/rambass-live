@@ -193,6 +193,67 @@ note to the 'crash' (no visual clue of what was selected) and I dont know what
   on one screen is the cost of the Reaper-numbered ruler, and this is where
   it has to be paid.
 
+## Hearing it in context: the band layer
+
+Paolo: *"I would like to listen to the candidate drums in context (use the ref
+aligned time warped section on top of the candidate drums), and the reference in
+context too ... a switch that layers all the other instruments on top that uses
+the most appropriate version (ref aligned or original)"*, and, deciding the
+implementation: *"need to keep playing when toggling other instruments on or
+off"*.
+
+`b`, or the switch in the transport. It is the same trick `s` has always used:
+**four elements, all playing all the time, and the switch moves `muted`.** A
+paused element restarted on unmute comes back a frame or two late, which is a
+flam — in a tool built to judge flams. `restart()`, `seek()` and the loop all
+move every element together, so the layer is never a frame behind the drums it
+is under.
+
+**Which bed is "most appropriate" is not a preference, it is the clock.**
+
+| audible | bed under it | why that one |
+|---|---|---|
+| candidate | `practice/no_drums-aligned.wav` | the render puts musical bar 1 at sample 0; the warped bed does too |
+| reference | `stems/no_drums.wav` | the original take, and the original take's own band, untouched |
+
+Crossing them is the one thing this must never do. Manlio's own map has the band
+−88 to +258 ms away from the fixed grid, so the *unwarped* mix under programmed
+drums flams by a quarter second by the end of the song — and a reviewer hearing
+that would file it against the programmed part, which is the one thing this
+screen exists to judge. So `review.aligned_bed_path` has **no fallback**: with no
+warp yet the switch says so and names `rambass align <song> --fit --warp`, which
+is a better answer than a bed that drifts. The pairing lives in
+`review.CLOCK_OF` and is asserted from both ends — the server cuts each bed on
+its side's clock, and the page's `audible()` can only ever pair a take with its
+own bed.
+
+Two smaller consequences worth not re-deriving:
+
+* **The side is read off the clip's file name, longest suffix first.** It used
+  to be `endswith("-cand.wav") else "ref"`, which calls `...-cand-band.wav` a
+  reference and would have cut the warped bed on the recording's clock. The
+  section slug sits in the same string and is free to contain the word "ref".
+* **The recorded bed carries the stems command and the warped one carries
+  nothing.** `rambass stems --drums-only` writes `no_drums.wav` as well as
+  `drums.wav` and is already whitelisted by `run_step_command`; the warp is a
+  practice step and practice is deliberately kept off the stage screens
+  (`review.STAGE_OF_STEP` — a stale warp must never ring a show column), so
+  there is nothing for a button to run and the hint is the fix.
+
+**The bed plays at 0.6**, tuned down by ear in three passes (0.8, then 0.7,
+then 0.6 — each tenth off the full mix rather than off the number before it). The bed is a full band mix
+and the candidate is a bare kit, so at equal gain the part being judged is the
+quieter of the two. It is a gain on the *bed*, never a cut on the drums:
+attenuating those would change what a velocity sounds like, which is one of the
+things a review pass is listening for. One constant, `BAND_VOLUME` at the top of
+the page's script — lower it to push the band further back.
+
+The lanes are **104 CSS px** tall — 208 device pixels at DPR 2, twice what they
+were. Paolo: *"so I can better see the waveforms, even the fainter hits"*. The
+peak drawing is linear in amplitude, so a ghost note gets exactly twice the
+pixels; nothing else in the stack moves, because the playhead spans the stack
+rather than being sized to a lane.
+
 **Clips are served with byte ranges, or none of the above works.** `_clip`
 answered every request with 200 and the whole body, ignoring `Range` and never
 sending `Accept-Ranges` — and a browser treats a media resource with no range
@@ -478,8 +539,9 @@ being the whole application.
    MIDI (`midiio.read_drum_midi` + `drummap.CANONICAL`). This is the
    toms-and-cymbals visibility Reaper's default drum view does not give.
 4. **Notes panel.** A text box plus a `kind` chooser (missing-hit /
-   extra-hit / wrong-instrument / timing / velocity / other), pinned to the
-   bar the playhead is on. Existing notes for the visible range show inline
+   extra-hit / swap-hit / wrong-instrument / timing / velocity / other), pinned
+   to the bar the playhead is on. A **swap** reveals a second instrument
+   select — the drum that is playing, and the drum it should be. Existing notes for the visible range show inline
    on the grid at their bar; click to edit, checkbox to dismiss.
 5. **"Send to EZdrummer" button**, per section. Not real drag-and-drop out
    of a browser — not a mechanism worth building when there's a trivial,
@@ -500,9 +562,14 @@ being the whole application.
 | key | action |
 |---|---|
 | `space` | start/stop the transport |
+| `shift`+`space` | play the section again **from the top** — the thing a review pass does over and over. Plays whether or not it was already playing, and leaves the side and the band layer as they were |
 | `s` | switch which sample is audible — candidate ↔ reference — without restarting playback |
+| `b` | lay the rest of the band under whichever side is audible — warped bed under the candidate, album mix under the reference. A mute, so it never stops the audio |
 | `n` / `p` | next / previous section |
 | `,` / `.` | previous / next **bar** within the current section |
+| `shift`+`D` | mark this section done, or reopen it — the pips under the header are every section, green for the ones already listened to |
+| `g` | divide the snap grid: the song's subdivision, then halves and quarters of it. `alt`+click is still no snap at all |
+| `shift`+`R` | promote every confident note, rebuild what that makes stale, re-render the candidate, and come back to this section |
 | `l` | toggle loop on/off |
 | `m` | log a **missing-hit** note at the playhead's bar and focus the comment box — the commonest Stage 7 edit, one key away |
 | `x` | log an **extra-hit** note the same way — the other half of that same edit |
@@ -511,6 +578,214 @@ being the whole application.
 | `r` | rebuild everything stale for this song, then refresh the clips and this view |
 | `d` | back to the dashboard |
 | `?` | show this list on-screen |
+
+**Right-click a grid row to file the edit where you heard it.** Paolo: *"if the
+playhead is at 16.2 and the hihat_closed grid lane is selected I should be able
+to right-click on that specific hit and get add "xxx" here, remove, or swap with
+"xxx" ... the same as using the notes section below, but quicker and in
+context"*. The row names the instrument, the pointer names the position — the
+two controls the panel makes you touch — and the menu files the same three notes
+into the same ledger for the same `promote`. Nothing here writes to `song.yaml`.
+
+What it offers depends on what is under the pointer, read off the same `ticks`
+the row was drawn from, so the menu and the eye cannot disagree: on a hit,
+*remove* and *swap for …*; on an empty grid line, *add*. The other items are
+shown disabled with the reason in their tooltip rather than hidden, because a
+menu whose items move is a menu you have to read every time. The swap's `go`
+stays dead until a drum is named — a swap filed to whatever happened to be first
+in a list is worse than no shortcut. Position snaps to `drums.subdivision` and
+reads in Reaper numbers like everything else on the screen; the stored note is
+musical. `menuModel` is pure and checked in node, because the one thing this
+must never do is offer "remove" where there is no hit.
+
+Right-click does **not** move the playhead: `scrubFrom` is left-button only now.
+Seeking the audio out from under the ear while a section loops is exactly what
+you do not want from the gesture that files a note about what you just heard.
+
+**The transport's readouts are fixed-width.** The row is centre-justified, so a
+readout that grows a character pushes half of it left and the other half right —
+and the playhead readout is rewritten on every animation frame while playing, so
+that jitter is continuous. `#at` is 9ch (`100.1.895` is the widest a Reaper
+bar.beat gets), and the band switch, the loop state and the which-side readout
+are sized for their longest label.
+
+**A removal cannot delete a hit `drums.additions` declares — so promote does
+not write one.** Paolo, on Manlio: *"I have a promoted note 11.4.667 swap-hit
+crash → hihat_open but the midi now includes both the hihat_open and the
+crash"*. The crash at that position was never in the transcription; `drums
+missing --propose` had put it in `drums.additions`. `apply_edits` applies
+removals to the performance it was handed and adds the additions afterwards, so
+the swap's removal matched nothing and the part came out with both drums —
+while the ledger, the diff and the console all said the promotion had worked.
+
+`promote_notes` now asks whether the hit is a **declared** one (`_declared_hit`)
+and edits the declaration instead:
+
+| the hit is | swap-hit | extra-hit |
+|---|---|---|
+| in the transcription | removal + addition, as before | removal |
+| in `drums.additions` | that entry's `instrument` is rewritten in place | that entry is retracted |
+
+Both are exactly reversible, which is why `demote` can invert them: a swap moved
+one field of one addition and moves it back (the note carries both drum names),
+and a retracted declaration comes back with the velocity the note carries —
+which is why the grid menu files the hit's own velocity on a removal too. The
+diff is better as well: one line changing `crash` to `hihat_open`, rather than a
+removal contradicting an addition three screens further up the file.
+
+A pair written **by hand** still works — a removal plus an addition of the same
+drum at the same position is a legitimate way to re-voice a transcribed hit's
+velocity — but `apply_edits` now reports it as `contradicted` and `drums
+restore` prints a line saying the addition wins and the hit stays. It is also no
+longer counted as a *stale* removal: it matched something, just not a hit, and
+two complaints about one line send the reader in two directions.
+
+**A note belongs to a section in beats, not in bar numbers.** `renderChips`
+filtered with `note.bar >= start_bar && note.bar < end_bar`, which looks
+equivalent to the span and is not: Manlio's verse-2 runs 20.3 to **28.3**, so a
+note at bar 28 failed `28 < 28` and disappeared from the section it was filed
+in — while turning up under verse-2-lift, which starts at 28.3 and never
+contained it. Paolo, filing the same tom three times: *"it won't let me"*. It
+had let him, three times, into a list he was not looking at. `inSection()` uses
+the same `fracFor` arithmetic as every line, hit and playhead on the screen, for
+the same reason the drawers do (docs above): sections here rarely start on a bar
+line, so this is the common case rather than a corner.
+
+That bug is also why de-duping no longer stays completely quiet: silence plus an
+invisible chip reads exactly like a refusal. A filing that added nothing now
+says "already noted at 30.2.667" in the log the screen already answers in — the
+grid menu says the same — and the note itself is untouched.
+
+**A note that only corrects an earlier one is folded into it.** Paolo: *"First
+I have added a tom_mid, then swapped with tom_high, those two notes can be
+replaced with missing-hit tom_high"*. That pair is not two observations, it is
+one observation and a correction to it, and the ledger should say what the part
+needs: one hit, of the drum it ended up being. `merge_notes` folds a
+`swap-hit(X→Y)` into a `missing-hit(X)` at the same position, chains as far as
+they go (`crash → crash_2 → china` is one missing china), and folds swaps of a
+*transcribed* hit into a single swap naming where it ended up.
+
+Order in the file is not the signal — the ledger is sorted by position, so two
+notes at one position keep whatever order they were written in, and on Manlio
+the swap came out first. It matches on instruments instead.
+
+**Only when both halves are in the same state.** A promoted `missing-hit` whose
+swap is still open describes a manifest that says the *old* drum; merging then
+would have the ledger claim the new one was promoted. Once the swap is promoted
+too, `promote_notes` has rewritten that declaration in place (see the removal
+rule above), so the merged note is exactly what `song.yaml` says — which is why
+every promote path runs the merge straight after promoting, and `add_note` runs
+it when the pair is filed open in the first place. An `extra-hit` is never
+merged away: "there is a hit here that should not be" is its own observation.
+
+**One observation, one note.** Paolo: *"ensure we cannot create duplicated
+notes ... trying to remove the same hit twice should not yield a duplication
+(silent de-duping per note/type/instrument/time)"*. Easy to do now that a note
+is two clicks in the grid with no typing, and a second copy says nothing the
+first did not — `promote` skips it as already done while the ledger reads as two
+problems. Identity is `observation_of()`: bar, beat, phase, kind, instrument and
+swap target. **Not** the comment — two passes over one missing crash write two
+different sentences about it, and it is still one missing crash — and not the
+status either.
+
+Two things carry over from the second filing, because both are information the
+ledger did not have: a **dismissed** note comes back open (filing it again is
+asserting it again, and swallowing that leaves a chip the eye reads as struck
+out), and a **comment fills in** where there was none. A promoted note stays
+promoted: its edit is in `song.yaml` already. Silent in the console, where the
+chip is already on screen; `rambass review note` says "already noted … left as
+it was", because "noted" for a note that added nothing is a small lie.
+
+De-duping is in `add_note`, the one funnel both the CLI and the console use, so
+a hand-edited `qa/review.yaml` can still contain a pair — and `remove_note`
+still takes exactly one of them, which is what its test now writes the ledger
+directly to prove.
+
+**Promote is not a one-way door any more.** `demote` on a promoted chip, or
+`rambass review demote <song> <bar>`, takes the edit back out of `song.yaml`
+and reopens the note. It matches on the same `(bar, beat, instrument)` triple
+`promote` keyed on, so a hand-written addition at the same bar is not swept up
+with it; a swap takes both of its edits. An edit that has already gone by hand
+is not an error — refusing then would leave a note stuck in `promoted` with
+nothing behind it, which is the state that is actually wrong. Before this the
+only way back was editing the manifest, which is the one thing the console
+exists to avoid, and `remove_note`'s refusal now names the command instead of
+the YAML key.
+
+**Sections can be ticked off.** Paolo: *"mark a section as Done so that when I
+reopen the project I know I can skip it"*. `shift`+`D`, or the control under the
+section name. It lives in `qa/review.yaml` beside the notes — a record of what a
+human did in a review pass, not a musical fact, and nothing `drums restore`
+reads should have to step over it — and it is keyed by **position, not name**:
+two sections can share a name (CLAUDE.md: identical names are one part), so a
+name would tick both from one listen, and a section that moves is one whose
+clips were re-cut, which is when the mark should stop following it. Three cues,
+because the question gets asked two ways: a badge on the section in front of
+you, a control that says which way it will move, and a pip per section under the
+header — green for done, outlined for where you are, clickable to jump, with the
+count beside it. `write_ledger` defaults `done` to what is already on disk,
+because it rewrites the whole file and a note saved afterwards would otherwise
+wipe every tick.
+
+**One control for the sequence.** Paolo: *"promote, rebuild and re-render ...
+three actions that are always in sequence. Would I ever need to do them
+separately?"* — sometimes, yes: promote alone is how you read the `git diff`
+before anything touches the MIDI, rebuild alone is for a change that came from
+somewhere else (a section edit, a re-transcription), and re-render alone is for
+a candidate stale against a MIDI nobody needs to rebuild. So the three stay, and
+`shift`+`R` runs the sequence that a review pass runs every time.
+
+Order matters in both directions, and `promote_rebuild_render` enforces it: the
+promotion is **saved to disk first**, because the rebuild runs `drums restore`
+as a subprocess and that reads `song.yaml` — an addition still only in memory
+would be rebuilt away — and the render is **last**, or it renders the part from
+before the rebuild. It stops early two ways: a failed rebuild does not go on to
+render (audio that looks current and is not is worse than no audio), and a run
+where nothing was rebuilt and the candidate is already fresh renders nothing at
+all, because a quarter of an hour of VST time for a click that changed nothing
+is not a no-op. Then the screen reloads **on the same section**, which is the
+point — you press it to hear the edit you just made, where you made it.
+
+**The snap grid divides.** `g` cycles the song's own subdivision, then halves
+and quarters of it (`1/3 → 1/6 → 1/12` on a shuffle). Paolo: *"I need to add a
+hit between 4.4.333 and 4.4.667 and I cannot snap at the correct point"*. The
+song's subdivision stays the default because that is where the *hits* are, but a
+note is sometimes about a place between two of its lines, and the only
+alternative was alt — no snap at all, filing whatever decimal the pixel happened
+to be. One `snapSubdivision()` feeds the snap, the playhead's reported beat, the
+drawn grid and the right-click menu, so the line you see, the position you land
+on and the beat that reaches `drums.additions` cannot disagree.
+
+**Two bugs the above turned up, both worth not re-introducing:**
+
+* **An abandoned screen kept playing.** `renderReview` builds a *new*
+  `ReviewView` on every rebuild and re-render, and the router builds one per
+  navigation — while the four audio elements belong to the old instance and are
+  not in the DOM, so nothing stopped them. They played on under the new screen,
+  answering to no transport: the new view's space bar stops the new view's
+  elements and the orphan keeps going. It was true of the candidate and the
+  reference from the start; the band layer is only the half you cannot miss.
+  `stopReview()` is called by both doors now.
+* **Clips are served `Cache-Control: no-store`.** A clip is re-cut whenever its
+  source moves, but the URL does not change when it does — so a browser holding
+  the old bytes would go on playing the part from before the re-render, which is
+  the one lie this screen must not tell. There is no validator to revalidate
+  against, so `no-store` rather than `no-cache`; the file is on the same machine.
+
+**`swap-hit` is the third confident kind.** Paolo: *"a hit may be correct but
+with the wrong item, for example swapping an open hi-hat to a crash or a crash
+to a crash_2"*. `restore.apply_edits` already calls that the commonest edit
+there is — its removals run before its additions precisely so a replacement is
+one edit — but the ledger had no way to say it in one note, so a swap took two
+notes that `promote` could not tell were one decision. It carries both drums
+(`instrument` is the one playing, `swap_to` the one it should be) and promotes
+to **a removal and an addition at the one position**, each cross-referencing the
+other in its `note:`. Without a target it is skipped, not guessed at — a swap
+with one end named is exactly a `wrong-instrument` observation, which is what
+that kind stays for: *this is not that drum, and I do not yet know which one it
+is.* The velocity rule is unchanged: blank means `apply_edits` takes the median
+of the new instrument's own hits, which is better than inheriting a number that
+meant "loud for a hi-hat".
 
 `m`/`x` don't replace the `kind` chooser — they pre-fill the two you'll reach
 for most and jump the cursor into the comment box, so the routine case is
@@ -654,10 +929,16 @@ rambass review serve <song> --stage drums_midi   # land on one stage directly
 
 rambass review clips <song> [--version drums-quantized|drums-final] [--candidate <wav>]
     # cuts reference and candidate into one clip pair per section (and,
-    # lazily, per bar) under a scratch cache dir — gitignored
+    # lazily, per bar) under a scratch cache dir — gitignored. Cuts the two
+    # band beds as well when they exist, each on its own side's clock; a
+    # missing bed is reported, never fatal — the A/B does not need it
 rambass review note <song> <bar> "comment" [--kind missing-hit] [--instrument crash]
+rambass review note <song> <bar> "comment" --kind swap-hit     --instrument hihat_open --swap-to crash
     # add a note without the UI — keeps the ledger scriptable and testable
 rambass review promote <song>
+rambass review demote <song> <bar> [--instrument crash] [--beat-any] [--reaper-bar]
+    # the other half of promote: takes the edit back out of song.yaml and
+    # reopens the note, for one promoted by mistake
 rambass review status [--album ...]
     # open-note counts per song, same shape as `practice status`
 rambass review rebuild <song> [--stage <name>] [--step <name>] [--force <artifact>]

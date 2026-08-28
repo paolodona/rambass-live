@@ -911,12 +911,16 @@ def test_removing_a_note_rewrites_both_files(song):
 
 
 def test_removing_only_takes_one_of_two_identical_notes(song):
-    """Filing the same thing twice is a slip, and undoing the slip should not
-    also undo the note that was wanted."""
-    from rambass.review import add_note, note_key, remove_note
+    """Removing one of two identical entries must not take both.
 
-    for _ in range(2):
-        add_note(song, _note(9, kind="extra-hit", instrument="crash"))
+    `add_note` cannot make a pair like this any more (one observation, one
+    note), so this writes the ledger directly — which is exactly how a pair
+    still arrives: `qa/review.yaml` is a hand-editable file, and one filed
+    before the de-duping existed reads the same way."""
+    from rambass.review import note_key, remove_note, write_ledger
+
+    write_ledger(song, [_note(9, kind="extra-hit", instrument="crash"),
+                        _note(9, kind="extra-hit", instrument="crash")])
 
     left = remove_note(song, note_key(_ledger(song)[0]))
     assert len(left) == 1
@@ -1100,3 +1104,995 @@ def test_the_lyrics_md_template_is_not_a_timed_cue_file(song):
     rows = {r.label: r for r in steps_for(song, "lyrics")}
     assert rows["Timed cues in lyrics.srt"].state == "missing"
     assert rows["Draft cues with Whisper"].state == "missing"
+
+
+# ── the band layer: the same section with the rest of the band under it ──────
+#
+# Paolo: *"I want to listen to the candidate drums in context ... a switch that
+# layers all the other instruments on top that uses the most appropriate
+# version (ref aligned or original)"*. "Most appropriate" is not a preference:
+# the candidate sits on the fixed grid and the reference is the take that
+# breathes, so each side has exactly one bed that lines up with it, and pairing
+# them the other way flams by up to a quarter second (docs/practice-tracks.md).
+
+
+def test_each_side_gets_the_only_bed_that_lines_up_with_it(cwd_song):
+    from rambass.review import clip_sources
+
+    _touch(cwd_song.path("practice", "no_drums-aligned.wav"), "not-really-audio")
+    _touch(cwd_song.path("stems", "no_drums.wav"), "not-really-audio")
+    sources = clip_sources(cwd_song)
+
+    assert sources["cand-band"].path == cwd_song.path(
+        "practice", "no_drums-aligned.wav")
+    assert sources["ref-band"].path == cwd_song.path("stems", "no_drums.wav")
+
+
+def test_the_candidate_never_borrows_the_unwarped_bed(cwd_song):
+    """The album mix under the candidate drums is the whole bug this avoids.
+
+    Manlio drifts -88..+258 ms across the song, so the unwarped bed is a
+    quarter second out by the end -- a reviewer would hear the *band* flam and
+    file it against the programmed part. Missing is the honest answer, and the
+    hint names the command that makes it."""
+    from rambass.review import clip_sources
+
+    _touch(cwd_song.path("stems", "no_drums.wav"), "not-really-audio")
+    band = clip_sources(cwd_song)["cand-band"]
+
+    assert not band.available
+    assert "practice/no_drums-aligned.wav" in band.hint
+    assert "--warp" in band.hint
+
+
+def test_only_the_recorded_bed_offers_a_command(cwd_song):
+    """`stems --drums-only` writes no_drums.wav too, and the console already
+    whitelists that string. The warp is a practice step and deliberately not on
+    any stage screen (`review.STAGE_OF_STEP`: practice must never gate the
+    gig), so the console cannot offer a button for it -- the hint is the fix."""
+    from rambass.review import clip_sources, steps_for
+
+    sources = clip_sources(cwd_song)
+    assert sources["ref-band"].command == (
+        f"rambass stems {cwd_song.slug} --drums-only")
+    assert sources["ref-band"].command in {
+        row.command for row in steps_for(cwd_song, "stems")}
+    assert sources["cand-band"].command == ""
+
+
+def test_a_band_clip_is_cut_on_the_clock_of_the_side_it_layers(song):
+    """Two clocks, and the band layer does not get a third one. The warped bed
+    is on the fixed grid (`align.warp_plan` targets `bar_beat_to_seconds`, so
+    its first sample is musical bar 1, exactly like the candidate render); the
+    recorded bed is the original file the reference clips come from."""
+    from rambass.review import clip_offsets, clip_spans
+
+    span = clip_spans(song, _FakeMap())[1]
+
+    assert clip_offsets(span, "cand-band") == clip_offsets(span, "cand")
+    assert clip_offsets(span, "ref-band") == clip_offsets(span, "ref")
+    assert clip_offsets(span, "cand") == (span.candidate_start, span.duration)
+    assert clip_offsets(span, "ref") == (span.reference_start,
+                                         span.reference_duration)
+
+
+def test_a_clip_name_says_which_side_cut_it(song):
+    """The route reads the side back off the file name, and it used to do it
+    with `endswith("-cand.wav") else ref` -- which calls every band clip a
+    reference and would have cut the warped bed on the recording's clock."""
+    from rambass.review import clip_name, clip_spans, side_of_clip
+
+    span = clip_spans(song, _FakeMap())[0]
+    for side in ("cand", "ref", "cand-band", "ref-band"):
+        assert side_of_clip(clip_name(span, side)) == side
+    assert side_of_clip("nonsense.wav") is None
+
+
+def test_a_section_named_after_a_side_still_resolves(song):
+    """`slugify` puts the section name in the same string as the side, so a
+    section called "ref" or "cand-band" must not be able to rename the side."""
+    from rambass.manifest import Section
+    from rambass.review import clip_name, clip_spans, side_of_clip
+
+    song.sections = [Section("cand-band", 1), Section("ref", 9)]
+    for span in clip_spans(song, _FakeMap()):
+        for side in ("cand", "ref", "cand-band", "ref-band"):
+            assert side_of_clip(clip_name(span, side)) == side
+
+
+# ── swap-hit: one note that means "right place, wrong drum" ──────────────────
+#
+# Paolo: *"a hit may be correct but with the wrong item, for example swapping
+# an open hi-hat to a crash or a crash to a crash2"*. `restore.apply_edits`
+# already calls that the commonest edit there is -- removals run before
+# additions precisely so a replacement is two lines of YAML -- but the ledger
+# had no way to say it in one note, so a swap took two notes that promote could
+# not tell were one decision.
+
+
+def test_a_swap_promotes_to_a_removal_and_an_addition_at_one_position(song):
+    from rambass.review import promote_notes
+
+    note = _note(9, beat=3.0, kind="swap-hit", instrument="hihat_open",
+                 swap_to="crash", comment="section start")
+    promoted, skipped = promote_notes(song, [note])
+
+    assert (promoted, skipped) == (1, 0)
+    assert [(r.bar, r.beat, r.instrument) for r in song.drum_removals] == [
+        (9, 3.0, "hihat_open")]
+    assert [(a.bar, a.beat, a.instrument) for a in song.drum_additions] == [
+        (9, 3.0, "crash")]
+    assert note.status == "promoted"
+
+
+def test_a_swap_survives_restore_as_one_hit_of_the_new_instrument(song):
+    """End to end, because the point of the kind is the part that comes out:
+    `apply_edits` removes first, so the swapped-in hit is not deleted by its
+    own swap -- and it lands at the position the old hit had."""
+    from rambass.midiio import Hit
+    from rambass.restore import apply_edits
+    from rambass.review import promote_notes
+
+    promote_notes(song, [_note(9, beat=3.0, kind="swap-hit",
+                               instrument="hihat_open", swap_to="crash")])
+    timeline = song.timeline()
+    at = timeline.bar_beat_to_seconds(9, 3.0)
+    performance = _perf(song)
+    performance.hits.append(Hit("hihat_open", at, 90))
+    out, report = apply_edits(performance, additions=song.drum_additions,
+                              removals=song.drum_removals)
+
+    landed = sorted(h.instrument for h in out.hits if abs(h.time - at) < 0.03)
+    assert landed == ["crash", "snare"]
+    assert report["removed"] == 1 and report["added"] == 1
+
+
+def test_a_swap_with_no_target_is_left_for_a_human(song):
+    """A swap is confident because *both* ends are named. Without the second
+    instrument it is a `wrong-instrument` observation, and promote must not
+    guess -- the same rule as a missing-hit with no instrument."""
+    from rambass.review import promote_notes
+
+    note = _note(9, kind="swap-hit", instrument="hihat_open")
+    assert promote_notes(song, [note]) == (0, 1)
+    assert note.status == "open"
+    assert not song.drum_removals and not song.drum_additions
+
+
+def test_a_swap_to_the_same_drum_changes_nothing_and_is_skipped(song):
+    from rambass.review import promote_notes
+
+    assert promote_notes(song, [_note(9, kind="swap-hit", instrument="crash",
+                                      swap_to="crash")]) == (0, 1)
+    assert not song.drum_removals and not song.drum_additions
+
+
+def test_a_swap_to_something_that_is_not_a_drum_is_skipped(song):
+    from rambass.review import promote_notes
+
+    assert promote_notes(song, [_note(9, kind="swap-hit", instrument="crash",
+                                      swap_to="kazoo")]) == (0, 1)
+    assert not song.drum_additions
+
+
+def test_promoting_a_swap_twice_does_not_double_the_edit(song):
+    from rambass.review import promote_notes
+
+    first = _note(9, kind="swap-hit", instrument="hihat_open", swap_to="crash")
+    promote_notes(song, [first])
+    second = _note(9, kind="swap-hit", instrument="hihat_open", swap_to="crash")
+    assert promote_notes(song, [second]) == (0, 1)
+    assert len(song.drum_removals) == 1 and len(song.drum_additions) == 1
+
+
+def test_a_swap_round_trips_through_the_ledger(song, tmp_path):
+    from rambass.review import Note, load_review, save_review
+
+    path = tmp_path / "review.yaml"
+    save_review(path, [Note(bar=9, kind="swap-hit", instrument="hihat_open",
+                            swap_to="crash")], version="x.mid")
+    _, notes = load_review(path)
+    assert notes[0].swap_to == "crash"
+    assert "swap_to" in path.read_text(encoding="utf-8")
+
+
+def test_two_swaps_of_one_hit_to_different_drums_are_two_notes(song):
+    """The key is the fields a human filed, and the target is one of them --
+    without it the console could only ever name one of the two."""
+    from rambass.review import note_key
+
+    to_crash = _note(9, kind="swap-hit", instrument="hihat_open",
+                     swap_to="crash")
+    to_china = _note(9, kind="swap-hit", instrument="hihat_open",
+                     swap_to="china")
+    assert note_key(to_crash) != note_key(to_china)
+
+
+def test_a_promoted_swap_names_both_lists_when_it_cannot_be_removed(song):
+    """`remove_note` refuses a promoted note and says where its edit went. A
+    swap went to both lists, and naming only one of them sends the reader off
+    to delete half an edit."""
+    from rambass.project import ProjectError
+    from rambass.review import add_note, note_key, promote_notes, remove_note, write_ledger
+
+    note = _note(9, kind="swap-hit", instrument="hihat_open", swap_to="crash")
+    add_note(song, note)
+    promote_notes(song, [note])
+    write_ledger(song, [note])
+
+    with pytest.raises(ProjectError) as caught:
+        remove_note(song, note_key(note))
+    assert "drums.removals" in str(caught.value)
+    assert "drums.additions" in str(caught.value)
+
+
+def test_the_markdown_shows_a_swap_as_an_arrow(song):
+    from rambass.review import review_markdown
+
+    text = review_markdown("X", [_note(9, kind="swap-hit",
+                                       instrument="hihat_open",
+                                       swap_to="crash")], count_in_bars=2)
+    assert "hihat_open" in text and "crash" in text and "→" in text
+
+
+def test_review_note_files_a_swap_from_the_terminal(cwd_song):
+    from rambass.cli import main
+    from rambass.review import load_review
+
+    assert main(["review", "note", cwd_song.slug, "9.3", "wrong cymbal",
+                 "--kind", "swap-hit", "--instrument", "hihat_open",
+                 "--swap-to", "crash"]) == 0
+    _, notes = load_review(cwd_song.path("qa", "review.yaml"))
+    assert notes[0].swap_to == "crash" and notes[0].instrument == "hihat_open"
+
+
+# ── demote: promote is not a one-way door ───────────────────────────────────
+#
+# Paolo: *"ability to demote promoted notes in case I have by mistake promoted
+# a wrong one"*. Until now `promote` was irreversible from the tool -- the note
+# went to `promoted`, the chip lost its controls, and `remove_note` refused it
+# and told you to go and edit song.yaml by hand. That is the one moment in the
+# loop where the answer was "open the manifest", which is exactly what the
+# console exists to avoid.
+
+
+def test_demoting_a_missing_hit_takes_its_addition_back_out(song):
+    from rambass.review import demote_note, note_key, promote_notes
+
+    note = _note(9, beat=3.0, kind="missing-hit", instrument="crash")
+    promote_notes(song, [note])
+    demoted, removed = demote_note(song, [note], note_key(note))
+
+    assert demoted.status == "open"
+    assert removed == 1
+    assert not song.drum_additions
+
+
+def test_demoting_a_swap_takes_both_edits_back_out(song):
+    from rambass.review import demote_note, note_key, promote_notes
+
+    note = _note(9, beat=3.0, kind="swap-hit", instrument="hihat_open",
+                 swap_to="crash")
+    promote_notes(song, [note])
+    _, removed = demote_note(song, [note], note_key(note))
+
+    assert removed == 2
+    assert not song.drum_additions and not song.drum_removals
+
+
+def test_demoting_leaves_every_other_edit_alone(song):
+    """One note, one position, one instrument — a demote that matched on bar
+    alone would take out the crash somebody added by hand at the same bar."""
+    from rambass.manifest import Addition
+    from rambass.review import demote_note, note_key, promote_notes
+
+    keep = Addition(bar=9, beat=3.0, instrument="splash", note="by hand")
+    song.drum_additions = [keep]
+    note = _note(9, beat=3.0, kind="missing-hit", instrument="crash")
+    promote_notes(song, [note])
+    demote_note(song, [note], note_key(note))
+
+    assert [a.instrument for a in song.drum_additions] == ["splash"]
+
+
+def test_demoting_a_note_whose_edit_has_already_gone_still_reopens_it(song):
+    """The edit can be gone for a good reason — somebody deleted the line in
+    song.yaml. Refusing then would leave a note stuck in `promoted` with
+    nothing behind it, which is the state that is actually wrong."""
+    from rambass.review import demote_note, note_key, promote_notes
+
+    note = _note(9, kind="missing-hit", instrument="crash")
+    promote_notes(song, [note])
+    song.drum_additions = []
+    demoted, removed = demote_note(song, [note], note_key(note))
+
+    assert demoted.status == "open" and removed == 0
+
+
+def test_demoting_a_note_that_was_never_promoted_says_so(song):
+    from rambass.project import ProjectError
+    from rambass.review import demote_note, note_key
+
+    note = _note(9, kind="missing-hit", instrument="crash")
+    with pytest.raises(ProjectError, match="not promoted"):
+        demote_note(song, [note], note_key(note))
+
+
+def test_a_demoted_note_can_be_promoted_again(song):
+    """Round trip, because the point is to fix a mis-click and carry on."""
+    from rambass.review import demote_note, note_key, promote_notes
+
+    note = _note(9, kind="missing-hit", instrument="crash")
+    promote_notes(song, [note])
+    demote_note(song, [note], note_key(note))
+    assert promote_notes(song, [note]) == (1, 0)
+    assert len(song.drum_additions) == 1
+
+
+def test_removing_a_promoted_note_now_names_demote(song):
+    """The old message sent the reader to edit song.yaml by hand. There is a
+    command for it now, and the refusal should name it."""
+    from rambass.project import ProjectError
+    from rambass.review import add_note, note_key, promote_notes, remove_note, write_ledger
+
+    note = _note(9, kind="missing-hit", instrument="crash")
+    add_note(song, note)
+    promote_notes(song, [note])
+    write_ledger(song, [note])
+
+    with pytest.raises(ProjectError, match="demote"):
+        remove_note(song, note_key(note))
+
+
+def test_review_demote_from_the_terminal(cwd_song):
+    from rambass.cli import main
+    from rambass.manifest import load_song
+    from rambass.review import load_review
+
+    assert main(["review", "note", cwd_song.slug, "9.3", "crash here",
+                 "--kind", "missing-hit", "--instrument", "crash"]) == 0
+    assert main(["review", "promote", cwd_song.slug]) == 0
+    assert load_song(cwd_song.directory).drum_additions
+
+    assert main(["review", "demote", cwd_song.slug, "9.3"]) == 0
+    assert not load_song(cwd_song.directory).drum_additions
+    _, notes = load_review(cwd_song.path("qa", "review.yaml"))
+    assert notes[0].status == "open"
+
+
+def test_review_demote_takes_a_reaper_bar_like_every_other_command(cwd_song):
+    from rambass.cli import main
+    from rambass.manifest import load_song
+
+    main(["review", "note", cwd_song.slug, "9.3", "crash here",
+          "--kind", "missing-hit", "--instrument", "crash"])
+    main(["review", "promote", cwd_song.slug])
+    assert main(["review", "demote", cwd_song.slug,
+                 f"{9 + cwd_song.count_in_bars}.3", "--reaper-bar"]) == 0
+    assert not load_song(cwd_song.directory).drum_additions
+
+
+# ── done: which sections have already been listened to ──────────────────────
+#
+# Paolo: *"ability to mark a section as Done so that when I reopen the project
+# I know I can skip it (with ability to reopen it if needed)"*. It lives in
+# qa/review.yaml with the notes -- same sidecar, same reason: it is a record of
+# what a human did during a review pass, not a musical fact about the song, and
+# it must not go anywhere `drums restore` reads.
+#
+# Keyed by **position**, not by name. Two sections can share a name (CLAUDE.md:
+# identical names are one part), so a name would tick both from one listen; and
+# a section that moves is a section whose clips were re-cut, which is exactly
+# when the mark should not follow it.
+
+
+def test_marking_a_section_done_survives_a_reload(song):
+    from rambass.review import load_done, set_section_done
+
+    set_section_done(song, 9, 1.0, True)
+    done = load_done(song.path("qa", "review.yaml"))
+
+    assert [(d["bar"], d["beat"]) for d in done] == [(9, 1.0)]
+    assert done[0]["section"] == "verse"
+
+
+def test_a_section_can_be_reopened(song):
+    from rambass.review import load_done, set_section_done
+
+    set_section_done(song, 9, 1.0, True)
+    set_section_done(song, 9, 1.0, False)
+    assert load_done(song.path("qa", "review.yaml")) == []
+
+
+def test_marking_the_same_section_twice_does_not_double_it(song):
+    from rambass.review import load_done, set_section_done
+
+    set_section_done(song, 9, 1.0, True)
+    set_section_done(song, 9, 1.0, True)
+    assert len(load_done(song.path("qa", "review.yaml"))) == 1
+
+
+def test_two_sections_at_different_bars_are_marked_apart(song):
+    """Position is the identity, so a repeated section name cannot tick a
+    section nobody listened to."""
+    from rambass.manifest import Section
+    from rambass.review import load_done, set_section_done
+
+    song.sections = [Section("chorus", 9), Section("chorus", 17)]
+    set_section_done(song, 9, 1.0, True)
+    done = load_done(song.path("qa", "review.yaml"))
+
+    assert [(d["bar"], d["section"]) for d in done] == [(9, "chorus")]
+
+
+def test_a_note_written_afterwards_keeps_the_done_marks(song):
+    """`write_ledger` rewrites the whole file, so a note saved after a section
+    was ticked would have wiped every tick -- the ledger is one file and both
+    halves of it have to survive a write to the other."""
+    from rambass.review import add_note, load_done, set_section_done
+
+    set_section_done(song, 9, 1.0, True)
+    add_note(song, _note(9, kind="timing", comment="late"))
+
+    assert len(load_done(song.path("qa", "review.yaml"))) == 1
+
+
+def test_a_done_mark_survives_a_promote(song):
+    from rambass.review import add_note, load_done, promote_notes, set_section_done, write_ledger
+
+    set_section_done(song, 9, 1.0, True)
+    note = _note(9, kind="missing-hit", instrument="crash")
+    add_note(song, note)
+    promote_notes(song, [note])
+    write_ledger(song, [note])
+
+    assert len(load_done(song.path("qa", "review.yaml"))) == 1
+
+
+def test_the_markdown_says_which_sections_are_reviewed(song):
+    """qa/review.md is the file read next to the ruler, so "what can I skip"
+    belongs in it — in Reaper numbers, like every other bar in that file."""
+    from rambass.review import review_markdown
+
+    text = review_markdown("X", [], count_in_bars=2,
+                           done=[{"bar": 9, "beat": 1.0, "section": "verse"}])
+    assert "verse" in text and "11.1" in text
+
+
+# ── the three steps that are always one act ─────────────────────────────────
+#
+# Paolo: *"when I make changes in the review tool I generally add/remove/swap
+# hits. Then I need to promote them, rebuild and re-render. It's three actions
+# that are always in sequence ... one button that does everything and reloads
+# the page on the same section so I can listen to the updated version"*.
+#
+# They stay available separately -- promote alone is how you read the git diff
+# before anything touches the MIDI, rebuild alone is for a change that came
+# from somewhere else (a section edit, a re-transcription), and re-render alone
+# is for a candidate that is stale against a MIDI nobody has to rebuild. What
+# was missing is the sequence itself, which is the one you run every time.
+
+
+def _runner_log(monkeypatch, ran, code=0):
+    from rambass import review as review_module
+
+    def runner(cwd):
+        def run(command):
+            ran.append(command)
+            return (code, f"did {command}")
+        return run
+
+    monkeypatch.setattr(review_module, "subprocess_runner", runner)
+
+
+def test_the_one_act_promotes_then_rebuilds_then_renders_last(cwd_song,
+                                                              monkeypatch):
+    from rambass.manifest import load_song
+    from rambass.review import add_note, load_review, promote_rebuild_render
+
+    ran: list[str] = []
+    _runner_log(monkeypatch, ran)
+    add_note(cwd_song, _note(9, beat=3.0, kind="missing-hit",
+                             instrument="crash"))
+    result = promote_rebuild_render(cwd_song,
+                                    project_root=cwd_song.directory.parent)
+
+    assert result["promoted"] == 1
+    # Promote first, and on disk: the rebuild runs `drums restore` as a
+    # subprocess, which reads song.yaml -- an addition still only in memory
+    # would be rebuilt away.
+    assert load_song(cwd_song.directory).drum_additions
+    assert load_review(cwd_song.path("qa", "review.yaml"))[1][0].status \
+        == "promoted"
+    # And the render is last, or it renders the part from before the rebuild.
+    assert ran[-1] == f"rambass review render {cwd_song.slug}"
+    assert len(ran) > 1
+
+
+def test_a_failed_rebuild_does_not_go_on_to_render(cwd_song, monkeypatch):
+    """Rendering the part that failed to rebuild is worse than not rendering:
+    it produces audio that looks current and is not."""
+    from rambass.review import add_note, promote_rebuild_render
+
+    ran: list[str] = []
+    _runner_log(monkeypatch, ran, code=1)
+    add_note(cwd_song, _note(9, kind="missing-hit", instrument="crash"))
+    result = promote_rebuild_render(cwd_song,
+                                    project_root=cwd_song.directory.parent)
+
+    assert result["failed"]
+    assert f"rambass review render {cwd_song.slug}" not in ran
+
+
+def test_nothing_to_rebuild_and_a_fresh_candidate_renders_nothing(cwd_song,
+                                                                  monkeypatch):
+    """A quarter of an hour of VST render for a click that changed nothing is
+    not a no-op, so the sequence has to be able to say "already current"."""
+    from rambass import review as review_module
+    from rambass.review import promote_rebuild_render
+
+    ran: list[str] = []
+    _runner_log(monkeypatch, ran)
+    monkeypatch.setattr(review_module, "rebuild_song",
+                        lambda song, **kwargs: {
+                            "song": song.slug, "dry_run": False, "commands": [],
+                            "ran": 0, "failed": "", "outputs": {}, "backup": "",
+                            "held": []})
+    monkeypatch.setattr(review_module, "candidate_state",
+                        lambda song: {"exists": True, "fresh": True, "why": "",
+                                      "command": "rambass review render x"})
+    result = promote_rebuild_render(cwd_song,
+                                    project_root=cwd_song.directory.parent)
+
+    assert ran == []
+    assert result["rendered"] is False
+    assert "current" in result["why"]
+
+
+def test_the_one_act_still_rebuilds_when_there_was_nothing_to_promote(cwd_song,
+                                                                      monkeypatch):
+    """A hand edit typed into song.yaml is a perfectly good reason to press it,
+    and an empty ledger must not turn the button into a no-op."""
+    from rambass.review import promote_rebuild_render
+
+    ran: list[str] = []
+    _runner_log(monkeypatch, ran)
+    result = promote_rebuild_render(cwd_song,
+                                    project_root=cwd_song.directory.parent)
+
+    assert result["promoted"] == 0
+    assert ran and ran[-1] == f"rambass review render {cwd_song.slug}"
+
+
+# ── a removal cannot delete a hit that drums.additions puts there ───────────
+#
+# Paolo, on Manlio: *"I have a promoted note 11.4.667 swap-hit crash →
+# hihat_open but the midi now includes both the hihat_open and the crash"*.
+#
+# The crash at that position was never in the transcription: `drums missing
+# --propose` had put it in `drums.additions`. `apply_edits` runs removals
+# first — which is right when the hit is in the part it is given — so the swap's
+# removal matched nothing, and then the addition list duly added both the crash
+# and the hihat_open. The part came out with two hits where there should be one,
+# and the promotion looked like it had worked.
+#
+# A removal cannot reach a declared hit, so the fix is not to write one: the
+# swap edits the declaration it is about. That also makes the git diff say what
+# happened — one line changing instrument, instead of a removal that
+# contradicts an addition three screens further up the file.
+
+
+def _added(song):
+    return [(a.bar, a.beat, a.instrument, a.velocity) for a in song.drum_additions]
+
+
+def _removed(song):
+    return [(r.bar, r.beat, r.instrument) for r in song.drum_removals]
+
+
+def test_swapping_a_declared_hit_rewrites_the_declaration(song):
+    from rambass.manifest import Addition
+    from rambass.review import promote_notes
+
+    song.drum_additions = [Addition(bar=9, beat=4.667, instrument="crash",
+                                    velocity=104,
+                                    note="proposed by drums missing")]
+    note = _note(9, beat=4.667, kind="swap-hit", instrument="crash",
+                 swap_to="hihat_open")
+    assert promote_notes(song, [note]) == (1, 0)
+
+    assert _added(song) == [(9, 4.667, "hihat_open", 104)]
+    assert _removed(song) == [], "a removal cannot delete a declared hit"
+    assert "crash" in song.drum_additions[0].note, "the diff loses the story"
+
+
+def test_swapping_a_declared_hit_leaves_one_hit_in_the_part(song):
+    """The bug as Paolo met it, end to end: the crash was in `additions`, so
+    the part came out with the crash *and* the hi-hat."""
+    from rambass.manifest import Addition
+    from rambass.restore import apply_edits
+    from rambass.review import promote_notes
+
+    song.drum_additions = [Addition(bar=9, beat=4.667, instrument="crash",
+                                    velocity=104)]
+    promote_notes(song, [_note(9, beat=4.667, kind="swap-hit",
+                               instrument="crash", swap_to="hihat_open")])
+    out, _ = apply_edits(_perf(song), additions=song.drum_additions,
+                         removals=song.drum_removals)
+
+    at = song.timeline().bar_beat_to_seconds(9, 4.667)
+    assert sorted(h.instrument for h in out.hits
+                  if abs(h.time - at) < 0.03) == ["hihat_open"]
+
+
+def test_swapping_a_transcribed_hit_still_writes_the_pair(song):
+    """The other half has not changed: a hit that came from the MIDI is not
+    declared anywhere, so a removal is exactly the way to take it out."""
+    from rambass.review import promote_notes
+
+    promote_notes(song, [_note(9, beat=3.0, kind="swap-hit",
+                               instrument="hihat_open", swap_to="crash")])
+
+    assert _removed(song) == [(9, 3.0, "hihat_open")]
+    assert _added(song) == [(9, 3.0, "crash", 0)]
+
+
+def test_removing_a_declared_hit_retracts_the_declaration(song):
+    """Same bug, the simpler half: "remove this crash" against a crash that
+    `drums.additions` puts there wrote a removal that could never match, and
+    the crash stayed in the part."""
+    from rambass.manifest import Addition
+    from rambass.review import promote_notes
+
+    song.drum_additions = [Addition(bar=9, beat=4.667, instrument="crash",
+                                    velocity=104)]
+    assert promote_notes(song, [_note(9, beat=4.667, kind="extra-hit",
+                                      instrument="crash")]) == (1, 0)
+
+    assert _added(song) == [] and _removed(song) == []
+
+
+def test_demoting_a_swap_of_a_declared_hit_puts_the_drum_back(song):
+    """Exactly reversible, because the note carries both names: the swap moved
+    one field and the demote moves it back, velocity and all."""
+    from rambass.manifest import Addition
+    from rambass.review import demote_note, note_key, promote_notes
+
+    song.drum_additions = [Addition(bar=9, beat=4.667, instrument="crash",
+                                    velocity=104)]
+    note = _note(9, beat=4.667, kind="swap-hit", instrument="crash",
+                 swap_to="hihat_open")
+    promote_notes(song, [note])
+    _, undone = demote_note(song, [note], note_key(note))
+
+    assert undone == 1
+    assert _added(song) == [(9, 4.667, "crash", 104)]
+    assert note.status == "open"
+
+
+def test_demoting_a_removed_declaration_restores_it(song):
+    """The retracted addition comes back with what the note knows about it --
+    which is why the grid menu files the hit's own velocity on an extra-hit."""
+    from rambass.manifest import Addition
+    from rambass.review import demote_note, note_key, promote_notes
+
+    song.drum_additions = [Addition(bar=9, beat=4.667, instrument="crash",
+                                    velocity=104)]
+    note = _note(9, beat=4.667, kind="extra-hit", instrument="crash",
+                 velocity=104)
+    promote_notes(song, [note])
+    _, undone = demote_note(song, [note], note_key(note))
+
+    assert undone == 1
+    assert _added(song) == [(9, 4.667, "crash", 104)]
+
+
+def test_a_contradicting_pair_written_by_hand_is_reported(song):
+    """Nothing promote writes can produce one any more, but a hand-edited
+    manifest can -- and silently producing the hit anyway is what made this
+    bug invisible for a whole review pass. Left working (a removal plus an
+    addition of the same drum is how you re-voice a transcribed hit's
+    velocity), but no longer silent."""
+    from rambass.manifest import Addition, Removal
+    from rambass.restore import apply_edits
+
+    song.drum_additions = [Addition(bar=9, beat=4.667, instrument="crash",
+                                    velocity=104)]
+    song.drum_removals = [Removal(bar=9, beat=4.667, instrument="crash")]
+    _, report = apply_edits(_perf(song), additions=song.drum_additions,
+                            removals=song.drum_removals)
+
+    assert report["contradicted"] == [(9, 4.667, "crash")]
+    # And it is not also reported as stale: it matched something, just not a
+    # hit, and two complaints about one line send the reader in two directions.
+    assert report["stale_removals"] == []
+
+
+# ── one observation, one note ───────────────────────────────────────────────
+#
+# Paolo: *"ensure we cannot create duplicated notes ... trying to remove the
+# same hit twice should not yield a duplication in notes (silent de-duping per
+# note/type/instrument/time)"*. Easy to do twice now that a note can be filed
+# from the grid with two clicks and no typing, and a second copy says nothing
+# the first did not: `promote` skips it as already done, and the ledger reads
+# as two problems where there is one.
+#
+# The comment is deliberately NOT part of the identity. Two people looking at
+# the same missing crash write two different sentences about it, and it is
+# still one missing crash.
+
+
+def test_the_same_observation_filed_twice_is_one_note(song):
+    from rambass.review import add_note
+
+    add_note(song, _note(9, beat=2.667, kind="extra-hit", instrument="snare",
+                         comment="from the grid at 20.2.667"))
+    notes = add_note(song, _note(9, beat=2.667, kind="extra-hit",
+                                 instrument="snare",
+                                 comment="from the grid at 20.2.667"))
+
+    assert len(notes) == 1
+    assert len(_ledger(song)) == 1
+
+
+def test_a_different_comment_is_still_the_same_observation(song):
+    from rambass.review import add_note
+
+    add_note(song, _note(9, kind="missing-hit", instrument="crash",
+                         comment="into the lift"))
+    notes = add_note(song, _note(9, kind="missing-hit", instrument="crash",
+                                 comment="crash missing here"))
+
+    assert len(notes) == 1
+    assert notes[0].comment == "into the lift", "the first wording stands"
+
+
+def test_a_note_that_says_something_else_is_not_a_duplicate(song):
+    """Everything the identity is made of, one at a time -- because a dedupe
+    that is too eager silently eats a real second note."""
+    from rambass.review import add_note
+
+    add_note(song, _note(9, beat=2.0, kind="missing-hit", instrument="crash"))
+    for other in (_note(9, beat=2.667, kind="missing-hit", instrument="crash"),
+                  _note(10, beat=2.0, kind="missing-hit", instrument="crash"),
+                  _note(9, beat=2.0, kind="extra-hit", instrument="crash"),
+                  _note(9, beat=2.0, kind="missing-hit", instrument="splash"),
+                  # A swap of a *different* drum: one whose source matched the
+                  # crash above would be a correction to it, and `merge_notes`
+                  # folds those -- which is a different rule, tested there.
+                  _note(9, beat=2.0, kind="swap-hit", instrument="ride",
+                        swap_to="china")):
+        add_note(song, other)
+    assert len(_ledger(song)) == 6
+
+
+def test_two_swaps_of_one_hit_to_different_drums_are_both_kept(song):
+    from rambass.review import add_note
+
+    add_note(song, _note(9, kind="swap-hit", instrument="crash",
+                         swap_to="china"))
+    notes = add_note(song, _note(9, kind="swap-hit", instrument="crash",
+                                 swap_to="splash"))
+    assert len(notes) == 2
+
+
+def test_filing_a_dismissed_observation_again_reopens_it(song):
+    """"I listened and it was nothing" is a decision about a note, and filing
+    the same thing again is a decision about the same note -- so it comes back
+    rather than being swallowed by a chip the eye reads as struck out."""
+    from rambass.review import add_note, note_key, set_note_status
+
+    note = _note(9, kind="missing-hit", instrument="crash")
+    add_note(song, note)
+    set_note_status(song, note_key(note), "dismissed")
+    notes = add_note(song, _note(9, kind="missing-hit", instrument="crash"))
+
+    assert len(notes) == 1 and notes[0].status == "open"
+
+
+def test_filing_a_promoted_observation_again_leaves_it_promoted(song):
+    """Its edit is in song.yaml already; re-filing it is genuinely a no-op,
+    and reopening it would offer to promote what is already promoted."""
+    from rambass.review import add_note, promote_notes, write_ledger
+
+    note = _note(9, kind="missing-hit", instrument="crash")
+    add_note(song, note)
+    promote_notes(song, [note])
+    write_ledger(song, [note])
+    notes = add_note(song, _note(9, kind="missing-hit", instrument="crash"))
+
+    assert len(notes) == 1 and notes[0].status == "promoted"
+
+
+def test_a_second_filing_fills_in_a_comment_the_first_one_lacked(song):
+    """Two clicks in the grid file no words at all; if the same thing is later
+    written down with a reason, the ledger should keep the reason."""
+    from rambass.review import add_note
+
+    add_note(song, _note(9, kind="missing-hit", instrument="crash"))
+    notes = add_note(song, _note(9, kind="missing-hit", instrument="crash",
+                                 comment="the section starts here"))
+
+    assert len(notes) == 1
+    assert notes[0].comment == "the section starts here"
+
+
+def test_review_note_says_when_it_added_nothing(cwd_song, capsys):
+    from rambass.cli import main
+    from rambass.review import load_review
+
+    args = ["review", "note", cwd_song.slug, "9.3", "crash here",
+            "--kind", "missing-hit", "--instrument", "crash"]
+    assert main(args) == 0
+    assert main(args) == 0
+
+    assert "already noted" in capsys.readouterr().out
+    assert len(load_review(cwd_song.path("qa", "review.yaml"))[1]) == 1
+
+
+# ── a note that only exists to correct an earlier one ───────────────────────
+#
+# Paolo: *"can notes be merged where appropriate ... First I have added a
+# tom_mid, then swapped with tom_high, those two notes can be replaced with
+# missing-hit tom_high"*. Right: the pair is not two observations, it is one
+# observation and a correction to it, and what the part needs is the net effect.
+#
+# Only when both halves are in the same state, though. A promoted missing-hit
+# whose swap is still open describes a manifest that says `tom_mid` -- collapsing
+# them then would make the ledger claim `tom_high` was promoted when it was not.
+# Once the swap is promoted too, the declaration has already been rewritten
+# (`promote_notes` edits it in place), so the merged note is exactly true.
+
+
+def test_a_swap_of_a_note_you_filed_collapses_into_it(song):
+    from rambass.review import merge_notes
+
+    added = _note(9, beat=2.667, kind="missing-hit", instrument="tom_mid")
+    swap = _note(9, beat=2.667, kind="swap-hit", instrument="tom_mid",
+                 swap_to="tom_high", comment="from the grid: tom_mid → tom_high")
+    kept, merged = merge_notes([added, swap])
+
+    assert merged == 1
+    assert [(n.kind, n.instrument, n.swap_to) for n in kept] == [
+        ("missing-hit", "tom_high", "")]
+
+
+def test_the_merge_does_not_depend_on_the_order_in_the_file(song):
+    """The ledger is sorted by position, so two notes at one position keep
+    whatever order they were written in -- on Manlio the swap came first."""
+    from rambass.review import merge_notes
+
+    added = _note(9, beat=2.667, kind="missing-hit", instrument="tom_mid")
+    swap = _note(9, beat=2.667, kind="swap-hit", instrument="tom_mid",
+                 swap_to="tom_high")
+    kept, merged = merge_notes([swap, added])
+
+    assert merged == 1
+    assert [(n.kind, n.instrument) for n in kept] == [
+        ("missing-hit", "tom_high")]
+
+
+def test_a_chain_of_swaps_collapses_to_where_it_ended_up(song):
+    """Two goes at naming the same cymbal is one decision, not three."""
+    from rambass.review import merge_notes
+
+    kept, merged = merge_notes([
+        _note(9, kind="missing-hit", instrument="crash"),
+        _note(9, kind="swap-hit", instrument="crash", swap_to="crash_2"),
+        _note(9, kind="swap-hit", instrument="crash_2", swap_to="china")])
+
+    assert merged == 2
+    assert [(n.kind, n.instrument) for n in kept] == [("missing-hit", "china")]
+
+
+def test_swaps_of_a_transcribed_hit_chain_into_one_swap(song):
+    """No missing-hit to fold into: the hit is the transcription's, and what
+    the ledger should say is that it ends up as the last drum named."""
+    from rambass.review import merge_notes
+
+    kept, merged = merge_notes([
+        _note(9, kind="swap-hit", instrument="hihat_open", swap_to="crash"),
+        _note(9, kind="swap-hit", instrument="crash", swap_to="crash_2")])
+
+    assert merged == 1
+    assert [(n.kind, n.instrument, n.swap_to) for n in kept] == [
+        ("swap-hit", "hihat_open", "crash_2")]
+
+
+def test_a_promoted_note_and_an_open_swap_are_left_alone(song):
+    """The manifest still says the old drum, so a merged note would lie about
+    what has been promoted."""
+    from rambass.review import merge_notes
+
+    added = _note(9, kind="missing-hit", instrument="tom_mid")
+    added.status = "promoted"
+    swap = _note(9, kind="swap-hit", instrument="tom_mid", swap_to="tom_high")
+    kept, merged = merge_notes([added, swap])
+
+    assert merged == 0 and len(kept) == 2
+
+
+def test_two_promoted_halves_do_collapse(song):
+    """Which is Paolo's case: by then `promote` has rewritten the declaration
+    in place, so `missing-hit tom_high (promoted)` is exactly what song.yaml
+    says."""
+    from rambass.review import merge_notes
+
+    added = _note(9, beat=2.667, kind="missing-hit", instrument="tom_mid")
+    swap = _note(9, beat=2.667, kind="swap-hit", instrument="tom_mid",
+                 swap_to="tom_high")
+    added.status = swap.status = "promoted"
+    kept, merged = merge_notes([added, swap])
+
+    assert merged == 1
+    assert [(n.kind, n.instrument, n.status) for n in kept] == [
+        ("missing-hit", "tom_high", "promoted")]
+
+
+def test_nothing_merges_across_a_position_or_an_instrument(song):
+    from rambass.review import merge_notes
+
+    notes = [
+        _note(9, beat=2.0, kind="missing-hit", instrument="tom_mid"),
+        # different beat
+        _note(9, beat=2.667, kind="swap-hit", instrument="tom_mid",
+              swap_to="tom_high"),
+        # different bar
+        _note(10, beat=2.0, kind="swap-hit", instrument="tom_mid",
+              swap_to="tom_high"),
+        # a swap of something else entirely
+        _note(9, beat=2.0, kind="swap-hit", instrument="crash",
+              swap_to="china"),
+    ]
+    kept, merged = merge_notes(notes)
+    assert merged == 0 and len(kept) == 4
+
+
+def test_an_extra_hit_is_never_merged_away(song):
+    """"There is a hit here that should not be" is its own observation, and
+    folding it into anything would silently drop a decision."""
+    from rambass.review import merge_notes
+
+    kept, merged = merge_notes([
+        _note(9, kind="missing-hit", instrument="crash"),
+        _note(9, kind="extra-hit", instrument="crash")])
+    assert merged == 0 and len(kept) == 2
+
+
+def test_filing_a_swap_of_your_own_note_merges_it_on_the_spot(song):
+    """The commonest way the pair appears: add the hit, hear it, swap it --
+    both open, both from the grid, seconds apart."""
+    from rambass.review import add_note
+
+    add_note(song, _note(9, beat=2.667, kind="missing-hit",
+                         instrument="tom_mid"))
+    notes = add_note(song, _note(9, beat=2.667, kind="swap-hit",
+                                 instrument="tom_mid", swap_to="tom_high"))
+
+    assert [(n.kind, n.instrument) for n in notes] == [
+        ("missing-hit", "tom_high")]
+    assert len(_ledger(song)) == 1
+
+
+def test_promote_tidies_the_pair_it_has_just_made_true(cwd_song):
+    """The other door: the pair was promoted separately, so the merge happens
+    when the second half lands -- and the manifest keeps the one declaration
+    the swap rewrote."""
+    from rambass.cli import main
+    from rambass.manifest import load_song
+    from rambass.review import add_note, load_review
+
+    add_note(cwd_song, _note(9, beat=2.667, kind="missing-hit",
+                             instrument="tom_mid", velocity=90))
+    assert main(["review", "promote", cwd_song.slug]) == 0
+    add_note(cwd_song, _note(9, beat=2.667, kind="swap-hit",
+                             instrument="tom_mid", swap_to="tom_high"))
+    assert main(["review", "promote", cwd_song.slug]) == 0
+
+    _, notes = load_review(cwd_song.path("qa", "review.yaml"))
+    assert [(n.kind, n.instrument, n.status) for n in notes] == [
+        ("missing-hit", "tom_high", "promoted")]
+    saved = load_song(cwd_song.directory)
+    assert [(a.bar, a.beat, a.instrument, a.velocity)
+            for a in saved.drum_additions] == [(9, 2.667, "tom_high", 90)]
+    assert not saved.drum_removals

@@ -417,9 +417,19 @@ def apply_edits(
     An addition with no velocity gets the median of that instrument's existing
     hits, which is better than any constant this module could pick: a crash added
     beside the ones the transcriber found should sit where those sit.
+
+    **A removal cannot delete a hit an addition declares**, and that is
+    reported rather than fixed. The removal is applied to the performance this
+    was handed; the addition goes in afterwards, so the hit comes back. Written
+    by hand the pair is a legitimate way to re-voice a transcribed hit's
+    velocity, so it still works — but it is exactly how a promoted swap came
+    out with both drums in the part (`review.promote_notes` no longer writes
+    one), and silence about it is what made that invisible for a whole review
+    pass.
     """
     report: dict = {"added": 0, "removed": 0, "already_there": 0,
-                    "velocity_from_median": 0, "stale_removals": []}
+                    "velocity_from_median": 0, "stale_removals": [],
+                    "contradicted": []}
     if not additions and not removals:
         return performance, report
 
@@ -432,7 +442,15 @@ def apply_edits(
                   if abs(hit.time - at) <= window
                   and (not removal.instrument or hit.instrument == removal.instrument)]
         if not doomed:
-            report["stale_removals"].append(
+            # Not "stale" when an addition declares the very hit it names:
+            # that line matched something, just not a hit, and two complaints
+            # about one line send the reader in two directions.
+            contradicting = any(
+                abs(timeline.bar_beat_to_seconds(a.bar, a.beat) - at) <= window
+                and (not removal.instrument
+                     or a.instrument == removal.instrument)
+                for a in additions)
+            report["contradicted" if contradicting else "stale_removals"].append(
                 (removal.bar, removal.beat, removal.instrument))
             continue
         hits = [hit for i, hit in enumerate(hits) if i not in set(doomed)]
