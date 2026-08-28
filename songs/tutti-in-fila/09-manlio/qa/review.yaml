@@ -1,7 +1,9 @@
 # What a review pass heard, bar by bar. Musical bars (no count-in).
 # Promote a note into drums.additions / drums.removals with
-# `rambass review promote`; qa/review.md is this file for reading
-# next to the Reaper ruler.
+# `rambass review promote` (and back out again with `review
+# demote`); qa/review.md is this file for reading next to the
+# Reaper ruler. `done:` is which sections have been listened to,
+# by position -- two sections can share a name.
 version: drums-quantized.mid
 notes:
 - bar: 1
@@ -46,16 +48,617 @@ notes:
   status: promoted
   created: '2026-08-24'
 - bar: 4
+  section: theme-intro-stop
+  kind: other
+  comment: the volume/velocity of the sidestick is too low
+  status: open
+  created: '2026-08-28'
+- bar: 4
   beat: 2.0
   section: theme-intro-stop
   kind: missing-hit
   instrument: sidestick
-  status: open
+  status: promoted
   created: '2026-08-24'
 - bar: 5
   beat: 4.0
   section: theme-intro-stop
   kind: extra-hit
   instrument: hihat_closed
-  status: open
+  status: promoted
   created: '2026-08-24'
+- bar: 5
+  beat: 4.0
+  section: theme-intro-stop
+  kind: swap-hit
+  instrument: crash
+  swap_to: crash_2
+  velocity: 78
+  comment: 'from the grid: crash → crash_2'
+  status: promoted
+  created: '2026-08-28'
+- bar: 6
+  beat: 2.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 8.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 6
+  beat: 4.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 8.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 7
+  beat: 2.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 9.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 7
+  beat: 4.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 9.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 8
+  beat: 2.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 10.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 8
+  beat: 4.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 10.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 9
+  beat: 2.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 11.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 9
+  beat: 4.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 11.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 9
+  beat: 4.667
+  section: verse-1
+  kind: extra-hit
+  instrument: hihat_closed
+  comment: from the grid at 11.4.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 9
+  beat: 4.667
+  section: verse-1
+  kind: swap-hit
+  instrument: crash
+  swap_to: hihat_open
+  velocity: 104
+  comment: 'from the grid: crash → hihat_open'
+  status: promoted
+  created: '2026-08-28'
+- bar: 10
+  beat: 2.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 12.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 10
+  beat: 4.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 12.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 11
+  beat: 2.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 13.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 11
+  beat: 4.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 13.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 12
+  beat: 2.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 14.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 12
+  beat: 4.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 14.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 13
+  beat: 2.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 15.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 13
+  beat: 4.0
+  section: verse-1
+  kind: missing-hit
+  instrument: hihat_open
+  comment: from the grid at 15.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 14
+  beat: 2.667
+  section: verse-1-lift
+  kind: missing-hit
+  instrument: kick
+  status: promoted
+  created: '2026-08-28'
+- bar: 15
+  beat: 2.667
+  section: verse-1-lift
+  kind: missing-hit
+  instrument: kick
+  status: promoted
+  created: '2026-08-28'
+- bar: 15
+  beat: 4.167
+  section: verse-1-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  velocity: 80
+  comment: from the grid at 17.4.167
+  status: promoted
+  created: '2026-08-28'
+- bar: 15
+  beat: 4.167
+  section: verse-1-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 17.4.167
+  status: promoted
+  created: '2026-08-28'
+- bar: 15
+  beat: 4.5
+  section: verse-1-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 17.4.5
+  status: promoted
+  created: '2026-08-28'
+- bar: 15
+  beat: 4.667
+  section: verse-1-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  velocity: 99
+  comment: from the grid at 17.4.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 15
+  beat: 4.833
+  section: verse-1-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 17.4.833
+  status: promoted
+  created: '2026-08-28'
+- bar: 17
+  beat: 3.0
+  section: verse-1-lift
+  kind: swap-hit
+  instrument: hihat_closed
+  swap_to: hihat_open
+  velocity: 94
+  comment: 'from the grid: hihat_closed → hihat_open'
+  status: promoted
+  created: '2026-08-28'
+- bar: 17
+  beat: 3.333
+  section: verse-1-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  comment: from the grid at 19.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 17
+  beat: 3.667
+  section: verse-1-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  comment: from the grid at 19.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 17
+  beat: 4.0
+  section: verse-1-lift
+  kind: extra-hit
+  instrument: snare
+  status: promoted
+  created: '2026-08-28'
+- bar: 17
+  beat: 4.0
+  section: verse-1-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  comment: from the grid at 19.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 17
+  beat: 4.0
+  section: verse-1-lift
+  kind: missing-hit
+  instrument: hihat_pedal
+  status: promoted
+  created: '2026-08-28'
+- bar: 17
+  beat: 4.333
+  section: verse-1-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  comment: from the grid at 19.4.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 17
+  beat: 4.667
+  section: verse-1-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  comment: from the grid at 19.4.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 18
+  beat: 2.0
+  section: break-1
+  kind: swap-hit
+  instrument: tom_mid
+  swap_to: tom_low
+  velocity: 59
+  comment: 'from the grid: tom_mid → tom_low'
+  status: promoted
+  created: '2026-08-28'
+- bar: 18
+  beat: 2.667
+  section: break-1
+  kind: extra-hit
+  instrument: snare
+  velocity: 45
+  comment: from the grid at 20.2.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 19
+  beat: 3.667
+  section: break-1
+  kind: extra-hit
+  instrument: snare
+  velocity: 45
+  comment: from the grid at 21.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 19
+  beat: 4.5
+  section: break-1
+  kind: extra-hit
+  instrument: snare
+  velocity: 45
+  comment: from the grid at 21.4.5
+  status: promoted
+  created: '2026-08-28'
+- bar: 19
+  beat: 4.833
+  section: break-1
+  kind: extra-hit
+  instrument: snare
+  velocity: 53
+  comment: from the grid at 21.4.833
+  status: promoted
+  created: '2026-08-28'
+- bar: 20
+  section: break-1
+  kind: extra-hit
+  instrument: snare
+  velocity: 47
+  comment: from the grid at 22.1
+  status: promoted
+  created: '2026-08-28'
+- bar: 21
+  beat: 2.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 23.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 21
+  beat: 3.333
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 23.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 21
+  beat: 4.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 23.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 22
+  beat: 2.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 24.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 22
+  beat: 3.333
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 24.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 22
+  beat: 4.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 24.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 23
+  beat: 2.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 25.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 23
+  beat: 3.333
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 25.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 23
+  beat: 4.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 25.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 24
+  beat: 2.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 26.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 24
+  beat: 2.667
+  section: verse-2
+  kind: swap-hit
+  instrument: hihat_closed
+  swap_to: hihat_open
+  velocity: 75
+  comment: 'from the grid: hihat_closed → hihat_open'
+  status: promoted
+  created: '2026-08-28'
+- bar: 24
+  beat: 3.333
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 26.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 24
+  beat: 4.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 26.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 25
+  beat: 2.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 27.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 25
+  beat: 3.333
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 27.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 25
+  beat: 4.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 27.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 26
+  beat: 2.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 28.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 26
+  beat: 3.333
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 28.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 26
+  beat: 4.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 28.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 27
+  beat: 2.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 29.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 27
+  beat: 3.333
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 29.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 27
+  beat: 4.0
+  section: verse-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 29.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 28
+  beat: 2.667
+  section: verse-2
+  kind: missing-hit
+  instrument: tom_high
+  comment: 'from the grid: tom_mid → tom_high'
+  status: promoted
+  created: '2026-08-28'
+- bar: 30
+  beat: 2.333
+  section: verse-2-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 32.2.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 32
+  section: verse-2-lift
+  kind: swap-hit
+  instrument: hihat_closed
+  swap_to: hihat_open
+  velocity: 93
+  comment: 'from the grid: hihat_closed → hihat_open'
+  status: promoted
+  created: '2026-08-28'
+- bar: 32
+  beat: 2.0
+  section: verse-2-lift
+  kind: extra-hit
+  instrument: snare
+  velocity: 109
+  comment: from the grid at 34.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 32
+  beat: 2.0
+  section: verse-2-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  velocity: 76
+  comment: from the grid at 34.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 32
+  beat: 2.667
+  section: verse-2-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  velocity: 94
+  comment: from the grid at 34.2.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 32
+  beat: 3.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: crash
+  swap_to: crash_2
+  velocity: 103
+  comment: 'from the grid: crash → crash_2'
+  status: open
+  created: '2026-08-28'
+done:
+- bar: 1
+  beat: 1.0
+  section: theme-intro
+  at: '2026-08-28'
+- bar: 4
+  beat: 1.0
+  section: theme-intro-stop
+  at: '2026-08-28'
+- bar: 6
+  beat: 1.0
+  section: verse-1
+  at: '2026-08-28'
+- bar: 14
+  beat: 1.0
+  section: verse-1-lift
+  at: '2026-08-28'
+- bar: 20
+  beat: 3.0
+  section: verse-2
+  at: '2026-08-28'
+- bar: 28
+  beat: 3.0
+  section: verse-2-lift
+  at: '2026-08-28'

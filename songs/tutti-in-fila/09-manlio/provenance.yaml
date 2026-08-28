@@ -3,7 +3,7 @@
 # producing commands -- do not hand-edit; delete a block to force a
 # rebuild.
 midi/drums-consolidated.mid:
-  code: f20dc4fbc6788e1b
+  code: 08d17156b5a6953e
   inputs:
     midi/drums-quantized.mid: 0c0842557fd0003f
   manifest:
@@ -13,17 +13,19 @@ midi/drums-consolidated.mid:
     sections: 5af6519e9d267cbe
     tempo: 72321402045f8010
   scalars: {}
-  self: cde4ee300c0bbe83
+  self: 346b8d6f2edf8f2b
   step: drums consolidate
   version: 0.1.0
 midi/drums-quantized.mid:
-  code: ff7cf58a0c4980a0
+  code: 3197b76759775ca9
   inputs:
     midi/drums-raw.mid: 54d8cb3841ed8b0f
   manifest:
     bars: 282b639f9f9d4d15
+    drums/accents: 6a3a80ad810fe5b6
     drums/backbeat_velocity: 57542139459a28a1
     drums/cymbal_subdivision: ae1949f77bd48bdc
+    drums/downbeat_boost: 6a3a80ad810fe5b6
     drums/map: c253d20d4554684f
     drums/subdivision: ae1949f77bd48bdc
     sections: 5af6519e9d267cbe
@@ -54,21 +56,21 @@ midi/drums-raw.mid:
   step: drums transcribe
   version: 0.1.0
 midi/drums-restored.mid:
-  code: 878ae06dd0ddff2f
+  code: f69a085373f36f23
   inputs:
-    midi/drums-consolidated.mid: cde4ee300c0bbe83
+    midi/drums-consolidated.mid: 346b8d6f2edf8f2b
   manifest:
     bars: 282b639f9f9d4d15
-    drums/additions: 09d0dbac79042fa3
+    drums/additions: 1717bf505df17e7e
     drums/map: c253d20d4554684f
-    drums/removals: a3fb2328b873f8d9
+    drums/removals: c3f37cbd693b63f2
     tempo: 72321402045f8010
   scalars: {}
-  self: d1081bed41a3723a
+  self: 2392b88e181097e1
   step: drums restore
   version: 0.1.0
 practice/align.yaml:
-  code: 47ce33127b6b38f7
+  code: 32567012b0855836
   inputs:
     stems/drums.wav: 74941aaec2a86d90
   manifest:
@@ -79,7 +81,7 @@ practice/align.yaml:
   step: align fit
   version: 0.1.0
 practice/no_drums-aligned.wav:
-  code: 237d4e9b7adb0ab6
+  code: 943f0e87bed406ca
   inputs:
     practice/align.yaml: 991c23be4f80a17f
     stems/no_drums.wav: a478dfe167d8c7d2
@@ -87,7 +89,7 @@ practice/no_drums-aligned.wav:
     bars: 282b639f9f9d4d15
     tempo: 72321402045f8010
   scalars: {}
-  self: e86c2a49d1b13a07
+  self: 49a37d0ba8bf87f1
   step: align warp
   version: 0.1.0
 render/click.wav:

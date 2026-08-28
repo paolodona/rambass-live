@@ -26,9 +26,9 @@ drums:
     note: proposed by drums missing (theme-intro) - check by ear
   - bar: 9
     beat: 4.667
-    instrument: crash
+    instrument: hihat_open
     velocity: 104
-    note: proposed by drums missing (verse-1) - check by ear
+    note: 'from the grid: crash → hihat_open (was crash)'
   - bar: 14
     instrument: crash
     velocity: 95
@@ -82,11 +82,309 @@ drums:
     beat: 2.0
     instrument: crash_2
     note: promoted from qa/review.yaml
+  - bar: 4
+    beat: 2.0
+    instrument: sidestick
+    note: promoted from qa/review.yaml
+  - bar: 14
+    beat: 2.667
+    instrument: kick
+    note: promoted from qa/review.yaml
+  - bar: 15
+    beat: 2.667
+    instrument: kick
+    note: promoted from qa/review.yaml
+  - bar: 5
+    beat: 4.0
+    instrument: crash_2
+    velocity: 78
+    note: 'from the grid: crash → crash_2 (swapped in for crash)'
+  - bar: 13
+    beat: 4.0
+    instrument: hihat_open
+    note: from the grid at 15.4
+  - bar: 6
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 8.2
+  - bar: 6
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 8.4
+  - bar: 7
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 9.2
+  - bar: 7
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 9.4
+  - bar: 8
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 10.2
+  - bar: 8
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 10.4
+  - bar: 9
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 11.2
+  - bar: 9
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 11.4
+  - bar: 10
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 12.2
+  - bar: 11
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 13.2
+  - bar: 11
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 13.4
+  - bar: 12
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 14.2
+  - bar: 12
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 14.4
+  - bar: 13
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 15.2
+  - bar: 10
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 12.4
+  - bar: 17
+    beat: 3.0
+    instrument: hihat_open
+    velocity: 94
+    note: 'from the grid: hihat_closed → hihat_open (swapped in for hihat_closed)'
+  - bar: 15
+    beat: 4.5
+    instrument: hihat_closed
+    note: from the grid at 17.4.5
+  - bar: 15
+    beat: 4.833
+    instrument: hihat_closed
+    note: from the grid at 17.4.833
+  - bar: 15
+    beat: 4.167
+    instrument: hihat_closed
+    note: from the grid at 17.4.167
+  - bar: 17
+    beat: 4.0
+    instrument: hihat_pedal
+    note: promoted from qa/review.yaml
+  - bar: 18
+    beat: 2.0
+    instrument: tom_low
+    velocity: 59
+    note: 'from the grid: tom_mid → tom_low (swapped in for tom_mid)'
+  - bar: 21
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 23.2
+  - bar: 21
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 23.3.333
+  - bar: 21
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 23.4
+  - bar: 22
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 24.2
+  - bar: 22
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 24.3.333
+  - bar: 22
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 24.4
+  - bar: 23
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 25.2
+  - bar: 23
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 25.3.333
+  - bar: 23
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 25.4
+  - bar: 24
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 26.2
+  - bar: 24
+    beat: 2.667
+    instrument: hihat_open
+    velocity: 75
+    note: 'from the grid: hihat_closed → hihat_open (swapped in for hihat_closed)'
+  - bar: 24
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 26.3.333
+  - bar: 24
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 26.4
+  - bar: 25
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 27.2
+  - bar: 25
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 27.3.333
+  - bar: 25
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 27.4
+  - bar: 26
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 28.2
+  - bar: 26
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 28.3.333
+  - bar: 26
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 28.4
+  - bar: 27
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 29.2
+  - bar: 27
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 29.3.333
+  - bar: 27
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 29.4
+  - bar: 28
+    beat: 2.667
+    instrument: tom_high
+    note: 'from the grid: tom_mid → tom_high (was tom_mid)'
+  - bar: 32
+    instrument: hihat_open
+    velocity: 93
+    note: 'from the grid: hihat_closed → hihat_open (swapped in for hihat_closed)'
+  - bar: 30
+    beat: 2.333
+    instrument: hihat_closed
+    note: from the grid at 32.2.333
   removals:
   - bar: 1
     beat: 2.0
     instrument: hihat_open
     note: promoted from qa/review.yaml
+  - bar: 5
+    beat: 4.0
+    instrument: hihat_closed
+    note: promoted from qa/review.yaml
+  - bar: 17
+    beat: 4.0
+    instrument: snare
+    note: promoted from qa/review.yaml
+  - bar: 5
+    beat: 4.0
+    instrument: crash
+    note: 'from the grid: crash → crash_2 (swapped for crash_2)'
+  - bar: 9
+    beat: 4.667
+    instrument: hihat_closed
+    note: from the grid at 11.4.667
+  - bar: 17
+    beat: 3.0
+    instrument: hihat_closed
+    note: 'from the grid: hihat_closed → hihat_open (swapped for hihat_open)'
+  - bar: 17
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 19.3.333
+  - bar: 17
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 19.3.667
+  - bar: 17
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 19.4
+  - bar: 17
+    beat: 4.333
+    instrument: hihat_closed
+    note: from the grid at 19.4.333
+  - bar: 17
+    beat: 4.667
+    instrument: hihat_closed
+    note: from the grid at 19.4.667
+  - bar: 15
+    beat: 4.667
+    instrument: hihat_closed
+    note: from the grid at 17.4.667
+  - bar: 15
+    beat: 4.167
+    instrument: hihat_closed
+    note: from the grid at 17.4.167
+  - bar: 18
+    beat: 2.0
+    instrument: tom_mid
+    note: 'from the grid: tom_mid → tom_low (swapped for tom_low)'
+  - bar: 18
+    beat: 2.667
+    instrument: snare
+    note: from the grid at 20.2.667
+  - bar: 19
+    beat: 3.667
+    instrument: snare
+    note: from the grid at 21.3.667
+  - bar: 19
+    beat: 4.5
+    instrument: snare
+    note: from the grid at 21.4.5
+  - bar: 19
+    beat: 4.833
+    instrument: snare
+    note: from the grid at 21.4.833
+  - bar: 20
+    instrument: snare
+    note: from the grid at 22.1
+  - bar: 24
+    beat: 2.667
+    instrument: hihat_closed
+    note: 'from the grid: hihat_closed → hihat_open (swapped for hihat_open)'
+  - bar: 32
+    instrument: hihat_closed
+    note: 'from the grid: hihat_closed → hihat_open (swapped for hihat_open)'
+  - bar: 32
+    beat: 2.0
+    instrument: snare
+    note: from the grid at 34.2
+  - bar: 32
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 34.2
+  - bar: 32
+    beat: 2.667
+    instrument: hihat_closed
+    note: from the grid at 34.2.667
 source:
   audio: 09 Manlio.wav
   url: https://drive.google.com/file/d/1kDxz8I6egN0FwbGrWVPuxGJcFnvUn9rI/view
