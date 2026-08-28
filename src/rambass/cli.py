@@ -1311,6 +1311,7 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
             threshold=args.threshold,
             unit_bars=args.unit_bars,
             stop_beats=args.stop_beats,
+            phantom_snare_velocity=args.phantom_snare_velocity,
         ))
 
         _say(f"   {'section':<16}{'spans':>6}{'reps':>6}{'unit':>6}"
@@ -1319,6 +1320,13 @@ def cmd_drums_consolidate(args: argparse.Namespace) -> int:
             if "skipped" in entry:
                 _say(f"   {entry['name']:<16}{entry['spans']:>6}{'—':>6}{'—':>6}"
                      f"{entry['hits_before']:>6} kept{'':>7}   {entry['skipped']}")
+                if entry.get("phantom_snares"):
+                    _say(f"      · {entry['name']}: dropped "
+                         f"{entry['phantom_snares']} snare"
+                         f"{'s' if entry['phantom_snares'] != 1 else ''} at the "
+                         f"velocity floor — nothing was voted on here, and in an "
+                         f"unvoted section that is a phantom six times out of "
+                         f"seven. `--phantom-snare-velocity 0` keeps them")
                 continue
             _say(f"   {entry['name']:<16}{entry['spans']:>6}{entry['repeats']:>6}"
                  f"{entry['unit_bars']:>5}b{entry['hits_before']:>6} ->"
@@ -2405,6 +2413,11 @@ def build_parser() -> argparse.ArgumentParser:
                         "it (default 0.55; docs/drums-rebuild.md argues 0.5-0.6)")
     p.add_argument("--subdivision", type=int, default=None,
                    help="slot grid to vote on; default drums.subdivision")
+    p.add_argument("--phantom-snare-velocity", type=int, default=50,
+                   help="in a section too short to vote on, drop snares at or "
+                        "below this velocity (default 50; 0 keeps them — see "
+                        "quantize.PHANTOM_FLOOR_INSTRUMENTS for why it is the "
+                        "snare and nothing else)")
     p.add_argument("--stop-beats", type=float, default=1.25,
                    help="do not stamp the pattern over a bar whose own playing "
                         "stops this many beats before its slots run out "

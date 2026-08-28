@@ -321,3 +321,87 @@ def test_the_stop_is_measured_inside_a_section_that_starts_mid_bar():
     assert report["sections"][0]["stopped"] == [{"bar": 5, "beat": 1.0, "withheld": 1}]
     assert not [h for h in out.hits
                 if abs(h.time - TIMELINE.bar_beat_to_seconds(5, 2.0)) < 1e-9]
+
+
+# ── the phantom-snare gate ───────────────────────────────────────────────
+# min_repeats: 4 means a 2-bar break is passed through untouched, so every
+# detection artefact in it survives. See ConsolidateSettings.phantom_snare_velocity.
+
+def test_a_floor_snare_in_a_section_too_short_to_vote_on_is_dropped():
+    """And a floor hi-hat and a floor side-stick in the same bars are not."""
+    hits = [
+        Hit("snare", TIMELINE.bar_beat_to_seconds(1, 2.0), 45),
+        Hit("hihat_closed", TIMELINE.bar_beat_to_seconds(1, 3.0), 45),
+        Hit("sidestick", TIMELINE.bar_beat_to_seconds(2, 2.0), 45),
+        Hit("kick", TIMELINE.bar_beat_to_seconds(2, 1.0), 45),
+    ]
+    out, report = consolidate(DrumPerformance(hits, TIMELINE), [("break", 1, 3)])
+    assert "skipped" in report["sections"][0]
+    assert sorted(h.instrument for h in out.hits) == [
+        "hihat_closed", "kick", "sidestick"]
+    assert report["sections"][0]["phantom_snares"] == 1
+
+
+def test_a_loud_snare_in_a_section_too_short_to_vote_on_survives():
+    hits = [Hit("snare", TIMELINE.bar_beat_to_seconds(1, 2.0), 108)]
+    out, report = consolidate(DrumPerformance(hits, TIMELINE), [("break", 1, 3)])
+    assert [h.instrument for h in out.hits] == ["snare"]
+    assert not report["sections"][0].get("phantom_snares")
+
+
+def test_a_floor_snare_inside_a_voted_section_survives():
+    """A voted section has a better instrument than level, namely agreement.
+
+    The gate applies only where consolidate reported ``skipped``. Second-guessing
+    the vote on loudness is exactly the mistake ``suppress_cross_stem_bleed``'s
+    exclude list exists to prevent, pointed the other way.
+    """
+    hits = backbeat(1, 4)
+    quiet = TIMELINE.bar_beat_to_seconds(2, 2.0)
+    hits = [h.with_velocity(45) if abs(h.time - quiet) < 1e-9 and h.instrument == "snare"
+            else h for h in hits]
+    out, report = consolidate(DrumPerformance(hits, TIMELINE), [("verse", 1, 5)])
+    assert len([h for h in out.hits if h.instrument == "snare"]) == 8
+    assert not report["sections"][0].get("phantom_snares")
+
+
+def test_the_gate_is_the_snare_alone_and_that_is_the_finding():
+    """Generalising it to every instrument is the obvious "simplification".
+
+    On Manlio it costs 15 real hits; here it costs the hi-hat, the kick and the
+    side-stick that genuinely play at the floor. The asymmetry *is* the finding:
+    a snare is the one instrument whose own quietness is evidence against it,
+    because this drummer's soft strokes on that drum are side-sticks and ghost
+    notes that land in other lanes.
+    """
+    from rambass import quantize
+
+    hits = [
+        Hit("snare", TIMELINE.bar_beat_to_seconds(1, 2.0), 45),
+        Hit("hihat_closed", TIMELINE.bar_beat_to_seconds(1, 3.0), 45),
+        Hit("sidestick", TIMELINE.bar_beat_to_seconds(2, 2.0), 45),
+    ]
+    assert quantize.PHANTOM_FLOOR_INSTRUMENTS == ("snare",)
+    out, _ = consolidate(DrumPerformance(hits, TIMELINE), [("break", 1, 3)])
+    assert sorted(h.instrument for h in out.hits) == ["hihat_closed", "sidestick"]
+
+
+def test_zero_disables_the_gate_and_is_not_velocity_zero():
+    """Same convention as ``drums.backbeat_velocity``."""
+    hits = [Hit("snare", TIMELINE.bar_beat_to_seconds(1, 2.0), 45)]
+    out, report = consolidate(
+        DrumPerformance(hits, TIMELINE), [("break", 1, 3)],
+        settings=ConsolidateSettings(phantom_snare_velocity=0))
+    assert [h.instrument for h in out.hits] == ["snare"]
+    assert not report["sections"][0].get("phantom_snares")
+
+
+def test_a_dropped_floor_snare_is_not_counted_as_untouched():
+    """`untouched` means "passed through", so a dropped hit is not one."""
+    hits = [
+        Hit("snare", TIMELINE.bar_beat_to_seconds(1, 2.0), 45),
+        Hit("kick", TIMELINE.bar_beat_to_seconds(1, 1.0), 100),
+    ]
+    out, report = consolidate(DrumPerformance(hits, TIMELINE), [("break", 1, 3)])
+    assert report["hits_after"] == 1 == len(out.hits)
+    assert report["untouched"] == 1

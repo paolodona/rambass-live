@@ -199,3 +199,48 @@ def test_stop_beats_zero_turns_the_rule_off_from_the_command_line(cwd, song):
     assert len([h for h in after.hits
                 if timeline.bar_beat_to_seconds(8, 1.0) - 1e-9 <= h.time
                 < timeline.bar_beat_to_seconds(9, 1.0) - 1e-9]) == 4
+
+
+def test_it_says_which_floor_snares_it_dropped(cwd, song, capsys):
+    """A section too short to vote on is passed through — minus its phantoms."""
+    song.bars = 32
+    song.sections = [Section("break", 1), Section("verse", 3)]
+    save_song(song, song.dir)
+    reloaded = load_song(song.dir)
+    timeline = reloaded.timeline()
+    hits = [
+        Hit("snare", timeline.bar_beat_to_seconds(1, 2.0), 45),
+        Hit("hihat_closed", timeline.bar_beat_to_seconds(1, 3.0), 45),
+        Hit("kick", timeline.bar_beat_to_seconds(2, 1.0), 100),
+    ]
+    hits += _backbeat(timeline, 3, 30)
+    _seed(reloaded, hits)
+
+    assert main(["drums", "consolidate", "tutti-in-fila"]) == 0
+    out = capsys.readouterr().out
+    assert "dropped 1 snare at the velocity floor" in out, out
+    assert "--phantom-snare-velocity 0" in out
+
+    after = read_drum_midi(reloaded.drum_midi_path("consolidated"))
+    after.timeline = timeline
+    early = sorted(h.instrument for h in after.hits
+                   if h.time < timeline.bar_beat_to_seconds(3, 1.0) - 1e-9)
+    assert early == ["hihat_closed", "kick"]
+
+
+def test_the_phantom_snare_gate_can_be_turned_off_from_the_command_line(cwd, song):
+    song.bars = 32
+    song.sections = [Section("break", 1), Section("verse", 3)]
+    save_song(song, song.dir)
+    reloaded = load_song(song.dir)
+    timeline = reloaded.timeline()
+    hits = [Hit("snare", timeline.bar_beat_to_seconds(1, 2.0), 45)]
+    hits += _backbeat(timeline, 3, 30)
+    _seed(reloaded, hits)
+
+    assert main(["drums", "consolidate", "tutti-in-fila",
+                 "--phantom-snare-velocity", "0"]) == 0
+    after = read_drum_midi(reloaded.drum_midi_path("consolidated"))
+    after.timeline = timeline
+    assert [h.instrument for h in after.hits
+            if h.time < timeline.bar_beat_to_seconds(3, 1.0) - 1e-9] == ["snare"]

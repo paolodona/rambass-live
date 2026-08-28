@@ -161,14 +161,15 @@ def test_consolidate_still_reproduces_the_committed_fixture():
     checked on instrument, time and velocity rather than on the score, which
     would hide a re-voicing behind a matching placement.
 
-    ``stop_beats=0`` because the fixture predates the stop rule, and this is
-    that escape hatch tested on the real thing rather than on a synthetic
-    section: turning the rule off must reproduce the old behaviour *exactly*,
-    or the 11 hits it withholds are not the only thing it changed.
+    The fixture predates both tuning rules, so both are turned off — and this
+    is their escape hatches tested on the real thing rather than on a synthetic
+    section: turning them off must reproduce the old behaviour *exactly*, or
+    the hits they withhold are not the only thing they changed.
     """
     song, quantized = load("drums-quantized")
     _, committed = load("drums-consolidated")
-    rebuilt = consolidated_today(song, quantized, stop_beats=0.0)
+    rebuilt = consolidated_today(song, quantized, stop_beats=0.0,
+                                 phantom_snare_velocity=0)
 
     def key(performance):
         return sorted((h.instrument, round(h.time, 3), h.velocity)
@@ -264,8 +265,10 @@ def test_the_stop_rule_removes_ten_phantoms_for_one_real_hit():
     song, quantized = load("drums-quantized")
     _, truth = load("drums-restored")
 
-    before = consolidated_today(song, quantized, stop_beats=0.0)
-    after = consolidated_today(song, quantized)
+    # The phantom-snare gate off in both, so this measures the stop rule alone.
+    before = consolidated_today(song, quantized, stop_beats=0.0,
+                                phantom_snare_velocity=0)
+    after = consolidated_today(song, quantized, phantom_snare_velocity=0)
 
     assert len(before.hits) - len(after.hits) == 11
     assert score(song, before, truth) == BASELINE
@@ -325,7 +328,9 @@ def test_the_sweep_that_settled_on_one_and_a_quarter_beats():
     """
     song, quantized = load("drums-quantized")
     _, truth = load("drums-restored")
-    swept = {stop: errors(song, consolidated_today(song, quantized, stop_beats=stop), truth)
+    swept = {stop: errors(song, consolidated_today(song, quantized,
+                                                   stop_beats=stop,
+                                                   phantom_snare_velocity=0), truth)
              for stop in (0.0, 0.5, 1.0, 1.25, 1.5, 2.0)}
     assert swept == {0.0: 154, 0.5: 163, 1.0: 161, 1.25: 145, 1.5: 145, 2.0: 145}
     assert swept[1.25] < swept[0.0], "the rule has to be worth doing"
@@ -335,8 +340,9 @@ def test_the_sweep_that_settled_on_one_and_a_quarter_beats():
 def test_the_withheld_hits_are_the_eleven_that_were_measured():
     """Named, not counted — bar 17 is the worked example in the plan."""
     song, quantized = load("drums-quantized")
-    before = consolidated_today(song, quantized, stop_beats=0.0)
-    after = consolidated_today(song, quantized)
+    before = consolidated_today(song, quantized, stop_beats=0.0,
+                                phantom_snare_velocity=0)
+    after = consolidated_today(song, quantized, phantom_snare_velocity=0)
     timeline = song.timeline()
 
     def keys(performance):
@@ -363,3 +369,117 @@ def test_the_withheld_hits_are_the_eleven_that_were_measured():
         (54, 4.0, "hihat_closed"),
         (54, 4.0, "snare"),
     ]
+
+
+# ── Phase 2: a quiet snare in an unvoted section is a phantom ────────────
+
+def test_the_phantom_snare_gate_drops_six_phantoms_for_one_real_hit():
+    """Measured before the rule was written, and asserted exactly."""
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+
+    before = consolidated_today(song, quantized, phantom_snare_velocity=0)
+    after = consolidated_today(song, quantized)
+
+    assert len(before.hits) - len(after.hits) == 7
+    assert score(song, before, truth) == (960, 127, 18)
+    assert score(song, after, truth) == (959, 128, 12)
+    assert errors(song, after, truth) == 140
+
+
+def test_the_gate_is_the_snare_alone_because_adding_the_sidestick_is_worse():
+    """The exclusion as executable evidence, not a comment.
+
+    Folding the side-stick in is the obvious simplification — both are the
+    snare drum, both are at the floor. It drops three more hits of which only
+    one is a phantom, and the score gets *worse*: 141 against 140. A rim click
+    is 25-30 dB below the same drummer's snare, so the velocity floor is where
+    a **real** side-stick lives; it is a quiet instrument, not a quiet stroke.
+
+    Generalising to every instrument at the floor is worse still — 155, which
+    is worse than not having the rule at all — because the hats, kicks and toms
+    down there genuinely play that quietly.
+    """
+    from rambass import quantize
+
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+
+    snare_only = errors(song, consolidated_today(song, quantized), truth)
+
+    def with_instruments(instruments):
+        saved = quantize.PHANTOM_FLOOR_INSTRUMENTS
+        quantize.PHANTOM_FLOOR_INSTRUMENTS = instruments
+        try:
+            return errors(song, consolidated_today(song, quantized), truth)
+        finally:
+            quantize.PHANTOM_FLOOR_INSTRUMENTS = saved
+
+    assert snare_only == 140
+    assert with_instruments(("snare", "sidestick")) == 141
+    assert with_instruments(("snare", "sidestick", "hihat_closed", "hihat_open",
+                             "hihat_pedal", "kick", "tom_mid")) == 155
+
+
+def test_the_floor_snares_in_the_unvoted_sections_are_the_seven_measured():
+    """Six phantoms and one real, named. The real one is bar 41 beat 2.181."""
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+    timeline = song.timeline()
+    step = 60.0 / timeline.bpm / song.drum_subdivision
+    wanted = {(CLASS[h.instrument], int(round(h.time / step))) for h in truth.hits}
+
+    before = consolidated_today(song, quantized, phantom_snare_velocity=0)
+    after = consolidated_today(song, quantized)
+    kept = sorted((h.instrument, round(h.time, 4), h.velocity) for h in after.hits)
+    dropped = [h for h in before.hits
+               if (h.instrument, round(h.time, 4), h.velocity) not in kept]
+
+    named = sorted(
+        (*timeline.seconds_to_bar_beat(h.time), h.velocity,
+         (CLASS[h.instrument], int(round(h.time / step))) in wanted)
+        for h in dropped)
+    assert [(bar, round(beat, 3), velocity, real)
+            for bar, beat, velocity, real in named] == [
+        (18, 2.667, 45, False),
+        (19, 3.667, 45, False),
+        (19, 4.496, 45, False),
+        (20, 1.0, 47, False),
+        (41, 2.181, 45, True),
+        (63, 4.0, 45, False),
+        (64, 4.667, 45, False),
+    ]
+    assert all(h.instrument == "snare" for h in dropped)
+
+
+def test_fifty_is_the_floor_plus_slack_and_not_the_best_score_on_this_song():
+    """Why the constant is not tuned to the last error on one song.
+
+    A floor of 55 also catches the v53 phantom at bar 19 beat 4.809 and scores
+    139 — one better. It is deliberately not taken. ``scale_velocities`` puts
+    this song's floor at v45, so "at or below 50" means *at the floor*, which
+    is a boundary with a reason; 55 starts including strokes that carry a
+    measured level, and one drummer and one kit means this number has to hold
+    for the other ten songs of the album, not just for Manlio's last error.
+    """
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+    swept = {floor: errors(song,
+                           consolidated_today(song, quantized,
+                                              phantom_snare_velocity=floor),
+                           truth)
+             for floor in (0, 40, 45, 50, 55, 70)}
+    assert swept == {0: 145, 40: 145, 45: 141, 50: 140, 55: 139, 70: 139}
+
+
+def test_the_two_rules_together_land_on_a_hundred_and_forty():
+    """What ``drums consolidate`` produces today, with nothing declared.
+
+    154 → 145 (the stop rule) → 140 (the phantom-snare gate). Both are pure
+    Stage 6 changes and neither needs a line of ``song.yaml``, which is what
+    makes them worth having: the declared hi-hat pattern is worth more but it
+    is Paolo's ear that fills it in.
+    """
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+    assert errors(song, consolidated_today(song, quantized), truth) == 140

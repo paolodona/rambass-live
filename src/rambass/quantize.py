@@ -44,6 +44,41 @@ DEFAULT_SUBDIVISIONS: dict[str, int] = {
     "ride_bell": 4,
 }
 
+#: The instruments :attr:`ConsolidateSettings.phantom_snare_velocity` applies to.
+#:
+#: **One entry, and the asymmetry is the whole finding.** Velocity-floor hits in
+#: the six sections consolidate skipped on Manlio, against the review pass:
+#:
+#: ============  ====  =======  ====  =============
+#: instrument    hits  phantom  real  in the rule?
+#: ============  ====  =======  ====  =============
+#: snare         7     **6**    1     **yes**
+#: hihat_closed  11    0        11    no
+#: sidestick     3     1        2     **no**
+#: hihat_open    2     0        2     no
+#: tom_mid       2     0        2     no
+#: kick          1     0        1     no
+#: ============  ====  =======  ====  =============
+#:
+#: The snares Paolo kept in those sections run a median of v107. The hats, kicks
+#: and toms down at the floor genuinely play that quietly, and generalising the
+#: rule to them scores 155 against 140 — worse than not having it at all.
+#:
+#: This is the existing "a hi-hat is never loudness evidence" rule pointed the
+#: other way (see :func:`~rambass.transcribe.suppress_cross_stem_bleed`, whose
+#: ``exclude`` list means "quiet by nature"): **a snare is the one instrument
+#: whose own quietness is evidence against it**, because this drummer's soft
+#: strokes on that drum are side-sticks and ghost notes that land in other lanes.
+#:
+#: ``sidestick`` is excluded deliberately and it was measured, not assumed:
+#: adding it drops three more hits of which only one is a phantom, and the score
+#: gets worse — 141 against 140. A rim click is 25-30 dB below the same drummer's
+#: snare (``transcribe.SIDESTICK_BODY_SHARE``, ``drums.backbeat_velocity``), so
+#: the velocity floor is where a *real* side-stick lives. It is a quiet
+#: instrument, not a quiet stroke, and folding the two together is the obvious
+#: "simplification" that costs real hits.
+PHANTOM_FLOOR_INSTRUMENTS: tuple[str, ...] = ("snare",)
+
 #: How far from a grid line a hit may be and still get snapped, as a fraction
 #: of the grid step. The furthest a hit can ever be is half a step, so 0.5 means
 #: "always snap" and 0.35 leaves the outer 30% of each gap alone — those are
@@ -354,6 +389,31 @@ class ConsolidateSettings:
     #: sweep says a smaller number is not (below a beat is worse than not doing
     #: it at all on real material).
     stop_beats: float = 1.25
+    #: In a section too short to vote on, drop
+    #: :data:`PHANTOM_FLOOR_INSTRUMENTS` hits at or below this velocity.
+    #: 0 disables it, and that is **not** velocity 0 — same convention as
+    #: ``drums.backbeat_velocity``.
+    #:
+    #: :attr:`min_repeats` means a 2-bar break is passed through untouched, so
+    #: every detection artefact in it survives. On Manlio ``break-1`` and
+    #: ``break-3`` are the second-densest edit region in the song — 26 review
+    #: notes, 17 of them in bar 63 alone — and seven of those hits are snares at
+    #: the velocity floor, six of which are phantoms. See
+    #: :data:`PHANTOM_FLOOR_INSTRUMENTS` for the table and for why it is the
+    #: snare alone.
+    #:
+    #: **50, and it is the floor plus slack rather than the best score.**
+    #: ``scale_velocities`` puts Manlio's floor at v45, so "at or below 50"
+    #: means *at the floor* — a boundary with a reason. 55 would also catch the
+    #: v53 phantom at bar 19 beat 4.809 and score 139 against 140, and is
+    #: deliberately not taken: one drummer and one kit means this number has to
+    #: hold for the other ten songs of the album, and above the floor it starts
+    #: deleting strokes that carry a measured level.
+    #:
+    #: It applies **only** where the section was skipped. A voted section
+    #: already has a better instrument than level, namely agreement, and must
+    #: not be second-guessed on loudness.
+    phantom_snare_velocity: int = 50
 
 
 @dataclass(frozen=True)
@@ -499,7 +559,12 @@ def consolidate(
     never on a prefix family.
 
     Hits outside every section are passed through untouched — as are sections
-    too short to vote on, which are reported rather than silently mangled.
+    too short to vote on, which are reported rather than silently mangled. The
+    one exception there is a snare at the velocity floor, which in an unvoted
+    section is a phantom six times out of seven: see
+    :attr:`ConsolidateSettings.phantom_snare_velocity` and
+    :data:`PHANTOM_FLOOR_INSTRUMENTS`, which is one instrument long for reasons
+    that were measured.
 
     **This deliberately removes the fills**, which is why Stage 7 says to put
     them back by hand rather than repair them: a fill is by definition the bar
@@ -562,8 +627,25 @@ def consolidate(
 
         if best is None:
             entry["skipped"] = "too short to vote on"
+            # Nothing was voted on here, so nothing has agreement to stand on
+            # and every detection artefact in the section survives. The one
+            # thing level *can* settle is a snare at the floor -- see
+            # PHANTOM_FLOOR_INSTRUMENTS for why it is the snare and nothing
+            # else. Claiming the extents is what lets a hit be dropped: the
+            # pass-through at the bottom keeps whatever no section claimed.
+            floor = settings.phantom_snare_velocity
+            phantoms = [h for h in inside
+                        if floor > 0 and h.instrument in PHANTOM_FLOOR_INSTRUMENTS
+                        and h.velocity <= floor]
+            if phantoms:
+                entry["phantom_snares"] = len(phantoms)
+                entry["hits_after"] = len(inside) - len(phantoms)
+                claimed.extend(extents)
+                produced.extend(h for h in inside if h not in phantoms)
+                report["untouched"] += len(inside) - len(phantoms)
+            else:
+                report["untouched"] += len(inside)
             report["sections"].append(entry)
-            report["untouched"] += len(inside)
             continue
 
         _, unit, reps_used, hits, coverage, demoted, reps = best
