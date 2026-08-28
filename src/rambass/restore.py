@@ -36,6 +36,153 @@ _HANDS = (
 )
 
 
+#: What already counts as a hat at a slot, so :func:`fill_hat_runs` leaves it be.
+#:
+#: The ride and the ride bell are in here because ``voicing:`` retargets a
+#: filled hat to them (Manlio's finale), so a section already re-voiced by hand
+#: must not gain a closed hat underneath its ride.
+HAT_FAMILY = ("hihat_closed", "hihat_open", "hihat_pedal", "ride", "ride_2",
+              "ride_bell")
+
+#: Velocity for a filled hat when nothing at all was measured to base it on.
+#: The floor ``scale_velocities`` produces, and honest about being a guess.
+HAT_FILL_FLOOR = 45
+
+
+def fill_hat_runs(
+    performance: DrumPerformance,
+    sections,
+    *,
+    end_bar: int,
+    subdivision: int,
+    stop_beats: float = 1.25,
+    instrument: str = "hihat_closed",
+    window: float = 0.030,
+) -> tuple[DrumPerformance, dict]:
+    """Apply each section's declared ``hats`` pattern. Fills holes, moves nothing.
+
+    The largest single cause of Manlio's review notes: 66 of them are holes in a
+    continuous hi-hat run and 89 in total are a hat pattern the pipeline got
+    wrong. It is **not recoverable from the audio**, and that is measured rather
+    than assumed — the threshold sweep (0.55 is the best of twenty settings),
+    the hat-stem flux probe (2.5x separation on a median of 0.001 in
+    ``chorus-1``, against 20-50x everywhere else) and the occupancy count all
+    fail, the last because it cannot tell ``chorus-1`` (a continuous triplet run
+    reading 6 of 12 slots) from ``chorus-2`` (a genuine shuffle reading 9). So
+    it is declared: see :attr:`~rambass.manifest.Section.hats` and
+    :func:`~rambass.manifest.hat_slots`.
+
+    Four things it will not do, each for a reason:
+
+    **It never moves, re-voices or overwrites an existing hit.** A slot holding
+    any of :data:`HAT_FAMILY` is left exactly as it is — the hats the
+    transcriber did find in ``chorus-1`` carry real velocities of 86-113, and
+    flattening them would delete the part while claiming to complete it. Same
+    argument as :func:`revoice_sections` keeping velocities.
+
+    **It fills ``hihat_closed`` and nothing else.** ``theme-finale`` already
+    turns hats into a ride bell with ``voicing:``, and two mechanisms for one
+    decision is precisely what this field exists to avoid — so the fill runs
+    *before* :func:`revoice_sections`, which retargets what it filled.
+
+    **It respects the stop rule.** A section's mask must not fill the tail of a
+    bar whose own playing stops (:func:`~rambass.quantize.stopped_bars`, shared
+    with :func:`~rambass.quantize.consolidate` for exactly this reason), or
+    Phase 3 silently undoes Phase 1 and puts twelve hats straight back into
+    Manlio's bar 17. A declaration is a statement about the *pattern*, and the
+    pattern is not played after the band has stopped. An *empty* bar is not a
+    stop and is filled: that is what a declaration is for.
+
+    **The mask tiles the bar grid, not the section.** A one-bar hat figure
+    repeats every bar whichever beat the section began on, because a section
+    boundary does not move where beat 1 is — ``chorus-1`` starts at bar 32 beat
+    3. Same reasoning as :func:`~rambass.quantize._repetitions`.
+
+    Velocity is the median of the section's own existing hats, else the song's
+    median hat, else :data:`HAT_FILL_FLOOR`; the report says which of the three
+    was used, because "45 because there was nothing to measure" and "45 because
+    that is what this section plays" are different facts.
+
+    *end_bar* is exclusive and bounds the last section, the same as
+    :func:`revoice_sections`.
+    """
+    from .manifest import hat_slots
+    from .quantize import stopped_bars
+
+    timeline = performance.timeline
+    ordered = sorted(sections, key=lambda s: (s.bar, getattr(s, "beat", 1.0)))
+    report: dict = {"added": 0, "sections": []}
+    if not ordered:
+        return performance, report
+
+    hits = list(performance.hits)
+    song_hats = [hit.velocity for hit in hits if hit.instrument in HAT_FAMILY]
+    added: list[Hit] = []
+
+    for index, section in enumerate(ordered):
+        beats_per_bar = timeline.time_signature_at(max(section.bar, 1))[0]
+        mask = hat_slots(getattr(section, "hats", ""), subdivision=subdivision,
+                         beats_per_bar=beats_per_bar,
+                         where=f"section {section.name!r}")
+        if mask is None:
+            continue
+        start = timeline.bar_beat_to_seconds(
+            section.bar, getattr(section, "beat", 1.0))
+        if index + 1 < len(ordered):
+            following = ordered[index + 1]
+            stop = timeline.bar_beat_to_seconds(
+                following.bar, getattr(following, "beat", 1.0))
+        else:
+            stop = timeline.bar_beat_to_seconds(end_bar, 1.0)
+        if stop <= start:
+            continue
+
+        inside = [hit for hit in hits if start - 1e-9 <= hit.time < stop - 1e-9]
+        own = [hit.velocity for hit in inside if hit.instrument in HAT_FAMILY]
+        if own:
+            velocity, source = round(median(own)), "section"
+        elif song_hats:
+            velocity, source = round(median(song_hats)), "song"
+        else:
+            velocity, source = HAT_FILL_FLOOR, "floor"
+
+        stops = stopped_bars(timeline, inside, low=start, high=stop,
+                            stop_beats=stop_beats)
+        entry = {"name": section.name, "added": 0, "velocity": velocity,
+                 "velocity_from": source}
+        if stops:
+            entry["stopped"] = [{"bar": s.bar, "beat": s.beat} for s in stops]
+
+        first_bar = timeline.seconds_to_bar_beat(start)[0]
+        last_bar = timeline.seconds_to_bar_beat(stop - 1e-6)[0]
+        for bar in range(max(first_bar, 1), last_bar + 1):
+            grid = timeline.grid_seconds(subdivision, bar, bar + 1)
+            for slot, when in enumerate(grid):
+                if slot >= len(mask) or not mask[slot]:
+                    continue
+                if not (start - 1e-9 <= when < stop - 1e-9):
+                    continue
+                if any(s.withholds(when) for s in stops):
+                    continue
+                if any(abs(hit.time - when) <= window
+                       and hit.instrument in HAT_FAMILY
+                       for hit in hits):
+                    continue
+                if any(abs(hit.time - when) <= window for hit in added):
+                    continue
+                added.append(Hit(instrument, when,
+                                 max(1, min(127, int(velocity)))))
+                entry["added"] += 1
+
+        report["added"] += entry["added"]
+        report["sections"].append(entry)
+
+    if not added:
+        return performance, report
+    out = sorted(hits + added, key=lambda hit: (hit.time, hit.instrument))
+    return DrumPerformance(out, timeline, performance.name), report
+
+
 def revoice_sections(
     performance: DrumPerformance,
     sections,

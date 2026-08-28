@@ -437,3 +437,117 @@ def section_table(song: Song, performance: DrumPerformance | None = None) -> dic
         "findings": [{"kind": f.kind, "reaper": f.reaper, "message": f.message}
                      for f in check_sections(song, performance)],
     }
+
+
+#: A slot has to be occupied in at least this share of the bars it could appear
+#: in before the proposal names it. Half, and it is deliberately not a detector:
+#: at >= 9 of 12 slots, filling on occupancy alone is 47% precise (88 hats added
+#: on Manlio, 47 of them phantom), and the only safe threshold is >= 10 of 12,
+#: which fires on verse-1 alone and is subsumed by `hats: run`. This number
+#: exists to draw a picture for somebody with the recording in their ears.
+HAT_PROPOSAL_SHARE = 0.5
+
+
+@dataclass(frozen=True)
+class HatProposal:
+    """What a section's hi-hat pattern *looks* like, for a human to judge.
+
+    Never a verdict. The whole finding behind ``sections[].hats`` is that this
+    cannot be settled from the part: on Manlio ``chorus-1`` is a continuous
+    triplet run that reads 6 of 12 slots, and ``chorus-2`` is a genuine shuffle
+    that reads 9 — so occupancy ranks them the wrong way round. Which slots are
+    detection holes and which are the part is a question for Paolo's ear, and
+    ``break-1`` and ``closing-fill`` are cases where the pipeline currently has
+    *more* than the truth.
+    """
+
+    section: str
+    slots: tuple[int, ...]
+    mask: str
+    keyword: str
+    declared: str
+    slots_per_bar: int
+    #: Most bars any one slot could have appeared in. Below
+    #: :data:`~rambass.quantize.ConsolidateSettings.min_repeats` the occupancy
+    #: share says very little -- every slot is played in one bar or two, so a
+    #: 50% threshold collapses to "played in both" -- and on Manlio those are
+    #: exactly the two sections (``break-1``, ``closing-fill``) where the
+    #: pipeline has *more* than the review pass, not less. Reported so the
+    #: reader can discount the row rather than reading it as a pattern.
+    bars: int = 0
+
+    @property
+    def thin(self) -> bool:
+        return self.bars < 4
+
+    @property
+    def note(self) -> str:
+        """How the proposal differs from the nearest keyword, in words."""
+        if self.keyword == "run":
+            return "run"
+        full = set(range(self.slots_per_bar))
+        holes = sorted(full - set(self.slots))
+        if len(holes) <= 3 and holes:
+            return f"run, missing slots {', '.join(str(h) for h in holes)}"
+        return self.keyword or ""
+
+
+def propose_hats(
+    song: Song,
+    performance: DrumPerformance,
+    *,
+    share: float = HAT_PROPOSAL_SHARE,
+) -> list[HatProposal]:
+    """Per section, which hat slots the part currently occupies. Suggests only.
+
+    Occupancy over the bars each slot could have appeared in, so a section
+    starting mid-bar is not penalised for the slots it does not own — the same
+    reasoning :func:`~rambass.quantize.consolidate` uses for its ``chances``.
+    """
+    from .manifest import hat_slots
+    from .restore import HAT_FAMILY
+
+    timeline = song.timeline()
+    slots_per_bar = max(song.drum_subdivision, 1) * timeline.time_signature[0]
+    out: list[HatProposal] = []
+    for span in song.consolidation_spans():
+        low = timeline.bar_beat_to_seconds(span.start_bar, span.start_beat)
+        high = timeline.bar_beat_to_seconds(span.end_bar, span.end_beat)
+        chances: dict[int, int] = {}
+        seen: dict[int, int] = {}
+        for bar in range(span.start_bar, max(span.end_bar, span.start_bar + 1)):
+            grid = timeline.grid_seconds(song.drum_subdivision, bar, bar + 1)
+            here: set[int] = set()
+            for slot, when in enumerate(grid[:slots_per_bar]):
+                if not (low - 1e-9 <= when < high - 1e-9):
+                    continue
+                chances[slot] = chances.get(slot, 0) + 1
+                if any(abs(hit.time - when) <= 0.030
+                       and hit.instrument in HAT_FAMILY
+                       for hit in performance.hits):
+                    here.add(slot)
+            for slot in here:
+                seen[slot] = seen.get(slot, 0) + 1
+        occupied = tuple(sorted(
+            slot for slot, count in seen.items()
+            if chances.get(slot) and count / chances[slot] >= share))
+        mask = "".join("x" if slot in occupied else "."
+                       for slot in range(slots_per_bar))
+        keyword = ""
+        for candidate in ("run", "shuffle"):
+            try:
+                wanted = hat_slots(candidate, subdivision=song.drum_subdivision,
+                                   beats_per_bar=timeline.time_signature[0])
+            except ProjectError:
+                continue
+            if wanted is not None and tuple(
+                    slot for slot, on in enumerate(wanted) if on) == occupied:
+                keyword = candidate
+                break
+        declared = next((s.hats for s in song.sections
+                         if s.name == span.name and s.bar == span.start_bar), "")
+        out.append(HatProposal(section=span.name, slots=occupied, mask=mask,
+                               keyword=keyword, declared=declared,
+                               slots_per_bar=slots_per_bar,
+                               bars=max(chances.values(), default=0)))
+    return out

@@ -50,6 +50,67 @@ DRUM_VARIANT_ORDER = ("quantized", "consolidated", "restored")
 #: and ``manifest.py`` must not import anything that pulls in mido.
 BACKBEAT_ARTICULATIONS = ("", "sidestick", "snare")
 
+#: The keywords ``sections[].hats`` accepts besides an explicit mask.
+HAT_PATTERNS = ("run", "shuffle")
+
+
+def hat_slots(
+    declaration: str,
+    *,
+    subdivision: int,
+    beats_per_bar: int,
+    where: str = "",
+) -> tuple[bool, ...] | None:
+    """Which slots of a bar a section's ``hats`` declaration plays.
+
+    ``None`` for an empty declaration, which means "do nothing" — today's
+    behaviour, and the default for every section that has not been listened to.
+
+    * ``run`` — every slot of ``drums.subdivision``.
+    * ``shuffle`` — the first and last slot of each beat, which needs a triplet
+      grid to mean anything.
+    * an explicit mask of ``x`` and ``.``, one character per slot in a bar.
+      Whitespace and ``|`` are ignored so a reader can group it by beat:
+      ``"x.x | x.x | x.x | x.x"``.
+
+    Anything else raises :class:`~rambass.project.ProjectError`, because a typo
+    here fills nothing and reads exactly like a no-op — the worst way for a
+    declaration to fail, and the same argument :meth:`Song.problems` makes for
+    checking both ends of a ``voicing`` map.
+    """
+    from .project import ProjectError
+
+    declaration = (declaration or "").strip()
+    if not declaration:
+        return None
+    slots = max(subdivision, 1) * max(beats_per_bar, 1)
+    named = f"{where} " if where else ""
+    if declaration == "run":
+        return (True,) * slots
+    if declaration == "shuffle":
+        if subdivision != 3:
+            raise ProjectError(
+                f"{named}declares hats: shuffle, which is the first and last "
+                f"slot of each beat and needs a triplet grid — this song's "
+                f"drums.subdivision is {subdivision}. Write the mask out if "
+                f"that is really what you mean")
+        return tuple(index % subdivision in (0, subdivision - 1)
+                     for index in range(slots))
+    mask = declaration.replace(" ", "").replace("\t", "").replace("|", "")
+    if set(mask) - {"x", "."}:
+        unexpected = "".join(sorted(set(mask) - {"x", "."}))
+        raise ProjectError(
+            f"{named}declares hats: {declaration!r}; expected one of "
+            f"{', '.join(HAT_PATTERNS)}, or a mask of 'x' and '.' — "
+            f"{unexpected!r} is neither")
+    if len(mask) != slots:
+        raise ProjectError(
+            f"{named}declares a hats mask {len(mask)} slots long; a bar of "
+            f"{beats_per_bar} beats at drums.subdivision {subdivision} is "
+            f"{slots} slots")
+    return tuple(character == "x" for character in mask)
+
+
 #: Where this song's accompaniment comes from.
 #:
 #: * ``a-cappella`` — nowhere. The band sings it unaccompanied, so there is no
@@ -143,6 +204,26 @@ class Section:
     #: checked against :data:`~rambass.drummap.CANONICAL` in :meth:`problems`
     #: because a typo here re-voices nothing and looks exactly like a no-op.
     voicing: dict = field(default_factory=dict)
+    #: This section's hi-hat pattern, applied by
+    #: :func:`~rambass.restore.fill_hat_runs`. See :func:`hat_slots` for the
+    #: grammar: ``run``, ``shuffle``, or a mask of ``x`` and ``.``.
+    #:
+    #: The largest single cause of Manlio's review notes — 66 of them are holes
+    #: in a continuous hi-hat run and 89 in total are a hat pattern the pipeline
+    #: got wrong — and **it is not recoverable from the audio**. The threshold
+    #: sweep and the hat-stem flux probe both fail, and the occupancy count
+    #: cannot tell ``chorus-1`` (a continuous triplet run reading 6 of 12 slots)
+    #: from ``chorus-2`` (a genuine shuffle reading 9). So it is declared, the
+    #: same category as ``backbeat`` and ``voicing`` above: arrangement
+    #: structure, settled by ear once, never re-derived from audio.
+    #:
+    #: **One field, not two.** An earlier draft proposed a separate
+    #: ``backbeat_hat`` for the hat that
+    #: :func:`~rambass.transcribe.drop_hats_on_sidesticks` removes under a
+    #: side-stick. It is unnecessary: verse-1's and verse-2's ground truth is a
+    #: hat on all twelve triplet slots, so ``hats: run`` covers the side-stick
+    #: holes as a side effect.
+    hats: str = ""
 
     @property
     def position(self) -> tuple[int, float]:
@@ -159,6 +240,7 @@ class Section:
             backbeat=str(data.get("backbeat", "") or ""),
             voicing={str(played): str(wanted) for played, wanted
                      in (data.get("voicing") or {}).items()},
+            hats=str(data.get("hats", "") or ""),
         )
 
     def to_dict(self) -> dict:
@@ -169,6 +251,8 @@ class Section:
             out["backbeat"] = self.backbeat
         if self.voicing:
             out["voicing"] = dict(self.voicing)
+        if self.hats:
+            out["hats"] = self.hats
         if self.note:
             out["note"] = self.note
         return out
@@ -589,6 +673,15 @@ class Song:
                             f"{wanted!r}, but {name!r} is not a canonical drum "
                             f"name (see drummap.CANONICAL)"
                         )
+            # Same argument as the voicing map above: a bad `hats` fills
+            # nothing and reads as a no-op, which is the worst way for a
+            # declaration to fail.
+            try:
+                hat_slots(section.hats, subdivision=self.drum_subdivision,
+                          beats_per_bar=beats_per_bar,
+                          where=f"section {section.name!r}")
+            except ProjectError as bad:
+                out.append(str(bad))
         if self.bars and any(s.bar > self.bars for s in self.sections):
             out.append("a section starts after the last bar of the song")
         for name, value in (("subdivision", self.drum_subdivision),

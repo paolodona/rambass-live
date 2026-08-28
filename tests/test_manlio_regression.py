@@ -40,6 +40,7 @@ from rambass.drummap import GENERAL_MIDI  # noqa: E402
 from rambass.manifest import load_song  # noqa: E402
 from rambass.midiio import DrumPerformance, read_drum_midi  # noqa: E402
 from rambass.quantize import ConsolidateSettings, consolidate  # noqa: E402
+from rambass.restore import fill_hat_runs  # noqa: E402
 
 MANLIO = Path(__file__).resolve().parents[1] / "songs" / "tutti-in-fila" / "09-manlio"
 
@@ -483,3 +484,137 @@ def test_the_two_rules_together_land_on_a_hundred_and_forty():
     song, quantized = load("drums-quantized")
     _, truth = load("drums-restored")
     assert errors(song, consolidated_today(song, quantized), truth) == 140
+
+
+# ── Phase 3: a declared hi-hat pattern ───────────────────────────────────
+
+def test_declaring_hats_run_on_three_sections_recovers_most_of_the_hat_holes():
+    """The phase's real evidence, and it needs no manifest edit.
+
+    ``hats:`` is unset on every section of the committed ``song.yaml`` — it is
+    Paolo's to fill in by ear — so the fixture score cannot move. This
+    *simulates* the declaration in memory instead: the measurements already
+    settled ``chorus-1: run``, ``verse-1: run`` and ``verse-2: run``, and their
+    ground truth is a hat on all twelve triplet slots.
+
+    Counted as missing *hats* in those three sections, not as whole-song errors,
+    because that is the claim: the field is worth about 89 notes and these three
+    lines are most of it.
+    """
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+    consolidated = consolidated_today(song, quantized)
+    declared = ("chorus-1", "verse-1", "verse-2")
+
+    def missing_hats_in(performance, sections):
+        timeline = song.timeline()
+        step = 60.0 / timeline.bpm / song.drum_subdivision
+        spans = {s.name: s for s in song.consolidation_spans()}
+        have = {(CLASS[h.instrument], int(round(h.time / step)))
+                for h in performance.hits}
+        count = 0
+        for name in sections:
+            span = spans[name]
+            low = timeline.bar_beat_to_seconds(span.start_bar, span.start_beat)
+            high = timeline.bar_beat_to_seconds(span.end_bar, span.end_beat)
+            for hit in truth.hits:
+                if not (low - 1e-9 <= hit.time < high - 1e-9):
+                    continue
+                if CLASS[hit.instrument] != "hat":
+                    continue
+                if ("hat", int(round(hit.time / step))) not in have:
+                    count += 1
+        return count
+
+    before = missing_hats_in(consolidated, declared)
+
+    for section in song.sections:
+        if section.name in declared:
+            section.hats = "run"
+    filled, report = fill_hat_runs(
+        consolidated, song.sections,
+        end_bar=(song.bars or song.total_bars()) + 1,
+        subdivision=song.drum_subdivision)
+
+    after = missing_hats_in(filled, declared)
+    assert before - after >= 80, f"only recovered {before - after} of {before}"
+    assert {entry["name"] for entry in report["sections"]} == set(declared)
+    # And it did not have to invent a velocity anywhere: all three sections
+    # already carry hats the transcriber found.
+    assert {entry["velocity_from"] for entry in report["sections"]} == {"section"}
+
+
+def test_the_declaration_never_overwrites_a_hat_the_transcriber_found():
+    """chorus-1's own hats run v86-113; filling must not flatten them."""
+    song, quantized = load("drums-quantized")
+    consolidated = consolidated_today(song, quantized)
+    kept = {(h.instrument, round(h.time, 4), h.velocity) for h in consolidated.hits}
+
+    for section in song.sections:
+        if section.name == "chorus-1":
+            section.hats = "run"
+    filled, _ = fill_hat_runs(
+        consolidated, song.sections,
+        end_bar=(song.bars or song.total_bars()) + 1,
+        subdivision=song.drum_subdivision)
+
+    after = {(h.instrument, round(h.time, 4), h.velocity) for h in filled.hits}
+    assert kept <= after, "an existing hit was moved, re-voiced or dropped"
+
+
+def test_declaring_hats_does_not_undo_the_stop_rule():
+    """verse-1-lift's bar 17 must not gain the hats consolidate just withheld."""
+    song, quantized = load("drums-quantized")
+    consolidated = consolidated_today(song, quantized)
+    timeline = song.timeline()
+
+    for section in song.sections:
+        if section.name == "verse-1-lift":
+            section.hats = "run"
+    filled, report = fill_hat_runs(
+        consolidated, song.sections,
+        end_bar=(song.bars or song.total_bars()) + 1,
+        subdivision=song.drum_subdivision)
+
+    tail = [h for h in filled.hits
+            if timeline.bar_beat_to_seconds(17, 3.0) + 1e-9 < h.time
+            < timeline.bar_beat_to_seconds(18, 1.0) - 1e-9]
+    assert not tail, f"bar 17 gained {[h.instrument for h in tail]} after the stop"
+    entry = next(e for e in report["sections"] if e["name"] == "verse-1-lift")
+    assert {"bar": 17, "beat": 3.0} in entry["stopped"]
+
+
+def test_what_three_declarations_are_worth_and_what_they_cost():
+    """``chorus-1``, ``verse-1`` and ``verse-2`` at ``hats: run``, whole song.
+
+    140 → **78** errors: every one of the 81 hat holes in those three sections
+    is recovered (``missing`` 128 → 47), at the cost of 19 hats the review pass
+    does not have (``extra`` 12 → 31).
+
+    Where those 19 are matters more than the count, and they are not scattered:
+    16 are in ``chorus-1`` and 3 in ``verse-2``, and almost all sit in the
+    **partial bars at either end of a section** — bar 20 beat 3.333 is two
+    slots after verse-2 begins at 20.3, and bars 39-40 are where chorus-1 runs
+    out at 40.3. The mask tiles whole bars, so a section that starts or ends
+    mid-bar gets the pattern across the part of the bar it owns, and whether the
+    band really plays the run from the section's very first slot is an ear
+    question rather than something the field can know. That is a caution for
+    filling the field in, not a reason to round the spans to bar lines — see
+    ``quantize.consolidate``'s docstring for why rounding them is worse.
+    """
+    song, quantized = load("drums-quantized")
+    _, truth = load("drums-restored")
+    consolidated = consolidated_today(song, quantized)
+    assert errors(song, consolidated, truth) == 140
+
+    for section in song.sections:
+        if section.name in ("chorus-1", "verse-1", "verse-2"):
+            section.hats = "run"
+    filled, report = fill_hat_runs(
+        consolidated, song.sections,
+        end_bar=(song.bars or song.total_bars()) + 1,
+        subdivision=song.drum_subdivision)
+
+    assert report["added"] == 100
+    assert score(song, filled, truth) == (1040, 47, 31)
+    assert errors(song, filled, truth) == 78
