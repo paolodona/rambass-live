@@ -72,6 +72,12 @@ rambass.local.toml
 songs/*/*/midi/drums-*-16ths.mid
 songs/*/*/midi/drums-*-prepasses.mid
 
+# What "Send section to EZdrummer" writes: one section's slice of the MIDI, for
+# dragging into the plugin's browser from the folder it opens. Derived from the
+# tracked variants and regenerated per click, so it is scratch -- and `git add`
+# on a song directory swept one in, which is what this rule is for.
+songs/*/*/midi/sections/
+
 # Backups a forced rebuild writes. `review.rebuild_song` copies an artifact to
 # <name>.bak before --force overwrites it, which is the right bargain -- but the
 # copy is not a deliverable, and render/click.wav.bak is not caught by *.wav.
