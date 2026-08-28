@@ -313,7 +313,42 @@ programmed drums flams by a quarter second by the end, and a reviewer hearing
 that files it against the part they are judging. So a song with no warp yet gets
 a switch that says so and names `rambass align <song> --fit --warp`; it does
 **not** get the album mix instead. The pairing is one table (`review.CLOCK_OF`)
-and the page cannot express any other (`audible()` in `console.html`). And every
+and the page cannot express any other (`audible()` in `console.html`). **The stack's zoom is a view and only a view.** The wheel zooms about the
+pointer (`viewX` out, `sectionAt` back, converted in those two places and
+nowhere else) and the peaks are re-measured over the visible window rather than
+stretched — but nothing about it touches what plays, what is audible or what
+loops. The loop stays the whole section at any zoom: Reaper's loop is a time
+selection, not a view, and letting the window define it would silently change
+what a review pass hears. See `docs/review-ui.md`.
+
+**The review sidebar follows a deliberate placement, never the playhead.** The
+notes lane draws one dot per noted position and the sidebar shows the notes at
+*the focus* — set by a click or drag on the stack, a `[`/`]` step, a `,`/`.`
+nudge, or filing a note. Not by `updatePlayhead`, which runs on every animation
+frame while a section loops: a sidebar wired to that would rewrite its own list
+sixty times a second and move its own controls under the pointer clicking them.
+A dot answers with the note's **own** bar and beat rather than the snapped
+pixel, because a note filed at 1/12 is unreachable by a playhead snapping to the
+song's 1/3. And the dot colour is "what is left to decide here", so a position
+carrying both a promoted note and an open one reads **open**.
+
+**The wave gain is measured for the stack, so a landing clip repaints the
+stack.** `waveRef` is the loudest thing on either lane and both are drawn with
+it, so `ensurePeaks` cannot paint one lane: it would draw against the gain from
+before anything decoded (floored at `WAVE_FLOOR`, i.e. 20x, so everything
+saturates — what Paolo saw as "truncated waveforms on first load that come right
+when I cycle the scale"), and the second clip to land moves the number the first
+lane was already drawn with.
+
+**A candidate newer than its MIDI is not evidence that it is current.**
+`review.candidate_state` also asks `provenance.stale_report` whether that MIDI
+is itself behind `song.yaml` (`midi_behind_manifest`) — promote, re-render, skip
+the rebuild, and every mtime is in the right order while neither the grid nor
+the audio has the addition. Only `stale` counts, cascade included; `edited` is
+deliberately excluded, because a candidate rendered from a hand-drawn MIDI is
+exactly right and a rebuild would discard the edit.
+
+And every
 switch on that screen — side, band layer — is a **mute** on elements that are
 all already playing: Paolo asked for it directly ("need to keep playing when
 toggling other instruments on or off"), and a paused element restarted on unmute
@@ -424,6 +459,23 @@ from before the rebuild), a failed rebuild does not go on to render, and a run
 with nothing rebuilt and a fresh candidate renders nothing at all. The three
 commands stay separate as well — promote alone is how the `git diff` gets read
 before anything touches the MIDI.
+
+**A section-wide re-voicing is one declaration, not 66 edits.**
+`sections[].voicing: {hihat_open: ride_bell}` — Paolo, on Manlio's finale: *"in
+theme finale move all hihat_open to a ride"*, which is 66 hits. As `swap-hit`
+notes that is 66 removals and 66 additions, every one pinned to a bar.beat, so a
+re-transcription that moves one hit by a triplet leaves stale removals and the
+section half re-voiced. `restore.revoice_sections` applies it in `drums restore`
+**before** the additions, so a declared hit still wins and a hi-hat deliberately
+declared inside a re-voiced section stays one. Two things there are deliberate:
+**the velocities are kept** (unlike a single swap, which takes the target
+instrument's median — 66 hits carry a figure, Manlio's finale runs 111, 96, 106,
+82, 83, 84, 84, 77, 89, 89, 90, and flattening it would delete the part while
+renaming it; this is the retarget instrument names exist to make free), and
+`sections` is now in the restore step's provenance fields, or a voicing change
+moves nothing `rambass stale` watches. `BACKBEAT_ARTICULATIONS` stays a closed
+list of two and says of itself that it is not a general re-voicing facility —
+this is the general one, and the two do not merge.
 
 **Hand edits go in `song.yaml`, never into the Reaper MIDI item.**
 `drums.additions` and `drums.removals` are bar-anchored, reapplied by `rambass

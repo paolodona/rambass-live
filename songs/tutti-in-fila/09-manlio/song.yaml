@@ -47,12 +47,7 @@ drums:
     beat: 3.0
     instrument: crash
     velocity: 103
-    note: proposed by drums missing (chorus-1) - check by ear
-  - bar: 44
-    beat: 2.667
-    instrument: crash
-    velocity: 77
-    note: proposed by drums missing (verse-3) - check by ear
+    note: 'from the grid: crash_2 → crash (was crash_2)'
   - bar: 46
     beat: 4.667
     instrument: crash
@@ -290,11 +285,475 @@ drums:
     beat: 2.333
     instrument: hihat_closed
     note: from the grid at 32.2.333
+  - bar: 32
+    beat: 4.0
+    instrument: crash_2
+    note: promoted from qa/review.yaml
+  - bar: 33
+    instrument: crash
+    note: 'from the grid: crash_2 → crash (was crash_2)'
+  - bar: 34
+    beat: 3.0
+    instrument: crash
+    note: 'from the grid: crash_2 → crash (was crash_2)'
+  - bar: 34
+    beat: 4.0
+    instrument: crash_2
+    note: promoted from qa/review.yaml
+  - bar: 35
+    instrument: crash
+    note: 'from the grid: crash_2 → crash (was crash_2)'
+  - bar: 36
+    beat: 3.0
+    instrument: crash
+    note: from the grid at 38.3
+  - bar: 36
+    beat: 4.0
+    instrument: crash_2
+    note: promoted from qa/review.yaml
+  - bar: 37
+    instrument: crash
+    note: from the grid at 39.1
+  - bar: 38
+    beat: 3.0
+    instrument: crash
+    note: from the grid at 40.3
+  - bar: 38
+    beat: 4.0
+    instrument: crash_2
+    note: promoted from qa/review.yaml
+  - bar: 39
+    instrument: crash
+    note: promoted from qa/review.yaml
+  - bar: 33
+    beat: 1.333
+    instrument: hihat_closed
+    note: from the grid at 35.1.333
+  - bar: 33
+    beat: 1.667
+    instrument: hihat_closed
+    note: from the grid at 35.1.667
+  - bar: 33
+    beat: 2.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 33
+    beat: 3.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 33
+    beat: 4.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 34
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 34
+    beat: 3.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 34
+    beat: 4.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 35
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 35
+    beat: 2.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 35
+    beat: 3.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 35
+    beat: 4.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 36
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 36
+    beat: 3.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 36
+    beat: 4.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 37
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 37
+    beat: 2.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 37
+    beat: 3.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 37
+    beat: 4.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 38
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 38
+    beat: 3.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 38
+    beat: 4.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 39
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 39
+    beat: 2.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 39
+    beat: 3.0
+    instrument: hihat_closed
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped in for hihat_open)
+  - bar: 39
+    beat: 3.0
+    instrument: splash
+    note: promoted from qa/review.yaml
+  - bar: 39
+    beat: 4.0
+    instrument: hihat_pedal
+    note: 'from the grid: hihat_closed → hihat_pedal (was hihat_closed)'
+  - bar: 40
+    instrument: hihat_pedal
+    note: 'from the grid: hihat_closed → hihat_pedal (was hihat_closed)'
+  - bar: 33
+    beat: 2.333
+    instrument: hihat_closed
+    note: from the grid at 35.2.333
+  - bar: 33
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 35.3.333
+  - bar: 33
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 35.3.667
+  - bar: 33
+    beat: 4.667
+    instrument: hihat_closed
+    note: from the grid at 35.4.667
+  - bar: 34
+    beat: 1.333
+    instrument: hihat_closed
+    note: from the grid at 36.1.333
+  - bar: 34
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 36.2
+  - bar: 34
+    beat: 2.333
+    instrument: hihat_closed
+    note: from the grid at 36.2.333
+  - bar: 34
+    beat: 2.667
+    instrument: hihat_closed
+    note: from the grid at 36.2.667
+  - bar: 34
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 36.3.333
+  - bar: 34
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 36.3.667
+  - bar: 34
+    beat: 4.333
+    instrument: hihat_closed
+    note: from the grid at 36.4.333
+  - bar: 35
+    beat: 1.333
+    instrument: hihat_closed
+    note: from the grid at 37.1.333
+  - bar: 35
+    beat: 1.667
+    instrument: hihat_closed
+    note: from the grid at 37.1.667
+  - bar: 35
+    beat: 2.333
+    instrument: hihat_closed
+    note: from the grid at 37.2.333
+  - bar: 35
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 37.3.333
+  - bar: 35
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 37.3.667
+  - bar: 35
+    beat: 4.333
+    instrument: hihat_closed
+    note: from the grid at 37.4.333
+  - bar: 35
+    beat: 4.667
+    instrument: hihat_closed
+    note: from the grid at 37.4.667
+  - bar: 33
+    beat: 4.333
+    instrument: hihat_closed
+    note: from the grid at 35.4.333
+  - bar: 36
+    beat: 1.333
+    instrument: hihat_closed
+    note: from the grid at 38.1.333
+  - bar: 36
+    beat: 1.667
+    instrument: hihat_closed
+    note: from the grid at 38.1.667
+  - bar: 36
+    beat: 2.0
+    instrument: hihat_closed
+    note: from the grid at 38.2
+  - bar: 36
+    beat: 2.333
+    instrument: hihat_closed
+    note: from the grid at 38.2.333
+  - bar: 36
+    beat: 2.667
+    instrument: hihat_closed
+    note: from the grid at 38.2.667
+  - bar: 36
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 38.3.333
+  - bar: 36
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 38.3.667
+  - bar: 36
+    beat: 4.333
+    instrument: hihat_closed
+    note: from the grid at 38.4.333
+  - bar: 37
+    beat: 1.333
+    instrument: hihat_closed
+    note: from the grid at 39.1.333
+  - bar: 37
+    beat: 1.667
+    instrument: hihat_closed
+    note: from the grid at 39.1.667
+  - bar: 37
+    beat: 2.333
+    instrument: hihat_closed
+    note: from the grid at 39.2.333
+  - bar: 37
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 39.3.333
+  - bar: 37
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 39.3.667
+  - bar: 37
+    beat: 4.333
+    instrument: hihat_closed
+    note: from the grid at 39.4.333
+  - bar: 37
+    beat: 4.667
+    instrument: hihat_closed
+    note: from the grid at 39.4.667
+  - bar: 38
+    beat: 1.333
+    instrument: hihat_closed
+    note: from the grid at 40.1.333
+  - bar: 38
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 40.3.333
+  - bar: 38
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 40.3.667
+  - bar: 38
+    beat: 4.333
+    instrument: hihat_closed
+    note: from the grid at 40.4.333
+  - bar: 39
+    beat: 1.333
+    instrument: hihat_closed
+    note: from the grid at 41.1.333
+  - bar: 39
+    beat: 1.667
+    instrument: hihat_closed
+    note: from the grid at 41.1.667
+  - bar: 39
+    beat: 2.333
+    instrument: hihat_closed
+    note: from the grid at 41.2.333
+  - bar: 40
+    beat: 2.0
+    instrument: hihat_pedal
+    note: promoted from qa/review.yaml
+  - bar: 44
+    beat: 2.667
+    instrument: hihat_open
+    velocity: 94
+    note: 'from the grid: hihat_closed → hihat_open (swapped in for hihat_closed)'
+  - bar: 51
+    beat: 4.667
+    instrument: hihat_closed
+    note: from the grid at 53.4.667
+  - bar: 52
+    beat: 4.5
+    instrument: hihat_closed
+    note: from the grid at 54.4.5
+  - bar: 53
+    beat: 1.667
+    instrument: hihat_closed
+    note: from the grid at 55.1.667
+  - bar: 53
+    beat: 3.333
+    instrument: hihat_closed
+    note: from the grid at 55.3.333
+  - bar: 53
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 55.3.667
+  - bar: 54
+    beat: 3.0
+    instrument: hihat_open
+    velocity: 97
+    note: 'from the grid: hihat_closed → hihat_open (swapped in for hihat_closed)'
+  - bar: 52
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 54.3.667
+  - bar: 53
+    beat: 4.333
+    instrument: hihat_closed
+    note: from the grid at 55.4.333
+  - bar: 53
+    beat: 4.667
+    instrument: hihat_closed
+    note: from the grid at 55.4.667
+  - bar: 54
+    beat: 1.667
+    instrument: hihat_closed
+    note: from the grid at 56.1.667
+  - bar: 56
+    beat: 1.667
+    instrument: hihat_closed
+    note: from the grid at 58.1.667
+  - bar: 56
+    beat: 4.333
+    instrument: hihat_closed
+    velocity: 100
+    note: 'from the grid: tom_mid → hihat_closed (swapped in for tom_mid)'
+  - bar: 56
+    beat: 4.5
+    instrument: hihat_open
+    note: from the grid at 58.4.5
+  - bar: 56
+    beat: 4.833
+    instrument: hihat_open
+    note: from the grid at 58.4.833
+  - bar: 57
+    beat: 1.667
+    instrument: hihat_closed
+    note: from the grid at 59.1.667
+  - bar: 56
+    beat: 3.667
+    instrument: hihat_closed
+    note: from the grid at 58.3.667
+  - bar: 63
+    beat: 2.0
+    instrument: tom_mid
+    note: from the grid at 65.2
+  - bar: 63
+    beat: 2.167
+    instrument: tom_mid
+    note: from the grid at 65.2.167
+  - bar: 63
+    beat: 2.833
+    instrument: tom_mid
+    note: from the grid at 65.2.833
+  - bar: 63
+    beat: 3.0
+    instrument: tom_low_mid
+    velocity: 79
+    note: 'from the grid: tom_low → tom_low_mid (was tom_low)'
+  - bar: 63
+    beat: 3.167
+    instrument: tom_low_mid
+    velocity: 93
+    note: 'from the grid: tom_low → tom_low_mid (was tom_low)'
+  - bar: 63
+    beat: 3.333
+    instrument: tom_low_mid
+    velocity: 94
+    note: 'from the grid: tom_mid → tom_low_mid (swapped in for tom_mid)'
+  - bar: 63
+    beat: 3.5
+    instrument: tom_low_mid
+    velocity: 105
+    note: 'from the grid: tom_mid → tom_low_mid (swapped in for tom_mid)'
+  - bar: 63
+    beat: 3.667
+    instrument: tom_low_mid
+    velocity: 88
+    note: 'from the grid: tom_mid → tom_low_mid (swapped in for tom_mid)'
+  - bar: 63
+    beat: 3.833
+    instrument: tom_mid
+    note: from the grid at 65.3.833
+  - bar: 63
+    beat: 4.0
+    instrument: tom_low
+    velocity: 100
+    note: 'from the grid: tom_mid → tom_low (swapped in for tom_mid)'
+  - bar: 63
+    instrument: tom_high_mid
+    note: promoted from qa/review.yaml
+  - bar: 63
+    beat: 1.167
+    instrument: tom_high_mid
+    note: promoted from qa/review.yaml
+  - bar: 63
+    beat: 1.333
+    instrument: tom_high_mid
+    note: promoted from qa/review.yaml
   removals:
   - bar: 1
     beat: 2.0
-    instrument: hihat_open
-    note: promoted from qa/review.yaml
+    instrument: ride
+    note: promoted from qa/review.yaml (was hihat_open; theme-intro's voicing renames it before the removals run)
   - bar: 5
     beat: 4.0
     instrument: hihat_closed
@@ -385,6 +844,203 @@ drums:
     beat: 2.667
     instrument: hihat_closed
     note: from the grid at 34.2.667
+  - bar: 32
+    beat: 3.0
+    instrument: hihat_open
+    note: from the grid at 34.3
+  - bar: 32
+    beat: 4.0
+    instrument: hihat_open
+    note: from the grid at 34.4
+  - bar: 33
+    instrument: hihat_open
+    note: from the grid at 35.1
+  - bar: 33
+    beat: 2.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 33
+    beat: 3.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 33
+    beat: 4.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 34
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 34
+    beat: 3.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 34
+    beat: 4.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 35
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 35
+    beat: 2.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 35
+    beat: 3.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 35
+    beat: 4.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 36
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 36
+    beat: 3.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 36
+    beat: 4.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 37
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 37
+    beat: 2.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 37
+    beat: 3.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 37
+    beat: 4.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 38
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 38
+    beat: 3.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 38
+    beat: 4.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 39
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 39
+    beat: 2.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 39
+    beat: 3.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 39
+    beat: 4.0
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 40
+    instrument: hihat_open
+    note: chorus-1 is played on the closed hat throughout - swap the open hat here
+      (swapped for hihat_closed)
+  - bar: 44
+    beat: 2.667
+    instrument: hihat_closed
+    note: 'from the grid: hihat_closed → hihat_open (swapped for hihat_open)'
+  - bar: 44
+    beat: 2.667
+    instrument: kick
+    note: from the grid at 46.2.667
+  - bar: 54
+    beat: 3.0
+    instrument: hihat_closed
+    note: 'from the grid: hihat_closed → hihat_open (swapped for hihat_open)'
+  - bar: 54
+    beat: 4.0
+    instrument: snare
+    note: from the grid at 56.4
+  - bar: 54
+    beat: 4.0
+    instrument: hihat_closed
+    note: from the grid at 56.4
+  - bar: 56
+    beat: 4.333
+    instrument: tom_mid
+    note: 'from the grid: tom_mid → hihat_closed (swapped for hihat_closed)'
+  - bar: 63
+    beat: 3.0
+    instrument: tom_mid
+    note: 'from the grid: tom_mid → tom_low (swapped for tom_low)'
+  - bar: 63
+    beat: 3.167
+    instrument: tom_mid
+    note: 'from the grid: tom_mid → tom_low (swapped for tom_low)'
+  - bar: 63
+    beat: 4.0
+    instrument: snare
+    note: from the grid at 65.4
+  - bar: 64
+    beat: 3.0
+    instrument: sidestick
+    note: from the grid at 66.3
+  - bar: 64
+    beat: 4.667
+    instrument: snare
+    note: from the grid at 66.4.667
+  - bar: 65
+    beat: 1.5
+    instrument: snare
+    note: from the grid at 67.1.5
+  - bar: 63
+    beat: 2.0
+    instrument: snare
+    note: from the grid at 65.2
+  - bar: 63
+    beat: 3.333
+    instrument: tom_mid
+    note: 'from the grid: tom_mid → tom_low_mid (swapped for tom_low_mid)'
+  - bar: 63
+    beat: 3.5
+    instrument: tom_mid
+    note: 'from the grid: tom_mid → tom_low_mid (swapped for tom_low_mid)'
+  - bar: 63
+    beat: 3.667
+    instrument: tom_mid
+    note: 'from the grid: tom_mid → tom_low_mid (swapped for tom_low_mid)'
+  - bar: 63
+    beat: 4.0
+    instrument: tom_mid
+    note: 'from the grid: tom_mid → tom_low (swapped for tom_low)'
 source:
   audio: 09 Manlio.wav
   url: https://drive.google.com/file/d/1kDxz8I6egN0FwbGrWVPuxGJcFnvUn9rI/view
@@ -397,6 +1053,9 @@ stems:
 sections:
 - name: theme-intro
   bar: 1
+  voicing:
+    hihat_open: ride
+    hihat_closed: ride
 - name: theme-intro-stop
   bar: 4
 - name: verse-1
@@ -431,6 +1090,8 @@ sections:
 - name: theme-finale
   bar: 65
   beat: 3.0
+  voicing:
+    hihat_open: ride_bell
 - name: closing-fill
   bar: 77
   beat: 3.0

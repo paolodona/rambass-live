@@ -632,10 +632,1082 @@ notes:
   section: chorus-1
   kind: swap-hit
   instrument: crash
-  swap_to: crash_2
+  swap_to: crash
   velocity: 103
   comment: 'from the grid: crash → crash_2'
-  status: open
+  status: promoted
+  created: '2026-08-28'
+- bar: 32
+  beat: 3.0
+  section: chorus-1
+  kind: extra-hit
+  instrument: hihat_open
+  velocity: 103
+  comment: from the grid at 34.3
+  status: promoted
+  created: '2026-08-28'
+- bar: 32
+  beat: 4.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash_2
+  status: promoted
+  created: '2026-08-28'
+- bar: 32
+  beat: 4.0
+  section: chorus-1
+  kind: extra-hit
+  instrument: hihat_open
+  velocity: 71
+  comment: from the grid at 34.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash
+  comment: 'from the grid: crash_2 → crash'
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  section: chorus-1
+  kind: extra-hit
+  instrument: hihat_open
+  velocity: 106
+  comment: from the grid at 35.1
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 1.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 35.1.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 1.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 35.1.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 2.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 2.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 35.2.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 3.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 3.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 35.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 3.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 35.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 4.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 4.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 35.4.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 33
+  beat: 4.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 35.4.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 1.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 36.1.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 2.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 36.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 2.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 36.2.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 2.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 36.2.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 3.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash_2
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 3.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 3.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: crash_2
+  swap_to: crash
+  velocity: 100
+  comment: 'from the grid: crash_2 → crash'
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 3.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 36.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 3.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 36.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 4.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash_2
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 4.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 34
+  beat: 4.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 36.4.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash_2
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  section: chorus-1
+  kind: swap-hit
+  instrument: crash_2
+  swap_to: crash
+  velocity: 100
+  comment: 'from the grid: crash_2 → crash'
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 1.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 37.1.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 1.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 37.1.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 2.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 2.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 37.2.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 3.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 3.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 37.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 3.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 37.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 4.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 4.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 37.4.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 35
+  beat: 4.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 37.4.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 1.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 38.1.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 1.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 38.1.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 2.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 38.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 2.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 38.2.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 2.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 38.2.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 3.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash
+  comment: from the grid at 38.3
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 3.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 3.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 38.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 3.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 38.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 4.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash_2
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 4.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 36
+  beat: 4.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 38.4.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash
+  comment: from the grid at 39.1
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 1.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 39.1.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 1.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 39.1.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 2.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 2.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 39.2.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 3.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 3.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 39.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 3.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 39.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 4.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 4.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 39.4.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 37
+  beat: 4.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 39.4.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 38
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 38
+  beat: 1.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 40.1.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 38
+  beat: 3.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash
+  comment: from the grid at 40.3
+  status: promoted
+  created: '2026-08-28'
+- bar: 38
+  beat: 3.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 38
+  beat: 3.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 40.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 38
+  beat: 3.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 40.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 38
+  beat: 4.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash_2
+  status: promoted
+  created: '2026-08-28'
+- bar: 38
+  beat: 4.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 38
+  beat: 4.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 40.4.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  section: chorus-1
+  kind: missing-hit
+  instrument: crash
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  beat: 1.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 41.1.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  beat: 1.667
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 41.1.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  beat: 2.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  beat: 2.333
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 41.2.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  beat: 3.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  beat: 3.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: splash
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  beat: 4.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 39
+  beat: 4.0
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_closed
+  swap_to: hihat_pedal
+  velocity: 80
+  comment: 'from the grid: hihat_closed → hihat_pedal'
+  status: promoted
+  created: '2026-08-28'
+- bar: 40
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_open
+  swap_to: hihat_closed
+  comment: chorus-1 is played on the closed hat throughout - swap the open hat here
+  status: promoted
+  created: '2026-08-28'
+- bar: 40
+  section: chorus-1
+  kind: swap-hit
+  instrument: hihat_closed
+  swap_to: hihat_pedal
+  velocity: 80
+  comment: 'from the grid: hihat_closed → hihat_pedal'
+  status: promoted
+  created: '2026-08-28'
+- bar: 40
+  beat: 2.0
+  section: chorus-1
+  kind: missing-hit
+  instrument: hihat_pedal
+  status: promoted
+  created: '2026-08-28'
+- bar: 44
+  beat: 2.667
+  section: verse-3
+  kind: swap-hit
+  instrument: hihat_closed
+  swap_to: hihat_open
+  velocity: 94
+  comment: 'from the grid: hihat_closed → hihat_open'
+  status: promoted
+  created: '2026-08-28'
+- bar: 44
+  beat: 2.667
+  section: verse-3
+  kind: extra-hit
+  instrument: crash
+  velocity: 77
+  comment: from the grid at 46.2.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 44
+  beat: 2.667
+  section: verse-3
+  kind: extra-hit
+  instrument: kick
+  velocity: 50
+  comment: from the grid at 46.2.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 51
+  beat: 4.667
+  section: verse-3-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 53.4.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 52
+  beat: 3.667
+  section: verse-3-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 54.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 52
+  beat: 4.5
+  section: verse-3-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 54.4.5
+  status: promoted
+  created: '2026-08-28'
+- bar: 53
+  beat: 1.667
+  section: verse-3-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 55.1.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 53
+  beat: 3.333
+  section: verse-3-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 55.3.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 53
+  beat: 3.667
+  section: verse-3-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 55.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 53
+  beat: 4.333
+  section: verse-3-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 55.4.333
+  status: promoted
+  created: '2026-08-28'
+- bar: 53
+  beat: 4.667
+  section: verse-3-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 55.4.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 54
+  beat: 1.667
+  section: verse-3-lift
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 56.1.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 54
+  beat: 3.0
+  section: verse-3-lift
+  kind: swap-hit
+  instrument: hihat_closed
+  swap_to: hihat_open
+  velocity: 97
+  comment: 'from the grid: hihat_closed → hihat_open'
+  status: promoted
+  created: '2026-08-28'
+- bar: 54
+  beat: 4.0
+  section: verse-3-lift
+  kind: extra-hit
+  instrument: snare
+  velocity: 105
+  comment: from the grid at 56.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 54
+  beat: 4.0
+  section: verse-3-lift
+  kind: extra-hit
+  instrument: hihat_closed
+  velocity: 79
+  comment: from the grid at 56.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 56
+  beat: 1.667
+  section: chorus-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 58.1.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 56
+  beat: 3.667
+  section: chorus-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 58.3.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 56
+  beat: 4.333
+  section: chorus-2
+  kind: swap-hit
+  instrument: tom_mid
+  swap_to: hihat_closed
+  velocity: 100
+  comment: 'from the grid: tom_mid → hihat_closed'
+  status: promoted
+  created: '2026-08-28'
+- bar: 56
+  beat: 4.5
+  section: chorus-2
+  kind: missing-hit
+  instrument: hihat_open
+  comment: from the grid at 58.4.5
+  status: promoted
+  created: '2026-08-28'
+- bar: 56
+  beat: 4.833
+  section: chorus-2
+  kind: missing-hit
+  instrument: hihat_open
+  comment: from the grid at 58.4.833
+  status: promoted
+  created: '2026-08-28'
+- bar: 57
+  beat: 1.667
+  section: chorus-2
+  kind: missing-hit
+  instrument: hihat_closed
+  comment: from the grid at 59.1.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  section: break-3
+  kind: missing-hit
+  instrument: tom_high_mid
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 1.167
+  section: break-3
+  kind: missing-hit
+  instrument: tom_high_mid
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 1.333
+  section: break-3
+  kind: missing-hit
+  instrument: tom_high_mid
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 2.0
+  section: break-3
+  kind: missing-hit
+  instrument: tom_mid
+  comment: from the grid at 65.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 2.0
+  section: break-3
+  kind: extra-hit
+  instrument: snare
+  velocity: 71
+  comment: from the grid at 65.2
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 2.167
+  section: break-3
+  kind: missing-hit
+  instrument: tom_mid
+  comment: from the grid at 65.2.167
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 2.833
+  section: break-3
+  kind: missing-hit
+  instrument: tom_mid
+  comment: from the grid at 65.2.833
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 3.0
+  section: break-3
+  kind: swap-hit
+  instrument: tom_mid
+  swap_to: tom_low
+  velocity: 79
+  comment: 'from the grid: tom_mid → tom_low'
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 3.0
+  section: break-3
+  kind: swap-hit
+  instrument: tom_low
+  swap_to: tom_low_mid
+  velocity: 79
+  comment: 'from the grid: tom_low → tom_low_mid'
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 3.167
+  section: break-3
+  kind: swap-hit
+  instrument: tom_low
+  swap_to: tom_low_mid
+  velocity: 93
+  comment: 'from the grid: tom_low → tom_low_mid'
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 3.167
+  section: break-3
+  kind: swap-hit
+  instrument: tom_mid
+  swap_to: tom_low
+  velocity: 93
+  comment: 'from the grid: tom_mid → tom_low'
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 3.333
+  section: break-3
+  kind: swap-hit
+  instrument: tom_mid
+  swap_to: tom_low_mid
+  velocity: 94
+  comment: 'from the grid: tom_mid → tom_low_mid'
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 3.5
+  section: break-3
+  kind: swap-hit
+  instrument: tom_mid
+  swap_to: tom_low_mid
+  velocity: 105
+  comment: 'from the grid: tom_mid → tom_low_mid'
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 3.667
+  section: break-3
+  kind: swap-hit
+  instrument: tom_mid
+  swap_to: tom_low_mid
+  velocity: 88
+  comment: 'from the grid: tom_mid → tom_low_mid'
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 3.833
+  section: break-3
+  kind: missing-hit
+  instrument: tom_mid
+  comment: from the grid at 65.3.833
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 4.0
+  section: break-3
+  kind: extra-hit
+  instrument: snare
+  velocity: 45
+  comment: from the grid at 65.4
+  status: promoted
+  created: '2026-08-28'
+- bar: 63
+  beat: 4.0
+  section: break-3
+  kind: swap-hit
+  instrument: tom_mid
+  swap_to: tom_low
+  velocity: 100
+  comment: 'from the grid: tom_mid → tom_low'
+  status: promoted
+  created: '2026-08-28'
+- bar: 64
+  beat: 3.0
+  section: break-3
+  kind: extra-hit
+  instrument: sidestick
+  velocity: 45
+  comment: from the grid at 66.3
+  status: promoted
+  created: '2026-08-28'
+- bar: 64
+  beat: 4.667
+  section: break-3
+  kind: extra-hit
+  instrument: snare
+  velocity: 45
+  comment: from the grid at 66.4.667
+  status: promoted
+  created: '2026-08-28'
+- bar: 65
+  beat: 1.5
+  section: break-3
+  kind: extra-hit
+  instrument: snare
+  velocity: 84
+  comment: from the grid at 67.1.5
+  status: promoted
   created: '2026-08-28'
 done:
 - bar: 1
@@ -661,4 +1733,8 @@ done:
 - bar: 28
   beat: 3.0
   section: verse-2-lift
+  at: '2026-08-28'
+- bar: 51
+  beat: 1.0
+  section: verse-3-lift
   at: '2026-08-28'

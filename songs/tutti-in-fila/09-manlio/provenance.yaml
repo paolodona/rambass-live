@@ -10,14 +10,14 @@ midi/drums-consolidated.mid:
     bars: 282b639f9f9d4d15
     drums/map: c253d20d4554684f
     drums/subdivision: ae1949f77bd48bdc
-    sections: 5af6519e9d267cbe
+    sections: c55ef4a7d505c134
     tempo: 72321402045f8010
   scalars: {}
   self: 346b8d6f2edf8f2b
   step: drums consolidate
   version: 0.1.0
 midi/drums-quantized.mid:
-  code: 3197b76759775ca9
+  code: 0c13ffc0855903e9
   inputs:
     midi/drums-raw.mid: 54d8cb3841ed8b0f
   manifest:
@@ -28,7 +28,7 @@ midi/drums-quantized.mid:
     drums/downbeat_boost: 6a3a80ad810fe5b6
     drums/map: c253d20d4554684f
     drums/subdivision: ae1949f77bd48bdc
-    sections: 5af6519e9d267cbe
+    sections: c55ef4a7d505c134
     tempo: 72321402045f8010
   scalars: {}
   self: 0c0842557fd0003f
@@ -56,17 +56,18 @@ midi/drums-raw.mid:
   step: drums transcribe
   version: 0.1.0
 midi/drums-restored.mid:
-  code: f69a085373f36f23
+  code: 4bd237eaf9de1dc3
   inputs:
     midi/drums-consolidated.mid: 346b8d6f2edf8f2b
   manifest:
     bars: 282b639f9f9d4d15
-    drums/additions: 1717bf505df17e7e
+    drums/additions: fa5bbebe0f55fbc5
     drums/map: c253d20d4554684f
-    drums/removals: c3f37cbd693b63f2
+    drums/removals: 706f486467852fdd
+    sections: 1f0c9531939b772d
     tempo: 72321402045f8010
   scalars: {}
-  self: 2392b88e181097e1
+  self: 84fcb0599294f46d
   step: drums restore
   version: 0.1.0
 practice/align.yaml:
