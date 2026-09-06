@@ -1,0 +1,61 @@
+slug: i-want-it-all
+title: I Want It All
+album: covers
+track: 3
+key: ''
+bars: 0
+tempo:
+  bpm: 93.0
+  time_signature: 4/4
+count_in:
+  bars: 2
+click:
+  enabled: true
+  accent_downbeat: true
+drums:
+  origin: programmed
+  kit: ''
+  map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
+source:
+  audio: ''
+  url: ''
+  backing_track: ''
+stems:
+- drums
+- bass
+- other
+- vocals
+sections:
+- name: intro
+  bar: 1
+gx100:
+  channel: 1
+  changes: []
+video:
+  style: lyrics
+  lyrics: lyrics.md
+character:
+  genre: stadium rock, anthemic
+  energy: 5
+  heaviness: 3
+  standing: hit
+  role: ''
+  note: cover of Queen (1989, album "The Miracle"). 92-95 BPM per songbpm.com/Tunebat
+    — reads slower than it feels, because the relentless eighth-note guitar riff
+    drives it like a much faster song (same energy-vs-tempo split as Il Phurgone).
+    Closes the covers block back at full energy before Tonno's breather.
+status:
+  source: todo
+  analyze: todo
+  stems: n/a
+  drums_midi: todo
+  quantize: todo
+  kit: todo
+  render: todo
+  lyrics: todo
+  video: todo
+  gx100: todo
+  rehearsed: todo
+notes: ''

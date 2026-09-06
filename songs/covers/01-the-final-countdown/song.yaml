@@ -1,0 +1,60 @@
+slug: the-final-countdown
+title: The Final Countdown
+album: covers
+track: 1
+key: ''
+bars: 0
+tempo:
+  bpm: 118.0
+  time_signature: 4/4
+count_in:
+  bars: 2
+click:
+  enabled: true
+  accent_downbeat: true
+drums:
+  origin: programmed
+  kit: ''
+  map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
+source:
+  audio: ''
+  url: ''
+  backing_track: ''
+stems:
+- drums
+- bass
+- other
+- vocals
+sections:
+- name: intro
+  bar: 1
+gx100:
+  channel: 1
+  changes: []
+video:
+  style: lyrics
+  lyrics: lyrics.md
+character:
+  genre: arena rock, anthemic
+  energy: 4
+  heaviness: 2
+  standing: hit
+  role: ''
+  note: cover of Europe (1986, album "The Final Countdown"). 118 BPM per songbpm.com.
+    That keyboard fanfare is one of the most universally recognised rock intros
+    there is — a crowd-pleaser peak, not a novelty. Opens the 3-song covers block.
+status:
+  source: todo
+  analyze: todo
+  stems: n/a
+  drums_midi: todo
+  quantize: todo
+  kit: todo
+  render: todo
+  lyrics: todo
+  video: todo
+  gx100: todo
+  rehearsed: todo
+notes: ''

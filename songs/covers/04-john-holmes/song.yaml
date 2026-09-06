@@ -1,0 +1,62 @@
+slug: john-holmes
+title: John Holmes
+album: covers
+track: 4
+key: ''
+bars: 0
+tempo:
+  bpm: 142.0
+  time_signature: 4/4
+count_in:
+  bars: 2
+click:
+  enabled: true
+  accent_downbeat: true
+drums:
+  origin: programmed
+  kit: ''
+  map: general-midi
+  subdivision: 4
+  cymbal_subdivision: 2
+source:
+  audio: ''
+  url: ''
+  backing_track: ''
+stems:
+- drums
+- bass
+- other
+- vocals
+sections:
+- name: intro
+  bar: 1
+gx100:
+  channel: 1
+  changes: []
+video:
+  style: lyrics
+  lyrics: lyrics.md
+character:
+  genre: comedic rock
+  energy: 5
+  heaviness: 3
+  standing: deep
+  role: detour
+  note: cover of Elio e le Storie Tese, full title "John Holmes (Una vita per il
+    cinema)". 142-143 BPM per songbpm.com. Fast, funny, and structured as one long
+    joke — the same short-jolt-of-contrast role Orologiaio plays, dropped into the
+    deep-cuts cluster instead of next to it so the two gag songs don't land back
+    to back.
+status:
+  source: todo
+  analyze: todo
+  stems: n/a
+  drums_midi: todo
+  quantize: todo
+  kit: todo
+  render: todo
+  lyrics: todo
+  video: todo
+  gx100: todo
+  rehearsed: todo
+notes: ''
