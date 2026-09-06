@@ -10,7 +10,7 @@ midi/drums-consolidated.mid:
     bars: 282b639f9f9d4d15
     drums/map: c253d20d4554684f
     drums/subdivision: ae1949f77bd48bdc
-    sections: c55ef4a7d505c134
+    sections: 1f0c9531939b772d
     tempo: 72321402045f8010
   scalars: {}
   self: 346b8d6f2edf8f2b
@@ -28,7 +28,7 @@ midi/drums-quantized.mid:
     drums/downbeat_boost: 6a3a80ad810fe5b6
     drums/map: c253d20d4554684f
     drums/subdivision: ae1949f77bd48bdc
-    sections: c55ef4a7d505c134
+    sections: 1f0c9531939b772d
     tempo: 72321402045f8010
   scalars: {}
   self: 0c0842557fd0003f

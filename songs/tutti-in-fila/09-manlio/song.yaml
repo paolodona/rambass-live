@@ -753,7 +753,8 @@ drums:
   - bar: 1
     beat: 2.0
     instrument: ride
-    note: promoted from qa/review.yaml (was hihat_open; theme-intro's voicing renames it before the removals run)
+    note: promoted from qa/review.yaml (was hihat_open; theme-intro's voicing renames
+      it before the removals run)
   - bar: 5
     beat: 4.0
     instrument: hihat_closed
